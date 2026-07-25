@@ -4,34 +4,47 @@
 
 - Baseline: `20dafe201d91d4405eef05ecd1db0257f13a9ac8`
 - Research date: 2026-07-26
-- Publication status: private draft. No upstream issue, comment, or pull request was published.
+- Publication status: private draft. No upstream issue, comment, or pull request has been published.
+- Publication gate: a clean regression-test commit and implementation commit that have both run successfully.
 
-## Revised conclusion
+## Conclusion
 
-This work supports a strong standalone issue.
+This work supports a strong standalone issue once the publication gate is met.
 
-Several public reports touch adjacent symptoms, but none currently combines the same concise failure sequence, a regression test that reproduces it, exact code-path analysis, and a narrow implementation prototype.
+Several public reports touch adjacent symptoms, but none currently combines the same concise failure sequence, executable reproduction, ownership analysis, intended-persistence history, and narrow implementation contract.
 
-The central bug is:
+The bug is:
 
 1. A code-mode JavaScript cell launches nested `tools.exec_command()` calls.
-2. The commands cross `yield_time_ms` and return live `session_id` values.
-3. JavaScript consumes only `.output`, discarding those handles.
+2. The commands cross `yield_time_ms`; unified exec stores each live process in the conversation-level process manager and returns a copied `session_id` handle to JavaScript.
+3. JavaScript consumes only `.output`, projecting away both copied handles.
 4. The JavaScript cell returns successfully.
-5. The outer result says `Script completed` while the nested processes remain alive.
-6. The agent no longer has the IDs required to poll or terminate them.
+5. The outer result says `Script completed` while the manager-owned processes remain alive.
+6. The model-visible result contains no session IDs with which to poll, inspect, or terminate those processes.
 
-Background-terminal persistence across turns is intended. Silent loss of the handles is the defect.
+Background-terminal persistence is intentional. The defect is loss of model-visible control information at a terminal outer-cell boundary.
+
+## Confirmed ownership boundary
+
+The ownership audit resolves an important ambiguity:
+
+- **Code mode owns the nested callback task.** The cell actor tracks the callback while the nested tool call is being dispatched and awaited.
+- **Unified exec transfers live-process ownership to the conversation-level process manager.** Once `UnifiedExecProcessManager::store_process` retains the process, ordinary cell or turn completion does not release it.
+- **JavaScript receives only a copied logical session handle.** The returned object does not own the process.
+- **Dropping or projecting away that handle has no lifecycle effect.** The process manager continues to own the live process.
+- **The interface defect occurs at reporting time.** The outer cell reports terminal completion without restoring the control information that JavaScript omitted.
+
+This is why Patch 1 should change visibility rather than termination or persistence.
 
 ## Current team evidence
 
 ### Agent 2 regression test
 
-Branch: [`research/code-mode-live-session-test`](https://github.com/teamleaderleo/codex/tree/research/code-mode-live-session-test)
+Scratch branch: [`research/code-mode-live-session-test`](https://github.com/teamleaderleo/codex/tree/research/code-mode-live-session-test)
 
 Test: `code_mode_completion_does_not_surface_discarded_live_exec_sessions`
 
-The test:
+The current test:
 
 - starts two nested long-running commands through `Promise.all`;
 - sets `yield_time_ms: 250`;
@@ -40,20 +53,24 @@ The test:
 - confirms the outer header says `Script completed` and contains no session information;
 - terminates every background terminal during teardown, including after a panic.
 
-This is direct executable proof of the interface failure. The current helper uses shell commands and skips Windows, so a later refinement may replace it with a shared cross-platform test helper. That does not weaken the demonstrated runtime path on supported test platforms.
+This is direct executable evidence of the interface failure. Before publication, it should be consolidated onto the implementation branch, changed to assert the corrected terminal header, and run in the local Rust environment. A shared cross-platform long-running helper is preferable if practical; panic-safe teardown remains required.
 
-### Integrator prototype
+### Agent 1 feasibility prototype
 
-Branch: [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary)
+Prototype branch: [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary)
 
-The prototype:
+Prototype commit: [`cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9)
 
-- scopes nested tool call IDs to the originating `CellId`;
-- queries `UnifiedExecProcessManager::list_processes()` at the outer runtime-response boundary;
-- filters currently live processes created by that cell;
-- adds their session IDs to the untruncated status header.
+The prototype proves that the outer runtime-response boundary can:
 
-Example output:
+1. query the existing conversation-level live-process manager;
+2. retain only processes that are still alive;
+3. sort their logical session IDs deterministically;
+4. place those IDs in the untruncated status header;
+5. preserve intended process persistence; and
+6. preserve the JavaScript-visible nested result schema.
+
+Example:
 
 ```text
 Script completed
@@ -63,84 +80,63 @@ Output:
 ...
 ```
 
-This preserves the existing JavaScript result schema and intended cross-turn process persistence.
+Its call-ID-prefix mechanism is **feasibility evidence, not the recommended ownership API**. Encoding `CellId` into call IDs and recovering ownership with `starts_with` can collide, leaks unrestricted cell strings into identifiers and tracing, and makes a representation convention responsible for resource attribution.
 
-### Agent 3
+### Recommended implementation contract
 
-I do not see an Agent 3 ownership/API report in the repository or the known scratch branches yet. Its read-only assignment may exist only in another conversation. The current test and prototype already provide enough evidence to revise the issue strategy.
+Patch 1 should preserve existing typed source metadata through unified exec:
 
-## Relevant upstream history
+1. Preserve `ToolCallSource::CodeMode { cell_id, runtime_tool_call_id }` through `ExecCommandHandler` into unified-exec context.
+2. Store optional typed creator-cell attribution on the live process entry.
+3. Query the process manager for currently live processes whose creator cell matches the terminal outer cell.
+4. Sort and report surviving logical session IDs in the outer status/header after output truncation.
+5. Apply the summary to terminal outcomes: successful result, failed result, and explicit termination.
+6. Keep ordinary `Yielded` responses completion-neutral because the outer cell is still active.
+7. Preserve the JavaScript `session_id` schema and existing process persistence policy.
+8. Do not create a second liveness registry or infer ownership from emitted JavaScript values.
 
-### Persistence is deliberate
+The prototype's manager-query and header-formatting scaffolding may be reusable. Typed creator attribution should replace prefix matching before the work is presented as the implementation.
+
+## Intended persistence history
+
+### Persistence across ordinary turns is deliberate
 
 - PR #8052 originally closed unified-exec sessions at turn completion.
 - PR #10799 deliberately reversed that policy and preserved background terminals across ordinary turns.
-- Later cleanup semantics moved toward explicit user control such as `/stop`, plus runtime shutdown.
+- PR #14602 preserved background terminals on interrupt, moved cleanup toward explicit `/stop`, and stored a live process before the initial yield wait so interruption could not drop the last process reference.
 
-Therefore this bug should not be described as “a process survived turn completion.” The defect is that code mode can hide the live process handle while reporting a terminal-looking outer status.
+Therefore the issue should not claim that survival after cell or turn completion is itself erroneous. The bug is that the surviving manager-owned process becomes invisible to the model after its copied handle is discarded.
 
-### The direct exec interface already exposes liveness
+### Direct exec already treats the live handle as essential state
 
-`ExecCommandToolOutput::response_text` tells the model when a process remains running and includes its session ID. `ExecCommandToolOutput::code_mode_result` likewise returns a typed `session_id` to JavaScript.
+`ExecCommandToolOutput::response_text` tells the model when a direct exec process remains running and includes its session ID. `ExecCommandToolOutput::code_mode_result` likewise gives JavaScript a typed `session_id`.
 
-Code mode loses that protection when user JavaScript omits the field from emitted output.
+Code mode loses that protection when JavaScript emits or retains only selected fields. The outer terminal status is the last reliable place to restore control information for still-live sessions created by that cell.
 
-### The cell identity already exists
+## Related public issues and distinctions
 
-Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, runtime_tool_call_id }`. A fix can associate live processes with their originating cell without parsing JavaScript output.
+These are useful prior art and cross-links, not reasons to suppress a tested standalone report.
 
-## Related public issues and exact distinctions
+- **#34866:** closest visible outer-completed/inner-running symptom for a nested shell session. This work adds deliberate handle projection, multiple live sessions, manager-state verification, a contract test, and a typed per-cell implementation design.
+- **#32411:** covers un-emitted nested results and artifact handles generally. Here the discarded value controls a process that remains alive independently in the conversation-level manager.
+- **#33816:** covers model-side abandonment after a direct exec session was exposed. Here the runtime/API path removes the handle before the model receives the outer result.
+- **#14731:** proposes guarding turn completion while background processes remain live. This work preserves intended persistence and changes terminal code-cell visibility only.
+- **#15723:** covers waking a parent after background work completes. It is relevant to broader ownership and eventing, not this initial handle-loss fix.
 
-These are useful prior art and cross-links, not reasons to suppress this issue.
-
-### #34866 — `Script completed` while a nested shell session remains live
-
-Closest visible symptom. It focuses on the confusing two-level lifecycle for one logical foreground command: outer `cell_id` completion versus inner `session_id` liveness.
-
-This project adds a distinct failure mode:
-
-- multiple nested calls;
-- handles deliberately discarded by ordinary JavaScript projection;
-- no surviving model-visible ID;
-- a regression test proving the live sessions remain registered;
-- a concrete per-cell visibility patch.
-
-### #32411 — un-emitted nested tool results and artifact handles are discarded
-
-This identifies the general result-loss mechanism. Its motivating harm is lost output and artifact metadata.
-
-This project focuses on a live resource handle. Losing `session_id` leaves an operating-system process alive and removes the normal control path.
-
-### #33816 — model abandons yielded direct exec sessions
-
-This describes model behaviour after receiving a live session: false completion inference and duplicate commands.
-
-This project demonstrates a runtime/API path where the outer code-mode result itself can erase the session handle before the model can preserve it.
-
-### #14731 — turn completes with background processes still running
-
-This proposes guarding turn completion while processes remain live.
-
-This project preserves the intentional persistence policy and changes visibility at the code-cell boundary only.
-
-### #15723 — background work does not wake the parent
-
-Useful follow-up for event-driven completion and hidden-subagent ownership. It is separate from the initial handle-loss bug.
+Separate audit findings involving delayed dispatch, shutdown races, remote bulk termination, stale bookkeeping, hidden-subagent policy, and macOS crash recovery should receive their own tests and issue decisions.
 
 ## Publication recommendation
 
-Prepare a standalone upstream issue once the test and prototype are consolidated into a clean comparison branch or draft PR.
+Keep the issue private until both of these exist and have run:
 
-The issue should:
+- **Regression commit:** `<tested-regression-commit>`
+- **Implementation commit:** `<tested-implementation-commit>`
 
-- lead with the six-step executive summary;
-- include the compact network-independent reproduction;
-- link the regression test commit and prototype diff;
-- cite #34866, #32411, #33816, #14731, and #15723 under “Related” with one-sentence distinctions;
-- keep macOS crash recovery and hidden-subagent policy as follow-up work;
-- avoid uploading private rollout logs, environment dumps, or process records.
+At publication time, replace scratch-branch links with those stable commits or a clean comparison/PR link. The issue can then serve as a concise design record for the prospective PR:
 
-A good issue can serve as the design record for the prospective PR. The test demonstrates the bug, the patch demonstrates feasibility, and the history explains why the fix preserves process persistence.
+**observed incident → six-step reproduction → failing contract test → ownership boundary → tested visibility patch**
+
+Do not upload private rollout logs, prompts, environment dumps, machine-specific paths, image data, tokens, or unrelated conversation content.
 
 ---
 
@@ -155,13 +151,13 @@ A code-mode JavaScript cell can finish with `Script completed` while nested `exe
 The reproducible sequence is:
 
 1. Start two nested `tools.exec_command()` calls with `Promise.all`.
-2. Both commands reach `yield_time_ms` and return live `session_id` values.
-3. JavaScript reads only `.output` and discards both IDs.
+2. Both commands reach `yield_time_ms`; unified exec stores the live processes and returns copied `session_id` handles.
+3. JavaScript reads only `.output`, discarding both copied IDs.
 4. The JavaScript cell returns successfully.
 5. The outer tool result says `Script completed`.
-6. Both background terminals remain registered and running, but the agent no longer knows their IDs.
+6. Both background terminals remain registered and running, but their IDs are absent from the model-visible result.
 
-Cross-turn background-terminal persistence is intentional. The bug is the loss of visibility and control.
+Cross-turn background-terminal persistence is intentional. The bug is loss of visibility and control while the outer cell reports terminal completion.
 
 ## Minimal reproduction
 
@@ -180,7 +176,7 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-The shell commands above are only compact examples. The regression test performs bounded cleanup and can later use a shared cross-platform long-running helper.
+The shell commands are compact examples. The regression test uses bounded, panic-safe cleanup; its final published form should use the cleanest available deterministic long-running helper.
 
 ## Actual behaviour
 
@@ -193,11 +189,11 @@ Output:
 orphan-a|orphan-b
 ```
 
-At that point, `list_background_terminals()` returns two distinct live sessions. Their IDs appear nowhere in the outer result because the JavaScript projection discarded them.
+At that point, the conversation-level process manager still contains two distinct live sessions. Their IDs appear nowhere in the outer result because JavaScript projected them away.
 
 ## Expected behaviour
 
-The outer status should disclose any nested unified-exec sessions from that cell that remain live:
+A terminal outer-cell status should disclose currently live nested unified-exec sessions created by that cell:
 
 ```text
 Script completed
@@ -209,63 +205,71 @@ orphan-a|orphan-b
 
 The processes may continue running. The agent retains the information needed to poll, inspect, or terminate them.
 
-## Regression test
-
-A focused test exists on [`research/code-mode-live-session-test`](https://github.com/teamleaderleo/codex/tree/research/code-mode-live-session-test):
-
-`code_mode_completion_does_not_surface_discarded_live_exec_sessions`
-
-It proves that:
-
-- two nested commands yield;
-- JavaScript discards both session IDs;
-- the outer cell reports completion without session information;
-- both sessions remain live;
-- teardown terminates every session even after an assertion panic.
-
-## Root cause
+## Ownership and root cause
 
 High confidence:
 
-- `ExecCommandToolOutput::code_mode_result` returns `session_id` when unified exec remains live.
-- `call_nested_tool` passes that typed JSON to JavaScript.
-- JavaScript may emit only selected fields.
-- `handle_runtime_response` derives `Script completed` from successful `RuntimeResponse::Result`.
-- No outer-cell summary currently checks whether nested unified-exec processes from that cell remain alive.
+- Code mode owns each nested callback task while dispatching the nested tool call.
+- After unified exec stores a yielded process, the conversation-level process manager owns it.
+- JavaScript receives only a copied logical session handle; dropping the returned object does not affect the process.
+- `ExecCommandToolOutput::code_mode_result` supplies the copied `session_id` to JavaScript.
+- JavaScript may retain or emit only selected fields.
+- `handle_runtime_response` reports `Script completed` from a successful terminal `RuntimeResponse::Result` without summarising still-live processes created by that cell.
 
-The nested dispatch path already carries the originating `CellId`, and the unified-exec manager already exposes live process metadata.
+The dispatch path already carries typed `ToolCallSource::CodeMode { cell_id, ... }` metadata, but baseline unified exec does not retain the creator cell on the live process entry.
+
+## Regression and implementation evidence
+
+- Tested regression commit: `<tested-regression-commit>`
+- Tested implementation commit or PR: `<tested-implementation-commit-or-pr>`
+
+The current regression proves that two IDs can be discarded while both sessions remain alive and absent from the outer header.
+
+A feasibility prototype proves that the outer response can query the existing live-process manager, sort surviving IDs, and place them in the untruncated status header without changing persistence or the JavaScript result schema. Its call-ID-prefix matching is prototype-only and is not the proposed ownership API.
 
 ## Proposed narrow fix
 
-A prototype exists on [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary).
+1. Preserve typed `ToolCallSource::CodeMode` creator-cell metadata through unified exec.
+2. Store optional creator-cell attribution on each live process entry.
+3. On terminal cell outcomes, query for still-live processes created by that cell.
+4. Sort and append their logical session IDs to the untruncated outer status header.
 
-It:
+### Non-goals
 
-1. scopes nested tool-call IDs to the originating cell;
-2. queries the existing live-process list at the outer response boundary;
-3. filters processes created by that cell;
-4. places surviving session IDs in the status header.
-
-The header is inserted after output truncation, so large command output cannot remove the warning.
-
-This patch does not:
+This change does not:
 
 - terminate background terminals;
-- change persistence across turns;
+- change persistence across turns or interrupts;
 - change the JavaScript-visible nested result schema;
-- solve hidden-subagent ownership;
-- solve macOS process recovery after abrupt runtime death.
+- report a completion warning on an ordinary yielded outer cell;
+- define hidden-subagent ownership or completion policy;
+- fix delayed dispatch, shutdown races, remote termination, or stale bookkeeping;
+- solve macOS recovery after abrupt runtime death.
 
 ## Related issues
 
-- #34866 covers the outer-completed/inner-running lifecycle contradiction for a nested shell session.
-- #32411 covers silent loss of un-emitted nested tool results and artifact handles.
-- #33816 covers model-side abandonment of yielded direct exec sessions.
-- #14731 covers turn completion while background processes remain live.
-- #15723 covers parent wake-up after background process or subagent completion.
-
-This report adds a deterministic discarded-handle reproduction, an integration test with teardown, and a small visibility-only implementation path.
+- #34866: similar outer-completed/inner-running symptom; this report adds deliberate handle loss, multiple sessions, a contract test, and typed creator attribution.
+- #32411: general loss of un-emitted nested results; this case loses control of a separately manager-owned live process.
+- #33816: abandonment after a direct session was exposed; this case hides the handle before the model receives the outer result.
+- #14731: proposes blocking turn completion; this proposal preserves persistence and changes visibility only.
+- #15723: parent wake-up after background completion; separate eventing and ownership concern.
 
 ## Maintainer question
 
-Does associating nested unified-exec calls with their originating code-mode cell and surfacing currently live session IDs in the outer status header fit the intended code-mode contract?
+Does preserving typed creator-cell attribution on unified-exec process entries and surfacing surviving session IDs in terminal code-mode headers fit the intended ownership contract?
+
+---
+
+## Compact handoff
+
+```text
+Agent: 4 — history and upstream issue editor
+Branch/ref: research/code-mode-orphan-handoffs
+Baseline: 20dafe201d91d4405eef05ecd1db0257f13a9ac8
+Changed files: notes/code-mode-orphan-fix/agent-4-history-issue-report.md
+Tests run and results: none; documentation-only revision
+Confirmed findings: Agent 1 proves manager-query/header feasibility; recommended implementation uses typed ToolCallSource::CodeMode creator attribution on ProcessEntry; process ownership transfers to the conversation-level manager before JavaScript can discard its copied handle
+Open risks: final process-entry field shape and query API; terminal-failure/termination semantics; cross-platform regression helper; race coverage for one process exiting before summary generation
+Publication questions: publish issue before or alongside the prospective PR; exact tested commit/PR links; whether maintainers prefer the header wording or another model-facing representation
+Recommended next action: consolidate and run the positive regression with the typed-attribution implementation, then replace placeholders and perform one final issue-editing pass
+```
