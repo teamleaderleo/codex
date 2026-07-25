@@ -164,6 +164,20 @@ impl UnifiedExecProcessManager {
                 .max(MIN_EMPTY_YIELD_TIME_MS),
         }
     }
+
+    pub(crate) async fn live_process_ids_created_by_cell(&self, cell_id: &CellId) -> Vec<i32> {
+        let store = self.process_store.lock().await;
+        let mut process_ids = store
+            .processes
+            .values()
+            .filter(|entry| {
+                entry.creator_cell_id.as_ref() == Some(cell_id) && !entry.process.has_exited()
+            })
+            .map(|entry| entry.process_id)
+            .collect::<Vec<_>>();
+        process_ids.sort_unstable();
+        process_ids
+    }
 }
 
 impl Default for UnifiedExecProcessManager {
