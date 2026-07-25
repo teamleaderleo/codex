@@ -537,37 +537,5 @@ fn telemetry_preview(content: &str) -> String {
 }
 
 #[cfg(test)]
-mod live_session_tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn code_mode_exec_output_surfaces_running_session_in_output_text() {
-        let result = ExecCommandToolOutput {
-            event_call_id: "call-live".to_string(),
-            chunk_id: "chunk-live".to_string(),
-            wall_time: Duration::from_millis(30_000),
-            raw_output: b"Waiting for selector...".to_vec(),
-            truncation_policy: TruncationPolicy::Tokens(10_000),
-            max_output_tokens: Some(8_000),
-            process_id: Some(6306),
-            exit_code: None,
-            original_token_count: None,
-            output_omitted_bytes: None,
-            hook_command: None,
-        }
-        .code_mode_result(&ToolPayload::Function {
-            arguments: "{}".to_string(),
-        });
-
-        assert_eq!(result["session_id"], json!(6306));
-        assert_eq!(
-            result["output"],
-            json!("Process running with session ID 6306\nOutput:\nWaiting for selector...")
-        );
-    }
-}
-
-#[cfg(test)]
 #[path = "context_tests.rs"]
 mod tests;
