@@ -4,6 +4,7 @@ use std::sync::Arc;
 use crate::function_tool::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
 use crate::tools::context::ExecCommandToolOutput;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
@@ -26,6 +27,7 @@ use crate::unified_exec::UnifiedExecContext;
 use crate::unified_exec::UnifiedExecError;
 use crate::unified_exec::UnifiedExecProcessManager;
 use crate::unified_exec::generate_chunk_id;
+use codex_code_mode::CellId;
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;
 use codex_otel::TOOL_CALL_UNIFIED_EXEC_METRIC;
@@ -113,6 +115,7 @@ impl ExecCommandHandler {
             step_context,
             tracker,
             call_id,
+            source,
             payload,
             ..
         } = invocation;
@@ -126,8 +129,13 @@ impl ExecCommandHandler {
             }
         };
 
+        let creator_cell_id = match source {
+            ToolCallSource::Direct => None,
+            ToolCallSource::CodeMode { cell_id, .. } => Some(CellId::new(cell_id)),
+        };
         let manager: &UnifiedExecProcessManager = &session.services.unified_exec_manager;
-        let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone());
+        let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone())
+            .with_creator_cell_id(creator_cell_id);
         let environment_args: ExecCommandEnvironmentArgs = parse_arguments(&arguments)?;
         let Some(turn_environment) = resolve_tool_environment(
             &step_context.environments,
