@@ -27,6 +27,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Weak;
 
+use codex_code_mode::CellId;
 use codex_network_proxy::NetworkProxy;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_tools::UnifiedExecShellMode;
@@ -76,6 +77,7 @@ pub(crate) struct UnifiedExecContext {
     pub session: Arc<Session>,
     pub turn: Arc<TurnContext>,
     pub call_id: String,
+    pub creator_cell_id: Option<CellId>,
 }
 
 impl UnifiedExecContext {
@@ -84,7 +86,13 @@ impl UnifiedExecContext {
             session,
             turn,
             call_id,
+            creator_cell_id: None,
         }
+    }
+
+    pub fn with_creator_cell_id(mut self, creator_cell_id: Option<CellId>) -> Self {
+        self.creator_cell_id = creator_cell_id;
+        self
     }
 }
 
@@ -167,6 +175,7 @@ impl Default for UnifiedExecProcessManager {
 struct ProcessEntry {
     process: Arc<UnifiedExecProcess>,
     call_id: String,
+    creator_cell_id: Option<CellId>,
     process_id: i32,
     cwd: PathUri,
     initial_exec_command_active: Arc<std::sync::atomic::AtomicBool>,
