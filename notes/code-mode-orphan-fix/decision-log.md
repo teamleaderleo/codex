@@ -144,6 +144,21 @@ Why its ownership mechanism is not the selected contract:
 
 Retain the formatter and manager-query scaffolding, but replace prefix inference with typed creator-cell attribution.
 
+### Typed-attribution implementation revision
+
+Branch head prepared: `cea3f73d97897ca5ede37010cbd96addbabda6a5`
+
+New or changed decisions in this revision:
+
+- Nested tool call IDs remain opaque; cell ownership is no longer encoded in their text.
+- `ExecCommandHandler` converts `ToolCallSource::CodeMode { cell_id, ... }` into `Option<CellId>` on `UnifiedExecContext`.
+- `store_process` copies that optional value onto `ProcessEntry` before the initial yield wait completes.
+- `UnifiedExecProcessManager::live_process_ids_created_by_cell` performs exact typed matching, excludes exited processes, and returns sorted logical process IDs.
+- The outer runtime-response path skips the manager query for `RuntimeResponse::Yielded`; summaries are limited to `Result` and `Terminated` outcomes.
+- The status formatter sorts defensively before rendering, even though the manager query already returns sorted IDs.
+
+Validation state: implementation and unit-test edits are prepared but have not been compiled or executed yet. Agent 2's integration regression has not yet been combined with this branch.
+
 ## Regression-test provenance and obligation
 
 ### Existing failing regression
