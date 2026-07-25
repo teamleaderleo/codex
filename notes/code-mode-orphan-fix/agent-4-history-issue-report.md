@@ -5,13 +5,14 @@
 - Baseline: `20dafe201d91d4405eef05ecd1db0257f13a9ac8`
 - Research date: 2026-07-26
 - Publication status: private draft. No upstream issue, comment, or pull request has been published.
-- Publication gate: a clean regression-test commit and implementation commit that have both run successfully.
+- Verified baseline regression commit: [`7298dcf44f61164ffc25b8bdf5f136281caeb9f5`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
+- Publication gate: the verified baseline reproduction must be converted into a positive acceptance test and run successfully against the final typed-attribution implementation.
 
 ## Conclusion
 
 This work supports a strong standalone issue once the publication gate is met.
 
-Several public reports touch adjacent symptoms, but none currently combines the same concise failure sequence, executable reproduction, ownership analysis, intended-persistence history, and narrow implementation contract.
+Several public reports touch adjacent symptoms, but none currently combines the same concise failure sequence, a verified executable reproduction, explicit ownership analysis, intended-persistence history, and a narrow typed-attribution implementation contract.
 
 The bug is:
 
@@ -36,30 +37,41 @@ The ownership audit resolves an important ambiguity:
 
 This is why Patch 1 should change visibility rather than termination or persistence.
 
-## Current team evidence
+## Three evidence stages
 
-### Agent 2 regression test
+### 1. Verified baseline reproduction
 
-Scratch branch: [`research/code-mode-live-session-test`](https://github.com/teamleaderleo/codex/tree/research/code-mode-live-session-test)
+Resolved commit: [`7298dcf44f61164ffc25b8bdf5f136281caeb9f5`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
 
 Test: `code_mode_completion_does_not_surface_discarded_live_exec_sessions`
 
-The current test:
+Exact command: `<baseline-test-command — pending Agent 2 handoff>`
 
-- starts two nested long-running commands through `Promise.all`;
-- sets `yield_time_ms: 250`;
-- destructures only `{ output }`, deliberately discarding both session IDs;
-- confirms that two distinct background terminals remain alive after cell completion;
-- confirms the outer header says `Script completed` and contains no session information;
-- terminates every background terminal during teardown, including after a panic.
+Environment: a Linux VM hosted on macOS. Private usernames, machine paths, and log locations are intentionally omitted.
 
-This is direct executable evidence of the interface failure. Before publication, it should be consolidated onto the implementation branch, changed to assert the corrected terminal header, and run in the local Rust environment. A shared cross-platform long-running helper is preferable if practical; panic-safe teardown remains required.
+Verified result:
 
-### Agent 1 feasibility prototype
+```text
+test code_mode_completion_does_not_surface_discarded_live_exec_sessions ... ok
 
-Prototype branch: [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary)
+test result: ok. 1 passed; 0 failed; 0 ignored
+```
 
-Prototype commit: [`cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9)
+The negative regression passed and confirms that:
+
+- two nested long-running commands can cross `yield_time_ms` through `Promise.all`;
+- JavaScript can destructure only `{ output }`, discarding both copied session IDs;
+- the outer result can report `Script completed` without surfacing either ID;
+- two distinct background terminals remain alive in the conversation-level process manager; and
+- panic-safe teardown can terminate the remaining processes and verify that none remain.
+
+This is verified executable evidence of the baseline interface failure, rather than an unrun test proposal.
+
+### 2. Implementation under development
+
+Agent 1 is replacing the call-ID-prefix feasibility prototype with typed creator-cell attribution.
+
+The current prototype branch is [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary), with feasibility commit [`cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9).
 
 The prototype proves that the outer runtime-response boundary can:
 
@@ -82,6 +94,8 @@ Output:
 
 Its call-ID-prefix mechanism is **feasibility evidence, not the recommended ownership API**. Encoding `CellId` into call IDs and recovering ownership with `starts_with` can collide, leaks unrestricted cell strings into identifiers and tracing, and makes a representation convention responsible for resource attribution.
 
+The replacement implementation is still under development and must not yet be described as fully tested or accepted.
+
 ### Recommended implementation contract
 
 Patch 1 should preserve existing typed source metadata through unified exec:
@@ -96,6 +110,21 @@ Patch 1 should preserve existing typed source metadata through unified exec:
 8. Do not create a second liveness registry or infer ownership from emitted JavaScript values.
 
 The prototype's manager-query and header-formatting scaffolding may be reusable. Typed creator attribution should replace prefix matching before the work is presented as the implementation.
+
+### 3. Publication gate
+
+Keep the issue private until the verified baseline reproduction has been converted into a positive acceptance test and run successfully against the final implementation.
+
+The final evidence pair should be:
+
+- **Clean baseline regression commit:** [`7298dcf44f61164ffc25b8bdf5f136281caeb9f5`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
+- **Tested implementation and positive acceptance commit or PR:** `<tested-implementation-commit-or-pr>`
+- **Positive test command:** `<positive-acceptance-test-command>`
+- **Positive test result:** `<positive-acceptance-test-result>`
+
+At publication time, link stable commits or a clean comparison/PR rather than relying on scratch-branch state. The issue can then serve as a concise design record:
+
+**observed incident → six-step reproduction → verified baseline failure → ownership boundary → tested visibility patch**
 
 ## Intended persistence history
 
@@ -117,26 +146,15 @@ Code mode loses that protection when JavaScript emits or retains only selected f
 
 These are useful prior art and cross-links, not reasons to suppress a tested standalone report.
 
-- **#34866:** closest visible outer-completed/inner-running symptom for a nested shell session. This work adds deliberate handle projection, multiple live sessions, manager-state verification, a contract test, and a typed per-cell implementation design.
-- **#32411:** covers un-emitted nested results and artifact handles generally. Here the discarded value controls a process that remains alive independently in the conversation-level manager.
-- **#33816:** covers model-side abandonment after a direct exec session was exposed. Here the runtime/API path removes the handle before the model receives the outer result.
-- **#14731:** proposes guarding turn completion while background processes remain live. This work preserves intended persistence and changes terminal code-cell visibility only.
-- **#15723:** covers waking a parent after background work completes. It is relevant to broader ownership and eventing, not this initial handle-loss fix.
+- **#34866:** similar outer-completed/inner-running symptom; this work adds deliberate handle projection, multiple manager-owned sessions, a verified contract test, and typed creator attribution.
+- **#32411:** general loss of un-emitted nested results; this case loses control of independently manager-owned live processes.
+- **#33816:** abandonment after a direct session was exposed; this case hides the handles before the model receives the outer result.
+- **#14731:** proposes blocking turn completion; this proposal preserves persistence and changes terminal code-cell visibility only.
+- **#15723:** parent wake-up after background completion; separate eventing and ownership concern.
+
+Immediately before publication, re-fetch each related issue and its recent discussion. Confirm its state, title, current scope, maintainer guidance, and whether a newer duplicate or implementation has appeared. Update or remove distinctions that are no longer accurate.
 
 Separate audit findings involving delayed dispatch, shutdown races, remote bulk termination, stale bookkeeping, hidden-subagent policy, and macOS crash recovery should receive their own tests and issue decisions.
-
-## Publication recommendation
-
-Keep the issue private until both of these exist and have run:
-
-- **Regression commit:** `<tested-regression-commit>`
-- **Implementation commit:** `<tested-implementation-commit>`
-
-At publication time, replace scratch-branch links with those stable commits or a clean comparison/PR link. The issue can then serve as a concise design record for the prospective PR:
-
-**observed incident → six-step reproduction → failing contract test → ownership boundary → tested visibility patch**
-
-Do not upload private rollout logs, prompts, environment dumps, machine-specific paths, image data, tokens, or unrelated conversation content.
 
 ---
 
@@ -148,7 +166,7 @@ Do not upload private rollout logs, prompts, environment dumps, machine-specific
 
 A code-mode JavaScript cell can finish with `Script completed` while nested `exec_command` processes remain alive and their session handles have disappeared from the model-visible result.
 
-The reproducible sequence is:
+The reproduced sequence is:
 
 1. Start two nested `tools.exec_command()` calls with `Promise.all`.
 2. Both commands reach `yield_time_ms`; unified exec stores the live processes and returns copied `session_id` handles.
@@ -176,7 +194,29 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-The shell commands are compact examples. The regression test uses bounded, panic-safe cleanup; its final published form should use the cleanest available deterministic long-running helper.
+The shell commands are compact examples. The verified regression uses bounded, panic-safe cleanup. Its final published form should use the cleanest available deterministic long-running helper.
+
+## Verified baseline reproduction
+
+The baseline failure was reproduced by `code_mode_completion_does_not_surface_discarded_live_exec_sessions` at commit [`7298dcf44f61164ffc25b8bdf5f136281caeb9f5`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5).
+
+It was run in a Linux VM hosted on macOS.
+
+Command:
+
+```text
+<baseline-test-command>
+```
+
+Result:
+
+```text
+test code_mode_completion_does_not_surface_discarded_live_exec_sessions ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored
+```
+
+The passing negative regression confirms that two nested session IDs can be discarded, the outer response can claim completion without surfacing them, and both background terminals can remain alive in the process manager.
 
 ## Actual behaviour
 
@@ -218,21 +258,24 @@ High confidence:
 
 The dispatch path already carries typed `ToolCallSource::CodeMode { cell_id, ... }` metadata, but baseline unified exec does not retain the creator cell on the live process entry.
 
-## Regression and implementation evidence
+## Implementation evidence and proposed narrow fix
 
-- Tested regression commit: `<tested-regression-commit>`
-- Tested implementation commit or PR: `<tested-implementation-commit-or-pr>`
-
-The current regression proves that two IDs can be discarded while both sessions remain alive and absent from the outer header.
+Implementation is under development.
 
 A feasibility prototype proves that the outer response can query the existing live-process manager, sort surviving IDs, and place them in the untruncated status header without changing persistence or the JavaScript result schema. Its call-ID-prefix matching is prototype-only and is not the proposed ownership API.
 
-## Proposed narrow fix
+The recommended implementation is:
 
 1. Preserve typed `ToolCallSource::CodeMode` creator-cell metadata through unified exec.
 2. Store optional creator-cell attribution on each live process entry.
 3. On terminal cell outcomes, query for still-live processes created by that cell.
 4. Sort and append their logical session IDs to the untruncated outer status header.
+
+Final implementation evidence:
+
+- Implementation commit or PR: `<tested-implementation-commit-or-pr>`
+- Positive acceptance test command: `<positive-acceptance-test-command>`
+- Positive acceptance test result: `<positive-acceptance-test-result>`
 
 ### Non-goals
 
@@ -248,17 +291,40 @@ This change does not:
 
 ## Related issues
 
-- #34866: similar outer-completed/inner-running symptom; this report adds deliberate handle loss, multiple sessions, a contract test, and typed creator attribution.
-- #32411: general loss of un-emitted nested results; this case loses control of a separately manager-owned live process.
-- #33816: abandonment after a direct session was exposed; this case hides the handle before the model receives the outer result.
+- #34866: similar outer-completed/inner-running symptom; this report adds deliberate handle loss, multiple sessions, a verified contract test, and typed creator attribution.
+- #32411: general loss of un-emitted nested results; this case loses control of manager-owned live processes.
+- #33816: abandonment after a direct session was exposed; this case hides the handles before the outer result reaches the model.
 - #14731: proposes blocking turn completion; this proposal preserves persistence and changes visibility only.
-- #15723: parent wake-up after background completion; separate eventing and ownership concern.
+- #15723: parent wake-up after background completion; separate eventing concern.
 
 ## Maintainer question
 
 Does preserving typed creator-cell attribution on unified-exec process entries and surfacing surviving session IDs in terminal code-mode headers fit the intended ownership contract?
 
 ---
+
+## Final publication checklist
+
+- [x] Baseline failure reproduced by an executable regression test.
+- [x] Baseline regression resolved to commit `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`.
+- [x] Baseline regression passed: `1 passed; 0 failed; 0 ignored`.
+- [x] Test environment described only as a Linux VM hosted on macOS.
+- [ ] Insert the exact baseline test command supplied by Agent 2.
+- [ ] Replace the prefix-based feasibility mechanism with typed creator-cell attribution.
+- [ ] Convert the negative baseline regression into a positive acceptance test.
+- [ ] Run the positive acceptance test against the final implementation.
+- [ ] Insert the final implementation commit or PR link.
+- [ ] Insert the positive test command and result.
+- [ ] Confirm terminal success, failure, and explicit-termination behaviour.
+- [ ] Confirm ordinary `Yielded` responses remain completion-neutral.
+- [ ] Confirm deterministic ID sorting and output-truncation protection.
+- [ ] Confirm panic-safe teardown leaves no background test processes.
+- [ ] Re-check #34866, #32411, #33816, #14731, and #15723 immediately before publication, including current status and recent discussion.
+- [ ] Search once more for newer duplicate issues or merged fixes.
+- [ ] Replace scratch-branch references with stable tested commits or a clean PR comparison.
+- [ ] Remove all placeholders and verify that no private paths, usernames, logs, prompts, tokens, or unrelated incident data are included.
+- [ ] Decide whether to publish immediately before the PR or alongside it.
+- [ ] Perform a final word-count and clarity edit.
 
 ## Compact handoff
 
@@ -267,9 +333,9 @@ Agent: 4 — history and upstream issue editor
 Branch/ref: research/code-mode-orphan-handoffs
 Baseline: 20dafe201d91d4405eef05ecd1db0257f13a9ac8
 Changed files: notes/code-mode-orphan-fix/agent-4-history-issue-report.md
-Tests run and results: none; documentation-only revision
-Confirmed findings: Agent 1 proves manager-query/header feasibility; recommended implementation uses typed ToolCallSource::CodeMode creator attribution on ProcessEntry; process ownership transfers to the conversation-level manager before JavaScript can discard its copied handle
-Open risks: final process-entry field shape and query API; terminal-failure/termination semantics; cross-platform regression helper; race coverage for one process exiting before summary generation
-Publication questions: publish issue before or alongside the prospective PR; exact tested commit/PR links; whether maintainers prefer the header wording or another model-facing representation
-Recommended next action: consolidate and run the positive regression with the typed-attribution implementation, then replace placeholders and perform one final issue-editing pass
+Tests run and results: Agent 4 ran no tests; Agent 2's negative regression at 7298dcf44f61164ffc25b8bdf5f136281caeb9f5 was reported and recorded as passing in a Linux VM hosted on macOS: 1 passed, 0 failed, 0 ignored
+Confirmed findings: baseline handle-loss failure is now verified; Agent 1's prefix prototype proves manager-query/header feasibility only; recommended implementation remains typed ToolCallSource::CodeMode creator attribution on the live process entry
+Blank or unverified: exact baseline test command; final typed-attribution commit/PR; positive acceptance-test command and result; final terminal-failure/termination, truncation, sorting, and process-exit race coverage
+Publication questions: publish immediately before or alongside the PR; final header wording; any changed status or maintainer guidance in the related issues at publication time
+Recommended next action: complete typed creator attribution, convert and run the positive acceptance test, fill all evidence placeholders, re-check related issues, then perform the final publication edit
 ```
