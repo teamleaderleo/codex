@@ -26,34 +26,38 @@ This is the canonical cross-agent status page for the code-mode orphan investiga
 
 ## Agent status
 
-### Agent 1 / integrator prototype
+### Agent 1 / integrator implementation
 
 Branch: `fix/code-mode-live-session-summary`
 
+Head: `cea3f73d97897ca5ede37010cbd96addbabda6a5`
+
 State:
 
-- Three commits ahead of the baseline.
-- Changes only `codex-rs/core/src/tools/code_mode/mod.rs`.
-- Adds status formatting and live-process lookup.
-- Has not yet been validated with the full regression test.
+- Typed creator-cell attribution now flows from `ToolCallSource::CodeMode` through `ExecCommandHandler` and `UnifiedExecContext` into each stored live `ProcessEntry`.
+- The process manager exposes an exact-cell, live-only, sorted process-ID query.
+- Outer code-mode status uses that query only for `Result` and `Terminated`; ordinary `Yielded` responses remain unchanged.
+- Nested tool call IDs are opaque again; the discarded prefix ownership prototype is no longer present in the net diff.
+- JavaScript `session_id` output and cross-turn process persistence are unchanged.
+- Six core files are modified, including direct `ProcessEntry` unit-test fixtures.
+- The branch contains prototype history that can be squashed later; review should use the net diff from the baseline.
+- No formatting, compilation, unit test, or integration test has been run against this head yet.
 
-What is worth keeping:
+Unit coverage prepared:
 
-- Querying the live process manager at the outer response boundary.
-- Sorting reported IDs.
-- Putting the warning in the status header so output truncation cannot erase it.
-- Preserving the JavaScript result schema and process persistence policy.
+- terminal outcome selection excludes `Yielded`;
+- success, failure, and explicit termination surface sorted IDs;
+- a yielded status does not surface the completion-oriented warning.
 
-Required revision before treating it as the implementation:
+Remaining validation:
 
-- Do not encode ownership as `exec-cell-<cell_id>-...` and recover it with `starts_with`. `CellId` is an unrestricted string, so prefixes can collide (`1` versus `1-x`) and arbitrary IDs leak into tool-call identifiers and tracing.
-- Carry the existing `ToolCallSource::CodeMode` cell identity into unified exec and store creator attribution on the process entry.
-- Query by typed creator cell ID.
-- Do not add the background-session line to ordinary `Yielded` responses.
-- Add the integration regression; current unit coverage proves formatting only.
-- Cover terminal success, terminal failure, explicit termination, output truncation, one-of-two processes exiting, and sorted IDs.
+- combine Agent 2's regression with this branch;
+- compile and run focused core tests;
+- prove exact creator-cell filtering and live-only filtering through the integrated regression;
+- cover one process exiting before summary, output truncation, and panic-safe cleanup;
+- run formatting and inspect the resulting diff.
 
-Review verdict: useful prototype and formatter scaffolding; ownership mechanism should be replaced.
+Review verdict: implementation direction now matches the ownership audit; validation is still pending.
 
 ### Agent 2 / regression test
 
@@ -127,9 +131,9 @@ Review verdict: valuable issue-writing work; hold publication until the test and
 
 ## Recommended next sequence
 
-1. Revise Agent 1's implementation to use typed creator-cell attribution in unified exec.
-2. Bring Agent 2's regression onto that branch and change it to assert both live IDs appear in the outer terminal header.
-3. Run focused unit and integration tests, including teardown and truncation cases.
+1. Combine Agent 2's regression with the typed-attribution implementation and change it to assert both live IDs appear in the outer terminal header.
+2. Run formatting plus focused unit and integration tests, including teardown, one-of-two exit, and truncation cases.
+3. Review the net diff from the baseline and squash prototype history when the implementation is stable.
 4. Update Agent 4's issue draft with the tested design and Agent 3's ownership findings.
 5. Decide whether to publish the issue before proposing an upstream PR, consistent with the repository working rules.
 6. Track the delayed-dispatch, shutdown-race, remote-termination, and stale-bookkeeping findings as separate candidate issues.
