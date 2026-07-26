@@ -30,6 +30,10 @@ Machine-readable receipt branch:
 
 `automation/agent1-clean-candidate-results`
 
+Matched project-failure inventory:
+
+`notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md` at `a3cdd18d2cd8e60e5997c25dd41d55b1af2ec2db`
+
 ## Independent repository checks
 
 - Current `openai/codex` main still equals `61a44880a85d2fd0d8770908dea5733495e571c8` at review time.
@@ -80,17 +84,63 @@ Agent 1 recorded:
 - clean `git diff --check`;
 - complete workspace test: not run pending explicit human approval.
 
-The repository-native `just test -p codex-core` command was not green:
+### Corrected broad project results
 
-- 3,110 tests executed;
-- 3,017 passed;
-- 93 failed;
-- 9 skipped;
-- command exit 100.
+The retained nextest output corrected the earlier compact handoff transcription.
 
-The handoff identifies absent helper binaries, sandbox aborts, and unrelated assertions among the failures. No ad hoc Cargo fallback was used. However, the same command was not run against the exact clean upstream base in the same environment. The full 93-test failure set therefore cannot yet be classified as baseline-equivalent from the recorded evidence alone.
+Candidate `just test -p codex-core`:
 
-This red project result is not evidence that Patch 1 failed: the changed-area focused tests and complete acceptance target passed, and the candidate files are byte-identical to the previously focused-validated tree. It is nevertheless an unresolved submission-validation classification item and must not be described as a green `codex-core` project suite.
+- 3,110 tests run;
+- 3,015 passed, including one flaky pass;
+- 94 failed;
+- one timed out;
+- nine skipped.
+
+Exact upstream-base `just test -p codex-core`:
+
+- 3,102 tests run;
+- 3,007 passed;
+- 94 failed;
+- one timed out;
+- nine skipped.
+
+The broad project suite was not green on either ref and must not be described as green.
+
+### Independent differential verification
+
+Agent 3 independently inspected the retained raw candidate and upstream logs and reproduced the reported set comparison:
+
+- 93 failed-test names were shared;
+- the single timed-out test was shared;
+- candidate-only broad-run failure: `codex-core::all suite::unified_exec::unified_exec_formats_large_output_summary`;
+- upstream-only broad-run failure: `codex-core::all suite::compact_resume_fork::snapshot_rollback_followup_turn_trims_context_updates`;
+- the candidate added eight tests—three code-mode unit tests and five acceptance tests—and all eight passed.
+
+The two differential tests were then run three times on each ref in one shared runner and target cache. All 12 executions passed. The focused artifact status table independently confirms zero exits for every execution.
+
+The candidate-only and upstream-only broad-run failures are therefore classified as concurrency or run-order flakes, not persistent candidate regressions.
+
+The persistent broad-run outcomes are accounted for as:
+
+- missing helper binaries or environment dependencies;
+- sandbox, signal, timeout, or runner limitations;
+- assertions reproduced on exact upstream.
+
+No persistent candidate-only failure remains. No failure remains potentially related to Patch 1 or unclassified.
+
+### Validation classification
+
+The repository-native broad project suite is **baseline/environment-limited**, not green.
+
+That classification is sufficient to close the clean-candidate differential gate because:
+
+- the exact matched upstream command reproduced the persistent failure set;
+- the only two name differences disappeared in repeated focused runs on both refs;
+- all changed-area focused tests passed;
+- all five dedicated acceptance tests passed;
+- the candidate is byte-identical to the previously reviewed Patch 1 files.
+
+A complete workspace run is not required for this differential classification and remains subject to explicit human approval.
 
 ## Verdict
 
@@ -98,35 +148,13 @@ This red project result is not evidence that Patch 1 failed: the changed-area fo
 
 **Pass.**
 
-The clean candidate is suitable for final team review. No Patch 1 code change is requested.
+### Submission validation classification
 
-### Submission validation
+**Pass, with an explicit baseline-red caveat.**
 
-**Qualified / incomplete.**
+The candidate is ready for final team and human wording review. No Patch 1 code change or further matched project-suite rerun is requested.
 
-Final publication sign-off remains withheld on validation classification, not on code equivalence or Patch 1 correctness.
-
-## Minimal next validation step
-
-Run the same repository-native command against the exact upstream base `61a44880a85d2fd0d8770908dea5733495e571c8` in the same runner configuration:
-
-`just test -p codex-core`
-
-Compare at minimum:
-
-- failed-test names;
-- skip set;
-- failure classes;
-- helper-binary and sandbox failures;
-- any failure in code-mode or unified-exec areas;
-- aggregate counts.
-
-Decision rule:
-
-- If the clean candidate introduces no new failures relative to the matched upstream-base run, classify the broad project result as baseline/environment-limited and close this validation item.
-- If the clean candidate introduces new failures, investigate only the differential failures before publication.
-
-A complete workspace run is not required for this differential classification and remains subject to explicit human approval.
+Public wording must state the focused and acceptance results accurately and must not claim that the complete `codex-core` project suite or complete workspace suite passed.
 
 ## Other scope clarifications
 
