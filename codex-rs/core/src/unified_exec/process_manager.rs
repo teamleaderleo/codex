@@ -818,7 +818,8 @@ impl UnifiedExecProcessManager {
             } => (Some(process_id), exit_code, call_id),
             ProcessStatus::Exited { exit_code, entry } => {
                 let call_id = entry.call_id.clone();
-                if let Err(message) = finish_network_approval_after_process_exit_for_entry(&entry).await
+                if let Err(message) =
+                    finish_network_approval_after_process_exit_for_entry(&entry).await
                 {
                     return Err(fail_process_with_message(entry.process.as_ref(), message));
                 }

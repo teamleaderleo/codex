@@ -255,8 +255,9 @@ pub(super) async fn handle_runtime_response(
 fn terminal_cell_id(response: &RuntimeResponse) -> Option<&CellId> {
     match response {
         RuntimeResponse::Yielded { .. } => None,
-        RuntimeResponse::Terminated { cell_id, .. }
-        | RuntimeResponse::Result { cell_id, .. } => Some(cell_id),
+        RuntimeResponse::Terminated { cell_id, .. } | RuntimeResponse::Result { cell_id, .. } => {
+            Some(cell_id)
+        }
     }
 }
 
@@ -440,7 +441,10 @@ mod tests {
         };
 
         assert_eq!(terminal_cell_id(&yielded), None);
-        assert_eq!(terminal_cell_id(&terminated).map(CellId::as_str), Some("97"));
+        assert_eq!(
+            terminal_cell_id(&terminated).map(CellId::as_str),
+            Some("97")
+        );
     }
 
     #[test]
