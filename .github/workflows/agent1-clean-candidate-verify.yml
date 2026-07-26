@@ -1,0 +1,203 @@
+name: Agent 1 verify clean Patch 1 candidate
+
+on:
+  push:
+    branches:
+      - automation/agent1-clean-candidate-verify
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      UPSTREAM_BASE: 61a44880a85d2fd0d8770908dea5733495e571c8
+      REVIEWED: 73e5b9fc28de0815975fad3c3d70a6a0b38399b1
+      CLEAN_BRANCH: fix/code-mode-live-session-summary-clean
+      CLEAN_HEAD: 3778e1fae6e7e3d885252282a7c5ce67e06730ff
+      RESULTS_BRANCH: automation/agent1-clean-candidate-results
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 1
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up repository CI tools
+        uses: ./.github/actions/setup-ci
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.3"
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: cargo-nextest
+
+      - name: Verify candidate and publish receipt
+        shell: bash
+        run: |
+          set -u
+          record_dir="$RUNNER_TEMP/agent1-clean-candidate-verify"
+          mkdir -p "$record_dir"
+          statuses="$record_dir/statuses.txt"
+          : > "$statuses"
+
+          files=(
+            codex-rs/core/src/tools/code_mode/mod.rs
+            codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+            codex-rs/core/src/unified_exec/mod.rs
+            codex-rs/core/src/unified_exec/mod_tests.rs
+            codex-rs/core/src/unified_exec/process_manager.rs
+            codex-rs/core/src/unified_exec/process_manager_tests.rs
+            codex-rs/core/tests/code_mode_orphan_sessions.rs
+          )
+
+          run_phase() {
+            local name="$1"
+            shift
+            set +e
+            "$@" > >(tee "$record_dir/$name.log") 2>&1
+            local status=$?
+            set -e
+            echo "$name=$status" | tee -a "$statuses"
+            return 0
+          }
+
+          set -e
+          git fetch --no-tags origin "$CLEAN_BRANCH" "$REVIEWED"
+          git switch --detach "$CLEAN_HEAD"
+          actual_head=$(git rev-parse HEAD)
+          branch_head=$(git rev-parse "origin/$CLEAN_BRANCH")
+          test "$actual_head" = "$CLEAN_HEAD"
+          test "$branch_head" = "$CLEAN_HEAD"
+          test "$(git rev-list --count "$UPSTREAM_BASE"..HEAD)" -eq 1
+
+          printf '%s\n' "${files[@]}" | sort > "$record_dir/expected-files.txt"
+          git diff --name-only "$UPSTREAM_BASE"...HEAD | sort > "$record_dir/actual-files.txt"
+          diff -u "$record_dir/expected-files.txt" "$record_dir/actual-files.txt" \
+            > "$record_dir/path-equivalence.diff"
+          echo "path_equivalence=0" >> "$statuses"
+
+          set +e
+          git diff --exit-code "$REVIEWED" HEAD -- "${files[@]}" \
+            > "$record_dir/reviewed-equivalence.diff" 2>&1
+          equivalence_status=$?
+          set -e
+          echo "reviewed_equivalence=$equivalence_status" >> "$statuses"
+
+          run_phase format just fmt
+          git diff --name-only | sort > "$record_dir/files-changed-by-format.txt"
+          format_dirty=0
+          if [[ -s "$record_dir/files-changed-by-format.txt" ]]; then
+            format_dirty=1
+          fi
+          echo "format_dirty=$format_dirty" >> "$statuses"
+
+          git reset --hard "$CLEAN_HEAD"
+          git clean -fd
+          run_phase fix just fix -p codex-core
+          git diff --name-only | sort > "$record_dir/files-changed-by-fix.txt"
+          fix_dirty=0
+          if [[ -s "$record_dir/files-changed-by-fix.txt" ]]; then
+            fix_dirty=1
+          fi
+          echo "fix_dirty=$fix_dirty" >> "$statuses"
+
+          git reset --hard "$CLEAN_HEAD"
+          git clean -fd
+          run_phase project_tests just test -p codex-core
+          run_phase acceptance just test -p codex-core \
+            --test code_mode_orphan_sessions \
+            --test-threads=1 \
+            --no-capture
+
+          {
+            echo "git_status_short_begin"
+            git status --short
+            echo "git_status_short_end"
+            echo "git_diff_check_begin"
+            git diff --check
+            echo "git_diff_check_end"
+            echo "git_log_begin"
+            git log --oneline --decorate -8
+            echo "git_log_end"
+            echo "git_diff_stat_begin"
+            git diff --stat "$UPSTREAM_BASE"...HEAD
+            echo "git_diff_stat_end"
+            echo "git_diff_name_status_begin"
+            git diff --name-status "$UPSTREAM_BASE"...HEAD
+            echo "git_diff_name_status_end"
+          } > "$record_dir/final-inspection.txt"
+
+          receipt="$record_dir/agent-1-clean-candidate-validation.txt"
+          {
+            echo "upstream_base_sha=$UPSTREAM_BASE"
+            echo "clean_branch=$CLEAN_BRANCH"
+            echo "clean_head_sha=$CLEAN_HEAD"
+            echo "reviewed_head_sha=$REVIEWED"
+            echo "commit_count=$(git rev-list --count "$UPSTREAM_BASE"..HEAD)"
+            echo "worktree_sha_before_format=$CLEAN_HEAD"
+            echo "worktree_dirty_before_format=clean"
+            echo "required_tool_availability=setup-ci,just,dotslash,uv,cargo-nextest"
+            cat "$statuses"
+            echo "worktree_sha_after_format_and_fix=$CLEAN_HEAD"
+            echo "worktree_dirty_after_format_and_fix=clean_after_reset"
+            echo "complete_workspace_test=not_run_pending_explicit_human_approval"
+            echo "comparison=https://github.com/teamleaderleo/codex/compare/$UPSTREAM_BASE...$CLEAN_HEAD"
+            echo
+            echo "changed_files:"
+            cat "$record_dir/actual-files.txt"
+            echo
+            echo "files_changed_by_format:"
+            cat "$record_dir/files-changed-by-format.txt"
+            echo
+            echo "files_changed_by_fix:"
+            cat "$record_dir/files-changed-by-fix.txt"
+            echo
+            cat "$record_dir/final-inspection.txt"
+          } > "$receipt"
+
+          overall=0
+          while IFS='=' read -r key value; do
+            case "$key" in
+              format|fix|project_tests|acceptance|reviewed_equivalence|path_equivalence|format_dirty|fix_dirty)
+                if [[ "$value" != "0" ]]; then
+                  overall=1
+                fi
+                ;;
+            esac
+          done < "$statuses"
+          echo "overall=$overall" >> "$receipt"
+
+          git reset --hard "$CLEAN_HEAD"
+          git clean -fd
+          git switch -c "$RESULTS_BRANCH"
+          mkdir -p notes/code-mode-orphan-fix
+          cp "$receipt" notes/code-mode-orphan-fix/agent-1-clean-candidate-validation.txt
+          cp "$statuses" notes/code-mode-orphan-fix/agent-1-clean-candidate-statuses.txt
+          git add notes/code-mode-orphan-fix/agent-1-clean-candidate-validation.txt \
+            notes/code-mode-orphan-fix/agent-1-clean-candidate-statuses.txt
+          git config user.name "Agent 1 validation receipt"
+          git config user.email "teamleaderleo@users.noreply.github.com"
+          git commit -m "docs: record clean Patch 1 candidate validation"
+          git push origin "HEAD:refs/heads/$RESULTS_BRANCH"
+
+          exit "$overall"
+
+      - name: Upload verification record
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: agent1-clean-candidate-verification
+          path: ${{ runner.temp }}/agent1-clean-candidate-verify
+          if-no-files-found: warn
