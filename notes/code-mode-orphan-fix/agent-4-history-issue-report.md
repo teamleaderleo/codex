@@ -7,12 +7,13 @@
 - Publication status: private draft. No upstream issue, comment, or pull request has been published.
 - Verified baseline regression: [`7298dcf44f61164ffc25b8bdf5f136281caeb9f5`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
 - Verified acceptance head: [`89ffd99b81e872e3a961767e67fb8ec410df7eae`](https://github.com/teamleaderleo/codex/commit/89ffd99b81e872e3a961767e67fb8ec410df7eae)
-- Canonical integrated head: [`4263facaf3c7d30b26cae33fd1e679278ac02105`](https://github.com/teamleaderleo/codex/commit/4263facaf3c7d30b26cae33fd1e679278ac02105)
-- Publication gate: make the canonical branch green, complete final review, refresh related issues, and replace the remaining publication placeholders.
+- Canonical remote starting head: [`4263facaf3c7d30b26cae33fd1e679278ac02105`](https://github.com/teamleaderleo/codex/commit/4263facaf3c7d30b26cae33fd1e679278ac02105)
+- Validation dispatch: [`ddaad65e0ad98c8bc3400937b11f53fb14dd52b9`](https://github.com/teamleaderleo/codex/commit/ddaad65e0ad98c8bc3400937b11f53fb14dd52b9)
+- Current gate: the canonical integrated tree is green locally after Rust formatting, but the exact tested formatting-only descendant has not yet been confirmed on the remote branch or reviewed by Agent 3.
 
 ## Conclusion
 
-This work supports a strong standalone issue once the remaining canonical-branch gate is met.
+This work supports a strong standalone issue once the exact tested formatted tree is published and the final net diff is reviewed.
 
 The bug is:
 
@@ -70,7 +71,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored
 
 The negative regression confirms that JavaScript can discard two copied session IDs, the outer result can report `Script completed` without surfacing either ID, both manager-owned processes can remain alive, and panic-safe teardown removes all test processes.
 
-### 2. Verified equivalent combined acceptance state
+### 2. Verified acceptance lineage and equivalent combined run
 
 Implementation exercised: [`cea3f73d97897ca5ede37010cbd96addbabda6a5`](https://github.com/teamleaderleo/codex/commit/cea3f73d97897ca5ede37010cbd96addbabda6a5)
 
@@ -83,70 +84,174 @@ The acceptance lineage preserves the clean negative proof and contains these ord
 3. `0ba57a73ea5895883a21aeb88e923d75a74ed38d`
 4. `89ffd99b81e872e3a961767e67fb8ec410df7eae`
 
-The completion-header assertion is corrected. It now independently requires:
+The completion-header assertion is corrected. It independently requires:
 
 1. `Script completed\n` at the start;
 2. each actual surviving session ID exactly once and in numeric order; and
 3. `\nWall time ` after the session-summary line.
 
-Exact successful command:
+The equivalent combined state passed the complete focused acceptance file:
 
 ```sh
-RUST_MIN_STACK=8388608 \
-CARGO_BUILD_JOBS=4 \
-CARGO_INCREMENTAL=1 \
-CARGO_PROFILE_TEST_DEBUG=0 \
-CARGO_TARGET_DIR=/home/lima/.cache/codex-orphan-target \
-RUST_BACKTRACE=1 \
 cargo test -p codex-core \
   --test code_mode_orphan_sessions \
-  -- --nocapture --test-threads=1
+  -- --test-threads=1 --nocapture
 ```
-
-Verified equivalent combined result:
 
 ```text
 test result: ok. 5 passed; 0 failed; 0 ignored
 ```
 
-Harness-reported execution time: `16.37s`.
+That earlier equivalent run completed in 16.37 seconds and established the corrected contract before canonical validation.
 
-Verified coverage:
+### 3. Canonical integrated tree validated locally after Rust formatting
+
+Canonical branch: [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary)
+
+Remote starting head: [`4263facaf3c7d30b26cae33fd1e679278ac02105`](https://github.com/teamleaderleo/codex/commit/4263facaf3c7d30b26cae33fd1e679278ac02105)
+
+Its two-parent ancestry preserves the verified implementation and test lineages:
+
+- first parent: implementation `cea3f73d97897ca5ede37010cbd96addbabda6a5`;
+- second parent: acceptance `89ffd99b81e872e3a961767e67fb8ec410df7eae`;
+- the original negative reproduction remains in acceptance ancestry; and
+- the integrated tree contains the corrected five-test acceptance file.
+
+#### Formatting result and runbook deviation
+
+The full repository `just fmt` route could not run in the Lima VM because `just`, `dotslash`, and `uv` were absent.
+
+Because Patch 1 changes Rust files only, Agent 2 ran:
+
+```sh
+cargo fmt --all
+```
+
+from `codex-rs`. It changed only:
+
+```text
+codex-rs/core/src/tools/code_mode/mod.rs
+codex-rs/core/src/unified_exec/process_manager.rs
+```
+
+The changes were formatting-only. This is an explicit Rust-only formatter deviation, not a claim that the full multi-language repository formatter passed.
+
+A local formatting-only commit was created during validation, but its SHA was not captured in the shared handoff. GitHub still resolved the remote branch to `4263facaf3c7d30b26cae33fd1e679278ac02105` when checked.
+
+#### Compile/check
+
+Command:
+
+```sh
+cargo check \
+  --manifest-path codex-rs/Cargo.toml \
+  -p codex-core \
+  --tests
+```
+
+Result:
+
+```text
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 7m 48s
+```
+
+Compile/check passed. The reported `proc-macro-error2 v2.0.1` future-incompatibility warning is unrelated to Patch 1.
+
+#### Focused code-mode library tests
+
+Commands:
+
+```sh
+cargo test -p codex-core --lib terminal_cell_id_excludes_yielded_responses
+cargo test -p codex-core --lib terminal_script_status_surfaces_sorted_live_background_sessions
+cargo test -p codex-core --lib yielded_script_status_does_not_surface_background_sessions
+```
+
+Result:
+
+```text
+3 passed; 0 failed
+```
+
+#### Focused unified-exec library tests
+
+Commands:
+
+```sh
+cargo test -p codex-core --lib unified_exec_persists_across_requests
+cargo test -p codex-core --lib multi_unified_exec_sessions
+cargo test -p codex-core --lib pruning_does_not_evict_live_process_while_exited_process_is_finalizing
+```
+
+Result:
+
+```text
+3 passed; 0 failed
+```
+
+#### Complete canonical acceptance target
+
+Command:
+
+```sh
+cargo test -p codex-core \
+  --test code_mode_orphan_sessions \
+  -- --test-threads=1 --nocapture
+```
+
+Result:
+
+```text
+running 5 tests
+test code_mode_completion_reports_only_sessions_created_by_current_cell ... ok
+test code_mode_completion_reports_only_surviving_nested_session ... ok
+test code_mode_completion_surfaces_discarded_live_exec_sessions ... ok
+test large_emitted_output_does_not_truncate_live_session_warning ... ok
+test yielded_cell_response_does_not_include_completion_session_warning ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.12s
+```
+
+The target compiled in 1m45s before the 17.12-second execution.
+
+No test skips, flakes, or retries were observed. Panic-safe teardown remained active and left no registered background terminals.
+
+Verified coverage now includes:
 
 - both discarded surviving session IDs appear exactly once and in numeric order;
 - an exited process is excluded while the one survivor is reported;
 - large emitted output cannot truncate or displace the separately prepended session summary;
 - an ordinary yielded cell remains completion-neutral;
-- a two-cell case proves exact creator-cell isolation, so Cell A's process is not reported for Cell B; and
-- panic-safe teardown leaves no registered background terminals.
+- a two-cell case proves exact creator-cell isolation, so Cell A's process is not reported for Cell B;
+- unified-exec persistence remains intact in the focused library coverage;
+- pruning does not evict a live process while an exited process is finalising; and
+- acceptance cleanup leaves no registered background terminal behind.
 
-The first combined run reached four passes and one failure because the large-output test over-specified the retained excerpt. Acceptance head `89ffd99b81e872e3a961767e67fb8ec410df7eae` corrected only that assertion, after which the complete five-test file passed.
+#### Infrastructure incident, not a patch failure
 
-### 3. Canonical integrated branch and remaining gate
+One ad hoc fallback used an incorrectly broad command of the form:
 
-Canonical branch: [`fix/code-mode-live-session-summary`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary)
+```sh
+cargo test -p codex-core <test-name>
+```
 
-Integrated head: [`4263facaf3c7d30b26cae33fd1e679278ac02105`](https://github.com/teamleaderleo/codex/commit/4263facaf3c7d30b26cae33fd1e679278ac02105)
+That widened the build to unrelated integration-test binaries. Concurrent linkers were killed by signal 9 while linking unrelated targets.
 
-Its ancestry and tree preserve the verified work:
+This was a runner/resource and command-selection failure, not a Patch 1 compile error and not a failed test assertion. The corrected explicit `--lib` commands passed all six focused tests. A full workspace suite is not claimed.
 
-- first parent: typed-attribution implementation head `cea3f73d97897ca5ede37010cbd96addbabda6a5`;
-- second parent: verified acceptance head `89ffd99b81e872e3a961767e67fb8ec410df7eae`;
-- the original negative reproduction remains in acceptance ancestry;
-- the corrected positive suite is present in the integrated tree; and
-- the integrated production-and-test state matches the equivalent combined state exercised successfully by Agent 2.
+### 4. Remaining publication gate
 
-The following remain open on the canonical branch:
+The implementation and targeted validation are green locally. The remaining gate is provenance and final review:
 
-- formatting and inspected diff: `<canonical-format-result>`;
-- canonical compile or focused no-run result: `<canonical-compile-result>`;
-- focused code-mode and unified-exec unit-test results: `<focused-unit-test-results>`;
-- repeated five-test acceptance result from `4263facaf3c7d30b26cae33fd1e679278ac02105`: `<canonical-repeat-acceptance-result>`;
-- final reviewed clean head or PR comparison: `<final-reviewed-head-or-pr-comparison>`;
+- publish the exact Rust-formatted tested descendant: `<published-formatted-head>`;
+- confirm the formatting diff contains only the two expected Rust files: `<published-format-diff-check>`;
+- record final repository inspection results: `<final-inspection-results>`;
+- record Agent 3's final net-diff review: `<agent-3-review-result>`;
+- identify the final reviewed head or clean PR comparison: `<final-reviewed-head-or-pr-comparison>`;
 - upstream issue link: `<issue-link>`; and
 - pull-request link: `<pull-request-link>`.
 
-Keep the issue unpublished until these are resolved and the final net-diff review confirms that Patch 1 contains no lifecycle-policy expansion.
+Keep the issue and PR unpublished until the exact tested formatted tree is on the remote branch and Agent 3 confirms that the net diff contains no lifecycle-policy expansion or accidental validation artifacts.
 
 ## Recommended implementation contract
 
@@ -187,13 +292,13 @@ Direct exec already treats the live handle as essential state: `ExecCommandToolO
 
 Current private distinctions:
 
-- **#34866:** similar outer-completed/inner-running symptom; this work adds deliberate handle projection, multiple manager-owned sessions, a verified contract test, and typed creator attribution.
+- **#34866:** similar outer-completed/inner-running symptom; this work adds deliberate handle projection, multiple manager-owned sessions, verified acceptance coverage, and typed creator attribution.
 - **#32411:** general loss of un-emitted nested results; this case loses control of independently manager-owned live processes.
 - **#33816:** abandonment after a direct session was exposed; this case hides the handles before the model receives the outer result.
 - **#14731:** proposes blocking turn completion; this proposal preserves persistence and changes terminal code-cell visibility only.
 - **#15723:** parent wake-up after background completion; separate eventing and ownership concern.
 
-Do **not** perform the final related-issue refresh yet. Re-fetch these issues, their recent discussions, and any newer duplicate or merged fix only after the canonical branch is green, so the research is current at publication time.
+Do **not** perform the final related-issue refresh yet. Re-fetch these issues, their recent discussions, and any newer duplicate or merged fix only after Agent 1 publishes the exact formatted tested head and Agent 3 completes the final review, so the research is current at publication time.
 
 Separate findings involving delayed dispatch, shutdown races, remote bulk termination, stale bookkeeping, hidden-subagent policy, and macOS crash recovery remain outside Patch 1.
 
@@ -288,35 +393,22 @@ High confidence:
 
 ## Implementation and acceptance evidence
 
-Typed creator attribution is implemented in `cea3f73d97897ca5ede37010cbd96addbabda6a5`. Corrected acceptance coverage is preserved at `89ffd99b81e872e3a961767e67fb8ec410df7eae`. Canonical integrated head `4263facaf3c7d30b26cae33fd1e679278ac02105` merges those two histories and preserves the original negative reproduction in ancestry.
+Typed creator attribution is implemented in `cea3f73d97897ca5ede37010cbd96addbabda6a5`. Corrected acceptance coverage is preserved at `89ffd99b81e872e3a961767e67fb8ec410df7eae`. Canonical merge head `4263facaf3c7d30b26cae33fd1e679278ac02105` preserves both histories and the original negative reproduction.
 
-The equivalent combined state passed the complete focused acceptance file:
+A Rust-formatted local descendant of that canonical merge head passed:
 
-```sh
-RUST_MIN_STACK=8388608 \
-CARGO_BUILD_JOBS=4 \
-CARGO_INCREMENTAL=1 \
-CARGO_PROFILE_TEST_DEBUG=0 \
-CARGO_TARGET_DIR=/home/lima/.cache/codex-orphan-target \
-RUST_BACKTRACE=1 \
-cargo test -p codex-core \
-  --test code_mode_orphan_sessions \
-  -- --nocapture --test-threads=1
-```
+- compile/check in 7m48s;
+- focused code-mode library tests: `3 passed; 0 failed`;
+- focused unified-exec library tests: `3 passed; 0 failed`;
+- complete acceptance file: `5 passed; 0 failed; 0 ignored`, finished in 17.12s;
+- no skips or flakes; and
+- panic-safe cleanup with no remaining registered background terminals.
 
-```text
-test result: ok. 5 passed; 0 failed; 0 ignored
-```
+The passing acceptance cases cover two sorted live IDs, one-survivor filtering, large-output truncation protection, yielded-cell neutrality, and exact two-cell creator isolation.
 
-The passing cases cover two sorted live IDs, one-survivor filtering, large-output truncation protection, yielded-cell neutrality, exact two-cell creator isolation, and panic-safe cleanup.
+The exact formatted tested descendant is not yet confirmed on the remote branch. Final public evidence:
 
-Before publication, add the canonical-branch validation record:
-
-- formatting: `<canonical-format-result>`;
-- compile or no-run: `<canonical-compile-result>`;
-- focused unit tests: `<focused-unit-test-results>`;
-- repeated acceptance: `<canonical-repeat-acceptance-result>`;
-- final reviewed head or PR comparison: `<final-reviewed-head-or-pr-comparison>`;
+- tested formatted head or PR: `<final-reviewed-head-or-pr-comparison>`;
 - issue: `<issue-link>`; and
 - PR: `<pull-request-link>`.
 
@@ -348,7 +440,7 @@ This change does not:
 - #14731: proposes blocking turn completion; this proposal preserves persistence and changes visibility only.
 - #15723: parent wake-up after background completion; separate eventing concern.
 
-Refresh these descriptions only after the canonical branch is green and immediately before publication.
+Refresh these descriptions only after the exact formatted tested head is published and reviewed, immediately before publication.
 
 ## Maintainer question
 
@@ -358,11 +450,11 @@ Does preserving typed creator-cell attribution on unified-exec process entries a
 
 ## Publication-order variants
 
-Both variants require a green canonical branch, final net-diff review, current related-issue research, and stable issue/PR links. Do not choose yet.
+Both variants require the exact formatted tested tree to be published, Agent 3's final review, current related-issue research, and stable issue/PR links. Do not choose yet.
 
 ### Variant A — issue immediately before the PR
 
-1. Finish canonical validation and review.
+1. Publish and review the exact tested formatted head.
 2. Refresh related issues and duplicate search.
 3. Publish the issue with stable tested links.
 4. Open the PR immediately afterward and cross-link it.
@@ -373,7 +465,7 @@ Publication-specific line:
 
 ### Variant B — issue linked alongside a draft PR
 
-1. Finish canonical validation and review.
+1. Publish and review the exact tested formatted head.
 2. Prepare a draft PR without publishing it yet.
 3. Refresh related issues and duplicate search.
 4. Publish the issue and draft PR as one cross-linked pair.
@@ -393,19 +485,25 @@ Publication-specific line:
 - [x] Large-output truncation coverage passes.
 - [x] Yielded-cell behaviour remains completion-neutral.
 - [x] Exact two-cell creator isolation is covered.
-- [x] Complete acceptance file passed on the equivalent combined state: `5 passed; 0 failed; 0 ignored`.
-- [x] Canonical integrated head `4263facaf3c7d30b26cae33fd1e679278ac02105` preserves implementation, corrected acceptance, and negative ancestry.
-- [ ] Fill `<canonical-format-result>`.
-- [ ] Fill `<canonical-compile-result>`.
-- [ ] Fill `<focused-unit-test-results>`.
-- [ ] Fill `<canonical-repeat-acceptance-result>`.
+- [x] Canonical merge head `4263facaf3c7d30b26cae33fd1e679278ac02105` preserves implementation, corrected acceptance, and negative ancestry.
+- [x] Rust formatting changed only the two expected Rust files in the local validation checkout.
+- [x] Canonical local compile/check passed in 7m48s.
+- [x] Focused code-mode tests passed: `3 passed; 0 failed`.
+- [x] Focused unified-exec tests passed: `3 passed; 0 failed`.
+- [x] Complete canonical acceptance file passed: `5 passed; 0 failed; 0 ignored`, 17.12s.
+- [x] No skips or flakes were observed.
+- [x] Broad fallback linker OOM classified as infrastructure/tool-selection failure, not a patch failure.
+- [ ] Fill `<published-formatted-head>`.
+- [ ] Fill `<published-format-diff-check>`.
+- [ ] Fill `<final-inspection-results>`.
+- [ ] Fill `<agent-3-review-result>`.
 - [ ] Fill `<final-reviewed-head-or-pr-comparison>`.
-- [ ] Confirm final net diff contains no lifecycle-policy expansion.
-- [ ] After the canonical branch is green, refresh #34866, #32411, #33816, #14731, and #15723.
-- [ ] After the canonical branch is green, search for newer duplicates or merged fixes.
+- [ ] Confirm final net diff contains no lifecycle-policy expansion or accidental validation artifacts.
+- [ ] Refresh #34866, #32411, #33816, #14731, and #15723 after Agent 1 publishes the exact tested head and Agent 3 completes review.
+- [ ] Search for newer duplicates or merged fixes at the same publication-time refresh.
 - [ ] Choose publication Variant A or Variant B.
 - [ ] Fill `<issue-link>` and `<pull-request-link>`.
-- [ ] Remove every placeholder and verify that no private logs, usernames, prompts, tokens, or unrelated incident data are included.
+- [ ] Remove every placeholder and verify that no private logs, usernames, prompts, tokens, machine-specific paths, or unrelated incident data appear in the public issue.
 - [ ] Perform a final word-count and clarity edit.
 
 ## Compact handoff
@@ -416,11 +514,12 @@ Branch/ref: research/code-mode-orphan-handoffs
 Baseline: 20dafe201d91d4405eef05ecd1db0257f13a9ac8
 Changed files: notes/code-mode-orphan-fix/agent-4-history-issue-report.md
 Tests run by Agent 4: none; documentation-only update
-Verified evidence recorded: baseline negative 1/1 passed; equivalent combined acceptance 5/5 passed; corrected completion-header assertion; one-survivor, truncation, yielded, exact two-cell isolation, and panic-safe cleanup coverage
-Canonical integrated head: 4263facaf3c7d30b26cae33fd1e679278ac02105, with implementation first parent cea3f73d97897ca5ede37010cbd96addbabda6a5 and acceptance second parent 89ffd99b81e872e3a961767e67fb8ec410df7eae; negative ancestry preserved
-Remaining placeholders: <canonical-format-result>; <canonical-compile-result>; <focused-unit-test-results>; <canonical-repeat-acceptance-result>; <final-reviewed-head-or-pr-comparison>; <issue-link>; <pull-request-link>
-Remaining unverified: canonical formatting and inspected diff; canonical compile/no-run; focused code-mode and unified-exec units; repeated five-test acceptance from canonical head; final reviewed clean head; final net-diff policy review
-Deferred research: related-issue and duplicate refresh begins only after the canonical branch is green
+Verified evidence recorded: Rust-formatted local descendant of canonical merge head compiled; code-mode units 3/3; unified-exec units 3/3; acceptance 5/5 in 17.12s; no skips or flakes; panic-safe cleanup remained active
+Formatting note: full repository formatter prerequisites were absent; cargo fmt --all changed only code_mode/mod.rs and process_manager.rs
+Infrastructure note: one invalid broad cargo-test fallback OOMed while linking unrelated integration targets; corrected --lib commands passed
+Remote state when checked: fix/code-mode-live-session-summary still resolved to unformatted merge head 4263facaf3c7d30b26cae33fd1e679278ac02105
+Remaining placeholders: <published-formatted-head>; <published-format-diff-check>; <final-inspection-results>; <agent-3-review-result>; <final-reviewed-head-or-pr-comparison>; <issue-link>; <pull-request-link>
+Deferred research: related-issue and duplicate refresh starts only after the exact tested formatted head is published and Agent 3 completes review
 Publication status: unpublished; Variant A and Variant B remain open
-Recommended next action: Agent 1 completes canonical validation, Agent 3 reviews the green net diff, then Agent 4 fills placeholders, refreshes related issues, and performs the final publication edit
+Recommended next action: Agent 1 publishes the exact formatted tested tree, Agent 3 reviews the remote net diff, then Agent 4 fills placeholders, refreshes related issues, and performs the final publication edit
 ```
