@@ -108,8 +108,7 @@ A matched broad `codex-core` run was red on both refs. Exact-base comparison and
 - [terminal-only lookup and status rendering](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/code_mode/mod.rs#L199-L300)
 - [direct manager-query unit test](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod_tests.rs#L332-L395)
 - [single aggregate integration-test convention](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/all.rs#L1-L9)
-- [supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md)
-- [matched broad-suite differential](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md)
+- [public validation summary and disclosure boundary](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md#executable-validation-summary)
 
 </details>
 
@@ -117,8 +116,8 @@ A matched broad `codex-core` run was red on both refs. Exact-base comparison and
 
 The fuller engineering record covers the ownership path, code walkthrough, historical context, rejected alternatives, test evolution, threat model, validation limits, and evidence provenance:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related issues
 
