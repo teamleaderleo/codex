@@ -108,7 +108,7 @@ The five aggregate acceptance cases cover:
 4. warning placement outside code-mode emitted-output truncation; and
 5. yielded-response neutrality.
 
-The aggregate test harness also verifies cleanup across success, returned error, and panic paths.
+The aggregate harness uses cleanup protection that runs after success, returned errors, and panics while preserving an original panic.
 
 A matched broad `codex-core` run was red on both the production-equivalent candidate and the exact upstream base because of environment dependencies, unavailable helper binaries, sandbox or runner limitations, and unrelated baseline failures. Repeated focused comparison left no persistent candidate-only failure. The broad project suite is not claimed as green.
 
