@@ -4,6 +4,7 @@ use super::*;
 use anyhow::ensure;
 use codex_core::CodexThread;
 use core_test_support::skip_if_remote;
+use core_test_support::skip_if_target_windows;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use std::future::Future;
@@ -159,6 +160,10 @@ async fn run_with_background_terminal_cleanup<T>(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn code_mode_completion_surfaces_discarded_live_exec_sessions() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_target_windows!(
+        Ok(()),
+        "test commands use POSIX shell syntax unsupported by the Windows exec target",
+    );
 
     let server = responses::start_mock_server().await;
     let (test, follow_up_mock) = prepare_code_mode_turn_with_auto_env(
@@ -291,6 +296,10 @@ text([short.output, survivor.output].join("|"));
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn large_emitted_output_does_not_truncate_live_session_warning() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_target_windows!(
+        Ok(()),
+        "test commands use POSIX shell syntax unsupported by the Windows exec target",
+    );
 
     let server = responses::start_mock_server().await;
     let (test, follow_up_mock) = prepare_code_mode_turn_with_auto_env(
@@ -361,6 +370,10 @@ text("x".repeat(65536));
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn yielded_cell_response_does_not_include_completion_session_warning() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_target_windows!(
+        Ok(()),
+        "test commands use POSIX shell syntax unsupported by the Windows exec target",
+    );
 
     let server = responses::start_mock_server().await;
     let (test, follow_up_mock) = prepare_code_mode_turn_with_auto_env(
@@ -404,6 +417,10 @@ await new Promise(() => {});
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn code_mode_completion_reports_only_sessions_created_by_current_cell() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    skip_if_target_windows!(
+        Ok(()),
+        "test commands use POSIX shell syntax unsupported by the Windows exec target",
+    );
 
     let server = responses::start_mock_server().await;
     let response_mock = responses::mount_sse_sequence(
