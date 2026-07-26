@@ -1,10 +1,8 @@
 # `Script completed` can omit session IDs for live nested terminals
 
-Unpublished issue text.
-
 ## Summary
 
-A code-mode JavaScript cell can start nested terminal commands, keep only their `.output`, and discard the returned session IDs. The cell can then report `Script completed` while those terminal sessions are still running. Codex still tracks them internally, but the model no longer has the session IDs needed to poll or terminate them.
+A code-mode JavaScript cell can start nested terminal commands, keep only their `.output`, and discard the returned session IDs. The cell can then report `Script completed` while those terminal sessions are still running. Codex still tracks them internally, but the model no longer has the session IDs needed to poll, send input to, or terminate them.
 
 Background terminal persistence is intentional. The defect is that a terminal code-mode result can lose model-visible control handles for work that remains live.
 
@@ -12,7 +10,7 @@ Background terminal persistence is intentional. The defect is that a terminal co
 
 The terminal result can make the script appear finished while nested commands continue running without an obvious control path. Depending on the command, the remaining processes may continue consuming CPU, memory, file descriptors, sockets, locks, subprocesses, network activity, or filesystem state until they exit or are found and terminated by another route.
 
-This is not evidence of a literal Rust memory leak, and this report does not assign a security severity. It is a control-visibility defect with operational resource-retention risk.
+This report does not classify the defect as a literal memory leak or assign a security severity. It is a control-visibility defect with operational resource-retention risk.
 
 ## Minimal reproduction
 
@@ -56,7 +54,7 @@ Output:
 orphan-a|orphan-b
 ```
 
-`6306` and `11236` are illustrative session IDs. The processes may continue running; the model retains the information needed to poll or terminate them.
+`6306` and `11236` are illustrative session IDs. The processes may continue running; the model retains the information needed to poll, send input to, or terminate them.
 
 ## Boundary
 
@@ -68,7 +66,7 @@ The proposed fix is visibility-only:
 - ordinary yielded code-cell responses remain unchanged;
 - nested tool-call IDs remain opaque;
 - the JavaScript-visible nested result schema is unchanged; and
-- process lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, and protocol behaviour do not change.
+- process lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, and public-protocol behaviour do not change.
 
 The status line is added outside code mode's emitted-output truncation step. The complete tool result remains subject to later global conversation-history limits.
 
@@ -88,7 +86,7 @@ Repository-native focused validation on Linux aarch64 recorded:
 - formatting and scoped fix/lint passed;
 - four focused unit tests passed;
 - five aggregate acceptance cases passed;
-- two existing compatibility tests passed 20/20 executions on the final candidate;
+- two existing compatibility tests, repeated ten times each, passed 20/20 executions on the final candidate;
 - the same tests passed 20/20 executions on the exact upstream base.
 
 A matched broad `codex-core` run was red on both refs. Exact-base comparison and focused reruns found no persistent candidate-only failure; the broad project suite is not claimed green. The complete workspace suite was not run.
