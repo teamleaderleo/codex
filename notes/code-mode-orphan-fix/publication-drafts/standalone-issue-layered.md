@@ -1,6 +1,6 @@
 # Layered standalone issue draft
 
-Status: unpublished. The proposed body below is intended for upstream publication after final human review. The deep-dive links should be pinned to the final documentation commit before publication.
+Status: unpublished. The proposed body below is intended for upstream publication after final human review.
 
 ## Proposed title
 
@@ -119,8 +119,8 @@ The complete workspace suite was not run.
 
 The fuller engineering record covers the ownership path, code walkthrough, historical context, rejected alternatives, test evolution, threat model, validation limits, and evidence provenance:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/docs/code-mode-public-package/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/docs/code-mode-public-package/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related issues
 
