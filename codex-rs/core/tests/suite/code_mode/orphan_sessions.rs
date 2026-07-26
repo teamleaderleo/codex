@@ -3,6 +3,7 @@
 use super::*;
 use anyhow::ensure;
 use codex_core::CodexThread;
+use core_test_support::skip_if_remote;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use std::future::Future;
@@ -160,7 +161,7 @@ async fn code_mode_completion_surfaces_discarded_live_exec_sessions() -> Result<
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = prepare_code_mode_turn(
+    let (test, follow_up_mock) = prepare_code_mode_turn_with_auto_env(
         &server,
         r#"
 const outputs = (await Promise.all([
@@ -206,6 +207,13 @@ text(outputs.join("|"));
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn code_mode_completion_reports_only_surviving_nested_session() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    // This case intentionally embeds host TempDir paths in shell commands. Those paths are not
+    // shared with Docker or Wine executors, so forcing it remote would test an invalid filesystem
+    // topology rather than natural process exit.
+    skip_if_remote!(
+        Ok(()),
+        "PID/release paths use a host TempDir that is not shared with the remote executor",
+    );
 
     let temp_dir = tempfile::TempDir::new()?;
     let pid_path = temp_dir.path().join("short.pid");
@@ -285,7 +293,7 @@ async fn large_emitted_output_does_not_truncate_live_session_warning() -> Result
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = prepare_code_mode_turn(
+    let (test, follow_up_mock) = prepare_code_mode_turn_with_auto_env(
         &server,
         r#"
 await tools.exec_command({ cmd: "printf large; sleep 60", yield_time_ms: 250 });
@@ -355,7 +363,7 @@ async fn yielded_cell_response_does_not_include_completion_session_warning() -> 
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = prepare_code_mode_turn(
+    let (test, follow_up_mock) = prepare_code_mode_turn_with_auto_env(
         &server,
         r#"
 await tools.exec_command({ cmd: "sleep 60", yield_time_ms: 250 });
@@ -444,7 +452,7 @@ text("cell-b");
                 .enable(Feature::CodeMode)
                 .expect("code mode should be enabled");
         });
-    let test = builder.build(&server).await?;
+    let test = builder.build_with_auto_env(&server).await?;
 
     run_with_background_terminal_cleanup(&test, async {
         test.submit_turn("start a background process from cell A")

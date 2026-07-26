@@ -55,6 +55,8 @@ pub(crate) const PUBLIC_TOOL_NAME: &str = codex_code_mode::PUBLIC_TOOL_NAME;
 pub(crate) const WAIT_TOOL_NAME: &str = codex_code_mode::WAIT_TOOL_NAME;
 pub(crate) const DEFAULT_WAIT_YIELD_TIME_MS: u64 = codex_code_mode::DEFAULT_WAIT_YIELD_TIME_MS;
 const BUFFERED_EXEC_YIELD_TIME_MS: u64 = 30_000;
+// Bound independently because this fragment enters model-visible context.
+const MAX_INLINE_BACKGROUND_SESSION_IDS: usize = 64;
 
 pub(crate) fn default_exec_yield_time_override_ms(features: &Features) -> Option<u64> {
     features
@@ -283,13 +285,21 @@ fn format_script_status(response: &RuntimeResponse, background_session_ids: &[i3
     if !matches!(response, RuntimeResponse::Yielded { .. }) && !background_session_ids.is_empty() {
         let mut session_ids = background_session_ids.to_vec();
         session_ids.sort_unstable();
-        let session_ids = session_ids
+        let omitted_count = session_ids
+            .len()
+            .saturating_sub(MAX_INLINE_BACKGROUND_SESSION_IDS);
+        let visible_session_ids = session_ids
             .into_iter()
+            .take(MAX_INLINE_BACKGROUND_SESSION_IDS)
             .map(|session_id| session_id.to_string())
             .collect::<Vec<_>>()
             .join(", ");
+
         status.push_str("\nBackground sessions still running: ");
-        status.push_str(&session_ids);
+        status.push_str(&visible_session_ids);
+        if omitted_count > 0 {
+            status.push_str(&format!(" (+{omitted_count} more)"));
+        }
     }
 
     status
@@ -413,6 +423,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::CodeModeService;
+    use super::MAX_INLINE_BACKGROUND_SESSION_IDS;
     use super::build_nested_tool_payload;
     use super::format_script_status;
     use super::terminal_cell_id;
@@ -477,6 +488,114 @@ mod tests {
             format_script_status(&terminated, &session_ids),
             "Script terminated\nBackground sessions still running: 6306, 11236"
         );
+    }
+
+    #[test]
+    fn terminal_script_status_preserves_sessions_at_display_limit() {
+        let completed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: None,
+        };
+        let session_ids = (1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32)
+            .rev()
+            .collect::<Vec<_>>();
+        let expected_session_ids = (1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32)
+            .map(|session_id| session_id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        assert_eq!(
+            format_script_status(&completed, &session_ids),
+            format!("Script completed\nBackground sessions still running: {expected_session_ids}")
+        );
+    }
+
+    #[test]
+    fn terminal_script_status_caps_sessions_above_display_limit() {
+        let completed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: None,
+        };
+        let session_ids = (1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32 + 1).collect::<Vec<_>>();
+        let status = format_script_status(&completed, &session_ids);
+        let warning = status
+            .strip_prefix("Script completed\nBackground sessions still running: ")
+            .expect("completed status should contain the background-session warning");
+        let (visible_ids, omitted) = warning
+            .rsplit_once(" (")
+            .expect("over-limit status should contain an omission suffix");
+
+        assert_eq!(
+            visible_ids.split(", ").count(),
+            MAX_INLINE_BACKGROUND_SESSION_IDS
+        );
+        assert_eq!(omitted, "+1 more)");
+        assert!(
+            !visible_ids
+                .split(", ")
+                .any(|id| id == (MAX_INLINE_BACKGROUND_SESSION_IDS + 1).to_string().as_str()),
+            "the deterministic prefix should exclude the first omitted ID: {status:?}"
+        );
+    }
+
+    #[test]
+    fn terminal_script_status_sorts_before_truncation() {
+        let completed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: None,
+        };
+        let mut session_ids = vec![9_999];
+        session_ids.extend((1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32).rev());
+        let expected_session_ids = (1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32)
+            .map(|session_id| session_id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        assert_eq!(
+            format_script_status(&completed, &session_ids),
+            format!(
+                "Script completed\nBackground sessions still running: \
+                 {expected_session_ids} (+1 more)"
+            )
+        );
+    }
+
+    #[test]
+    fn terminal_script_status_formats_exact_omitted_count() {
+        let completed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: None,
+        };
+        let omitted_count = 7;
+        let session_ids =
+            (1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32 + omitted_count).collect::<Vec<_>>();
+        let expected_session_ids = (1..=MAX_INLINE_BACKGROUND_SESSION_IDS as i32)
+            .map(|session_id| session_id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        assert_eq!(
+            format_script_status(&completed, &session_ids),
+            format!(
+                "Script completed\nBackground sessions still running: \
+                 {expected_session_ids} (+7 more)"
+            )
+        );
+    }
+
+    #[test]
+    fn terminal_script_status_omits_warning_for_empty_sessions() {
+        let completed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: None,
+        };
+
+        assert_eq!(format_script_status(&completed, &[]), "Script completed");
     }
 
     #[test]

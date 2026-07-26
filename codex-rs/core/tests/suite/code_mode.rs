@@ -201,19 +201,32 @@ async fn run_code_mode_turn_with_model_and_config(
     run_code_mode_turn_with_builder(server, prompt, code, builder).await
 }
 
-async fn prepare_code_mode_turn(
-    server: &MockServer,
-    code: &str,
-) -> Result<(TestCodex, ResponseMock)> {
-    let builder = test_codex()
+fn code_mode_test_builder() -> TestCodexBuilder {
+    test_codex()
         .with_model("test-gpt-5.1-codex")
         .with_config(|config| {
             config
                 .features
                 .enable(Feature::CodeMode)
                 .expect("code mode should be enabled");
-        });
-    prepare_code_mode_turn_with_builder(server, code, builder).await
+        })
+}
+
+async fn prepare_code_mode_turn(
+    server: &MockServer,
+    code: &str,
+) -> Result<(TestCodex, ResponseMock)> {
+    prepare_code_mode_turn_with_builder(server, code, code_mode_test_builder()).await
+}
+
+async fn prepare_code_mode_turn_with_auto_env(
+    server: &MockServer,
+    code: &str,
+) -> Result<(TestCodex, ResponseMock)> {
+    let mut builder = code_mode_test_builder();
+    let test = builder.build_with_auto_env(server).await?;
+    let second_mock = mount_code_mode_turn_responses(server, code).await;
+    Ok((test, second_mock))
 }
 
 async fn prepare_code_mode_turn_with_builder(
@@ -222,7 +235,11 @@ async fn prepare_code_mode_turn_with_builder(
     mut builder: TestCodexBuilder,
 ) -> Result<(TestCodex, ResponseMock)> {
     let test = builder.build(server).await?;
+    let second_mock = mount_code_mode_turn_responses(server, code).await;
+    Ok((test, second_mock))
+}
 
+async fn mount_code_mode_turn_responses(server: &MockServer, code: &str) -> ResponseMock {
     responses::mount_sse_once(
         server,
         sse(vec![
@@ -233,16 +250,14 @@ async fn prepare_code_mode_turn_with_builder(
     )
     .await;
 
-    let second_mock = responses::mount_sse_once(
+    responses::mount_sse_once(
         server,
         sse(vec![
             ev_assistant_message("msg-1", "done"),
             ev_completed("resp-2"),
         ]),
     )
-    .await;
-
-    Ok((test, second_mock))
+    .await
 }
 
 async fn run_code_mode_turn_with_builder(
