@@ -38,7 +38,7 @@ This PR is visibility-only.
 - Direct or unattributed process entries are excluded.
 - Nested tool-call IDs remain opaque.
 - The JavaScript-visible nested result schema is unchanged.
-- No process-lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, or public-protocol policy changes.
+- No changes to process lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, or public-protocol behaviour.
 
 The code-mode emitted output is truncated before the status header is prepended, so the live-session warning is outside that specific truncation boundary. The complete tool result remains subject to later global conversation-history limits.
 
