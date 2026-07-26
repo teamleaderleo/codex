@@ -4,7 +4,7 @@ Status: unpublished. The proposed body below is intended for upstream publicatio
 
 ## Proposed title
 
-Code mode can report completion after losing live nested session IDs
+`Script completed` can omit session IDs for live nested terminals
 
 ## Proposed body
 
@@ -16,9 +16,9 @@ Background terminal persistence is intentional. The defect is that a terminal co
 
 ### Impact
 
-A user or model can believe the script is finished while nested commands continue running without an obvious control path. Depending on the command, the remaining processes may continue consuming CPU, memory, file descriptors, sockets, locks, subprocesses, network activity, or filesystem state until they exit or are found and terminated by another route.
+The terminal result can make the script appear finished while nested commands continue running without an obvious control path. Depending on the command, the remaining processes may continue consuming CPU, memory, file descriptors, sockets, locks, subprocesses, network activity, or filesystem state until they exit or are found and terminated by another route.
 
-This is not evidence of a literal Rust memory leak, and this report does not assign a security severity. It is a control-visibility defect with operational resource-leak risk.
+This is not evidence of a literal Rust memory leak, and this report does not assign a security severity. It is a control-visibility defect with operational resource-retention risk.
 
 ### Minimal reproduction
 
@@ -62,7 +62,7 @@ Output:
 orphan-a|orphan-b
 ```
 
-`6306` and `11236` are illustrative session IDs. The processes may continue running; the model retains the information needed to manage them.
+`6306` and `11236` are illustrative session IDs. The processes may continue running; the model retains the information needed to poll or terminate them.
 
 ### Behavioural boundary
 
@@ -74,9 +74,9 @@ The proposed fix is visibility-only:
 - ordinary yielded code-cell responses remain unchanged;
 - nested tool-call IDs remain opaque;
 - the JavaScript-visible nested result schema is unchanged; and
-- no termination, pruning, persistence, shutdown, interrupt, recovery, or wake-up policy changes.
+- no process-lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, or protocol policy changes.
 
-The status line is added outside code-mode's emitted-output truncation step. The complete tool result remains subject to later global conversation-history limits.
+The status line is added outside code mode's emitted-output truncation step. The complete tool result remains subject to later global conversation-history limits.
 
 ### Reproduction and proposed implementation
 
@@ -98,9 +98,7 @@ Repository-native focused validation on Linux aarch64 recorded:
 - two existing compatibility tests passed 20/20 executions on the final candidate;
 - the same tests passed 20/20 executions on the exact upstream base.
 
-A matched broad `codex-core` run was red on both the candidate and exact base because of environment dependencies, unavailable helper binaries, sandbox or runner limitations, timeouts, and unrelated baseline failures. Focused comparison left no persistent candidate-only failure. The broad project suite is not claimed green.
-
-The complete workspace suite was not run.
+A matched broad `codex-core` run was red on both refs. Exact-base comparison and focused reruns found no persistent candidate-only failure; the broad project suite is not claimed green. The complete workspace suite was not run.
 
 <details>
 <summary>Implementation, test-convention, and validation sources</summary>
@@ -110,8 +108,8 @@ The complete workspace suite was not run.
 - [terminal-only lookup and status rendering](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/code_mode/mod.rs#L199-L300)
 - [direct manager-query unit test](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod_tests.rs#L332-L395)
 - [single aggregate integration-test convention](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/all.rs#L1-L9)
-- [supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md)
-- [matched broad-suite differential](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md)
+- [supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md)
+- [matched broad-suite differential](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md)
 
 </details>
 
@@ -119,8 +117,8 @@ The complete workspace suite was not run.
 
 The fuller engineering record covers the ownership path, code walkthrough, historical context, rejected alternatives, test evolution, threat model, validation limits, and evidence provenance:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related issues
 
