@@ -1,0 +1,194 @@
+name: Agent 1 clean Patch 1 candidate
+
+on:
+  push:
+    branches:
+      - automation/agent1-clean-candidate
+
+permissions:
+  contents: write
+
+jobs:
+  build-clean-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BASELINE: 20dafe201d91d4405eef05ecd1db0257f13a9ac8
+      REVIEWED: 73e5b9fc28de0815975fad3c3d70a6a0b38399b1
+      CLEAN_BRANCH: fix/code-mode-live-session-summary-clean
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 1
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout automation branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up repository CI tools
+        uses: ./.github/actions/setup-ci
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.3"
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: cargo-nextest
+
+      - name: Reconstruct one-commit clean candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/agent1-clean-candidate"
+
+          files=(
+            codex-rs/core/src/tools/code_mode/mod.rs
+            codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+            codex-rs/core/src/unified_exec/mod.rs
+            codex-rs/core/src/unified_exec/mod_tests.rs
+            codex-rs/core/src/unified_exec/process_manager.rs
+            codex-rs/core/src/unified_exec/process_manager_tests.rs
+            codex-rs/core/tests/code_mode_orphan_sessions.rs
+          )
+          printf '%s\n' "${files[@]}" | sort > "$RUNNER_TEMP/agent1-clean-candidate/expected-files.txt"
+
+          git remote add upstream https://github.com/openai/codex.git
+          git fetch --no-tags upstream main
+          upstream_base=$(git rev-parse FETCH_HEAD)
+          git fetch --no-tags origin "$BASELINE"
+          git fetch --no-tags origin "$REVIEWED"
+
+          git diff --name-only "$BASELINE" "$upstream_base" | sort > "$RUNNER_TEMP/agent1-clean-candidate/upstream-changed-files.txt"
+          comm -12 \
+            "$RUNNER_TEMP/agent1-clean-candidate/expected-files.txt" \
+            "$RUNNER_TEMP/agent1-clean-candidate/upstream-changed-files.txt" \
+            > "$RUNNER_TEMP/agent1-clean-candidate/upstream-conflicts.txt"
+          if [[ -s "$RUNNER_TEMP/agent1-clean-candidate/upstream-conflicts.txt" ]]; then
+            echo "Current upstream touched reviewed Patch 1 files:" >&2
+            cat "$RUNNER_TEMP/agent1-clean-candidate/upstream-conflicts.txt" >&2
+            exit 42
+          fi
+
+          git switch --detach "$upstream_base"
+          git switch -c "$CLEAN_BRANCH"
+          git diff --binary "$BASELINE" "$REVIEWED" -- "${files[@]}" \
+            > "$RUNNER_TEMP/agent1-clean-candidate/reviewed.patch"
+          git apply --index --3way "$RUNNER_TEMP/agent1-clean-candidate/reviewed.patch"
+
+          git config user.name "Agent 1 clean candidate"
+          git config user.email "teamleaderleo@users.noreply.github.com"
+          git commit -m "fix: surface live nested code-mode sessions"
+
+          pre_hygiene_sha=$(git rev-parse HEAD)
+          pre_hygiene_dirty=$(git status --porcelain)
+          {
+            echo "upstream_base_sha=$upstream_base"
+            echo "clean_branch=$CLEAN_BRANCH"
+            echo "worktree_sha_before_format=$pre_hygiene_sha"
+            echo "worktree_dirty_before_format=${pre_hygiene_dirty:-clean}"
+            echo "required_tool_availability=setup-ci, just, dotslash, uv, cargo-nextest"
+          } | tee "$RUNNER_TEMP/agent1-clean-candidate/named-tree-before.txt"
+
+          just fmt 2>&1 | tee "$RUNNER_TEMP/agent1-clean-candidate/just-fmt.log"
+          just fix -p codex-core 2>&1 | tee "$RUNNER_TEMP/agent1-clean-candidate/just-fix-codex-core.log"
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit --amend --no-edit
+          fi
+
+          clean_head=$(git rev-parse HEAD)
+          post_hygiene_dirty=$(git status --porcelain)
+          git diff --name-only "$upstream_base"...HEAD | sort \
+            > "$RUNNER_TEMP/agent1-clean-candidate/actual-files.txt"
+          diff -u \
+            "$RUNNER_TEMP/agent1-clean-candidate/expected-files.txt" \
+            "$RUNNER_TEMP/agent1-clean-candidate/actual-files.txt"
+          test "$(git rev-list --count "$upstream_base"..HEAD)" -eq 1
+          git diff --exit-code "$REVIEWED" HEAD -- "${files[@]}"
+          git diff --check "$upstream_base"...HEAD
+          test -z "$post_hygiene_dirty"
+
+          {
+            echo "worktree_sha_after_format_and_fix=$clean_head"
+            echo "worktree_dirty_after_format_and_fix=clean"
+            echo "files_changed_by_format_or_fix=$(git diff --name-only "$pre_hygiene_sha" "$clean_head" | paste -sd, -)"
+          } | tee "$RUNNER_TEMP/agent1-clean-candidate/named-tree-after.txt"
+
+          git push origin "HEAD:refs/heads/$CLEAN_BRANCH"
+
+          echo "UPSTREAM_BASE=$upstream_base" >> "$GITHUB_ENV"
+          echo "CLEAN_HEAD=$clean_head" >> "$GITHUB_ENV"
+          echo "CLEAN_BRANCH=$CLEAN_BRANCH" >> "$GITHUB_ENV"
+
+      - name: Run codex-core repository-native project tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          just test -p codex-core 2>&1 | tee "$RUNNER_TEMP/agent1-clean-candidate/codex-core-project-tests.log"
+
+      - name: Run dedicated code-mode orphan acceptance target
+        shell: bash
+        run: |
+          set -euo pipefail
+          just test -p codex-core \
+            --test code_mode_orphan_sessions \
+            --test-threads=1 \
+            --no-capture \
+            2>&1 | tee "$RUNNER_TEMP/agent1-clean-candidate/code-mode-orphan-acceptance.log"
+
+      - name: Record final repository inspection
+        if: always() && env.CLEAN_HEAD != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "git status --short"
+            git status --short
+            echo
+            echo "git diff --check"
+            git diff --check
+            echo
+            echo "git log --oneline --decorate -8"
+            git log --oneline --decorate -8
+            echo
+            echo "git diff --stat $UPSTREAM_BASE...HEAD"
+            git diff --stat "$UPSTREAM_BASE"...HEAD
+            echo
+            echo "git diff --name-status $UPSTREAM_BASE...HEAD"
+            git diff --name-status "$UPSTREAM_BASE"...HEAD
+            echo
+            echo "commit_count=$(git rev-list --count "$UPSTREAM_BASE"..HEAD)"
+            echo "comparison=https://github.com/teamleaderleo/codex/compare/$UPSTREAM_BASE...$CLEAN_HEAD"
+            echo "complete_workspace_test=not run pending explicit human approval"
+          } | tee "$RUNNER_TEMP/agent1-clean-candidate/final-inspection.txt"
+
+      - name: Write job summary
+        if: always() && env.CLEAN_HEAD != ''
+        shell: bash
+        run: |
+          {
+            echo "## Agent 1 clean candidate"
+            echo
+            echo "- Upstream base: \`$UPSTREAM_BASE\`"
+            echo "- Clean branch: \`$CLEAN_BRANCH\`"
+            echo "- Clean head: \`$CLEAN_HEAD\`"
+            echo "- Commit count: 1"
+            echo "- Full workspace test: not run pending explicit human approval"
+            echo
+            echo "Comparison: https://github.com/teamleaderleo/codex/compare/$UPSTREAM_BASE...$CLEAN_HEAD"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation record
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: agent1-clean-candidate-record
+          path: ${{ runner.temp }}/agent1-clean-candidate
+          if-no-files-found: warn
