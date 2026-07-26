@@ -93,7 +93,7 @@ That run also passed `just fmt`, `just fix -p codex-core`, `git diff --check`, w
 
 Exact current head `77e7e314...` adds only target-Windows guards to four POSIX-command acceptance cases. It has not yet received a new public Wine-exec or compatibility Actions run.
 
-No broad differential was run at the final capped or guard-only heads, and the complete workspace suite was not run. The [validation record](validation.md) gives exact refs and commands.
+No broad differential was run at the final capped or guard-only heads, and the complete workspace suite was not run. The [commit-pinned validation record](https://github.com/teamleaderleo/codex/blob/173be554a9e61e80ea682e304d7b2925af5cac64/notes/code-mode-orphan-fix/publication/validation.md) gives exact refs and commands.
 
 ## Review size and staging
 
