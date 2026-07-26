@@ -6,17 +6,21 @@ Investigation baseline: `20dafe201d91d4405eef05ecd1db0257f13a9ac8`
 
 ## Current phase
 
-Patch 1 correctness, clean-candidate review, and matched project-suite differential classification are complete.
+Patch 1 production correctness, clean-history reconstruction, architecture/API review, and matched project-suite differential classification are complete.
 
-The remaining work is:
+The final roundtable found one pre-publication test-conventions issue: the five acceptance cases should be moved from a standalone integration target into the repository's aggregated code-mode suite, with cleanup and timing robustness tightened. Production code should remain unchanged.
 
-1. complete the final team sanity review;
-2. update and review the unpublished issue and pull-request drafts against the clean candidate;
-3. complete the user's wording and presentation review;
-4. approve publication sequencing;
-5. publish and cross-link the upstream issue and pull request.
+Remaining work:
 
-Do not publish the upstream issue or open the upstream pull request until the remaining gate items below are complete.
+1. Agent 2 prepares and validates the test-only roundtable revision on a separate branch.
+2. Agent 3 reviews that test-only diff and validation receipt.
+3. Agent 1 performs a short contract sanity check against the revised tests.
+4. Agent 4 updates the unpublished issue and pull-request drafts against the final clean head.
+5. The user completes wording, process-feedback, and publication review.
+6. The user approves issue/PR sequencing and publication.
+7. Publish and cross-link only after the preceding gates are complete.
+
+Do not publish the upstream issue or open the upstream pull request yet.
 
 ## Selected Patch 1 contract
 
@@ -28,7 +32,7 @@ Do not publish the upstream issue or open the upstream pull request until the re
 6. Surface surviving logical process IDs in the outer status header after emitted-output truncation.
 7. Report the summary only for terminal cell outcomes: successful `Result`, failed `Result`, and explicit `Terminated`.
 8. Keep ordinary `Yielded` responses completion-neutral.
-9. Preserve opaque nested tool call IDs.
+9. Preserve opaque nested tool-call IDs.
 
 ## Preserved investigation evidence
 
@@ -44,22 +48,22 @@ Do not publish the upstream issue or open the upstream pull request until the re
 - Head: `89ffd99b81e872e3a961767e67fb8ec410df7eae`
 - Negative proof: `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`
 - Initial acceptance: `528171c72c06d8be3471752322b7755a1eac3ac8`
-- Contract and two-cell isolation correction: `0ba57a73ea5895883a21aeb88e923d75a74ed38d`
+- Contract and two-cell correction: `0ba57a73ea5895883a21aeb88e923d75a74ed38d`
 - Truncation assertion correction: `89ffd99b81e872e3a961767e67fb8ec410df7eae`
 
-Coverage includes two sorted IDs, one-survivor filtering, truncation placement, yielded neutrality, exact creator-cell isolation, and panic-safe cleanup.
+Coverage includes two sorted surviving IDs, exited-process exclusion, truncation placement, yielded neutrality, exact creator-cell isolation, and cleanup.
 
 ### Reviewed investigation implementation
 
 - Branch: `fix/code-mode-live-session-summary`
 - Reviewed formatted head: `73e5b9fc28de0815975fad3c3d70a6a0b38399b1`
-- Final review file: `notes/code-mode-orphan-fix/final-net-diff-review-73e5b9f.md`
-- Final review commit: `8577cea6c925dde7453641b7587190285979a3ad`
+- Final review: `notes/code-mode-orphan-fix/final-net-diff-review-73e5b9f.md`
+- Review commit: `8577cea6c925dde7453641b7587190285979a3ad`
 - Verdict: pass
 
-The investigation branches and Markdown remain provenance. They are not part of the upstream candidate.
+The investigation branches and Markdown are preserved as provenance and are not part of the upstream candidate.
 
-## Clean candidate
+## Current clean candidate
 
 Upstream base:
 
@@ -69,71 +73,74 @@ Branch:
 
 `fix/code-mode-live-session-summary-clean`
 
-Clean head:
+Current clean head before roundtable test polish:
 
 `3778e1fae6e7e3d885252282a7c5ce67e06730ff`
 
-Clean comparison:
+Comparison:
 
 `61a44880a85d2fd0d8770908dea5733495e571c8...3778e1fae6e7e3d885252282a7c5ce67e06730ff`
 
+Shape:
+
+- one coherent commit over current upstream main;
+- six production/internal-test files plus one standalone acceptance-test file;
+- 660 insertions and 4 deletions;
+- no research, coordination, audit, review, runtime-report, issue-draft, retrospective, or handoff Markdown;
+- no upstream conflict adaptation.
+
 Agent 1 handoff:
 
-- File: `notes/code-mode-orphan-fix/agent-1-clean-candidate-handoff.md`
-- Commit: `0a6e63cb5e97db6cf076a9559f71697ea21bce70`
+- `notes/code-mode-orphan-fix/agent-1-clean-candidate-handoff.md`
+- commit `0a6e63cb5e97db6cf076a9559f71697ea21bce70`
 
 Machine-readable receipt:
 
-- Branch: `automation/agent1-clean-candidate-results`
-- `notes/code-mode-orphan-fix/agent-1-clean-candidate-validation.txt`
-- `notes/code-mode-orphan-fix/agent-1-clean-candidate-statuses.txt`
+- branch `automation/agent1-clean-candidate-results`
 
-Candidate shape:
+## Production code review
 
-- one coherent commit over current upstream main;
-- exactly seven reviewed files;
-- 660 insertions and 4 deletions;
-- no research, coordination, audit, review, runtime-report, issue-draft, retrospective, or handoff Markdown;
-- no upstream conflict adaptation required.
+Final clean-candidate review:
 
-## Final clean-candidate review
+- file: `notes/code-mode-orphan-fix/final-clean-candidate-review-3778e1f.md`
+- initial commit: `0600d13b39780f359f83543cbfde308974f22634`
+- validation-closure update: `02bede7640df40661de2640156e7e51656b8ffdf`
 
-Review file:
+Architecture/API review:
 
-`notes/code-mode-orphan-fix/final-clean-candidate-review-3778e1f.md`
+- file: `notes/code-mode-orphan-fix/agent-3-architecture-api-conventions-review.md`
+- commit: `d73f6b99224589d9696d23ef8912f37b39f4921a`
 
-Initial review commit:
+Production verdict: **pass**.
 
-`0600d13b39780f359f83543cbfde308974f22634`
+Confirmed:
 
-Validation-closure update:
+- typed creator-cell attribution reaches stored `ProcessEntry` metadata;
+- manager state remains the sole liveness authority;
+- lookup is exact-cell, live-only, read-only, and deterministically ordered;
+- only terminal `Result` and `Terminated` disclose surviving sessions;
+- ordinary `Yielded` remains neutral;
+- the status survives output truncation;
+- nested call IDs remain opaque;
+- the JavaScript schema remains unchanged;
+- no lifecycle or protocol expansion is present.
 
-`02bede7640df40661de2640156e7e51656b8ffdf`
-
-### Code, scope, and history verdict
-
-**Pass.**
-
-All seven clean-candidate files have the exact same Git blob SHA as the corresponding files at `73e5b9fc28de0815975fad3c3d70a6a0b38399b1`.
-
-The clean candidate preserves the exact previously reviewed implementation and acceptance-test contents. It introduces no semantic adaptation and no lifecycle-policy expansion.
-
-No Patch 1 code change is requested.
+No production-code change is requested by the roundtable.
 
 ## Matched project-suite differential
 
 Failure inventory:
 
-- File: `notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md`
-- Commit: `a3cdd18d2cd8e60e5997c25dd41d55b1af2ec2db`
+- file: `notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md`
+- commit: `a3cdd18d2cd8e60e5997c25dd41d55b1af2ec2db`
 
 Command on both refs:
 
 `just test -p codex-core`
 
-Corrected candidate result:
+Candidate result:
 
-- 3,110 tests run;
+- 3,110 run;
 - 3,015 passed, including one flaky pass;
 - 94 failed;
 - one timed out;
@@ -141,7 +148,7 @@ Corrected candidate result:
 
 Exact upstream-base result:
 
-- 3,102 tests run;
+- 3,102 run;
 - 3,007 passed;
 - 94 failed;
 - one timed out;
@@ -149,111 +156,144 @@ Exact upstream-base result:
 
 Differential:
 
-- 93 failed-test names and the one timeout were shared;
-- candidate-only broad-run failure: `unified_exec_formats_large_output_summary`;
-- upstream-only broad-run failure: `snapshot_rollback_followup_turn_trims_context_updates`;
-- all eight Patch 1-added tests passed.
+- 93 failure names and the timeout were shared;
+- the candidate-only and upstream-only broad-run failures each passed three of three times on both refs in one shared focused runner/cache;
+- all eight Patch 1-added tests passed on the current candidate.
 
-Both differential tests then passed three of three times on the candidate and three of three times on upstream in one shared runner and target cache. Agent 3 independently inspected the raw project logs and focused artifact and confirmed the counts, set differences, and 12 successful focused executions.
+Classification: **pass with baseline-red caveat**.
 
-### Validation classification
+The broad project suite was not green on either ref. No persistent candidate-only failure remains, and nothing remains potentially related to Patch 1 or unclassified. Public copy must not claim that the complete project or workspace suite passed.
 
-**Pass, with a baseline-red caveat.**
+## Final roundtable
 
-The broad `codex-core` suite is not green on either ref. Its persistent failures are classified as missing dependencies, sandbox/runner limitations, or assertions reproduced on exact upstream. No persistent candidate-only failure remains; nothing remains potentially related to Patch 1 or unclassified.
+Directory:
 
-Public wording must not claim that the complete `codex-core` project suite or complete workspace suite passed.
+`notes/code-mode-orphan-fix/final-roundtable/`
 
-A complete workspace run remains unrun and is not required for this differential classification. It still requires explicit human approval if desired.
+Integrated reviews:
+
+- `agent-1-implementation-conventions.md` — pass with notes;
+- `agent-2-testing-conventions.md` — change requested;
+- `agent-4-publication-conventions.md` — pass with notes;
+- Agent 3 architecture review remains at its existing path.
+
+Synthesis:
+
+- file: `notes/code-mode-orphan-fix/final-roundtable/synthesis.md`
+- commit: `ecf6459c856a28b154d86ea9feca7336d478c99c`
+
+Roundtable conclusion:
+
+- production implementation passes;
+- public framing passes with bounded wording corrections;
+- one test-only revision is required before publication.
+
+## Required test-only revision
+
+Agent 2 should prepare a separate branch from clean head `3778e1fae6e7e3d885252282a7c5ce67e06730ff`.
+
+Recommended branch:
+
+`review/code-mode-roundtable-test-polish`
+
+Required scope:
+
+1. remove the standalone `codex-rs/core/tests/code_mode_orphan_sessions.rs` target;
+2. move the five acceptance cases into a focused child module of the existing code-mode suite, preferably `codex-rs/core/tests/suite/code_mode/orphan_sessions.rs`, registered from `tests/suite/code_mode.rs`;
+3. reuse existing code-mode helpers;
+4. include turn submission and process-creating setup inside cleanup protection;
+5. assert directly that the terminal-only warning is absent from yielded output;
+6. replace fixed sleeps with bounded polling or a deterministic completion handshake;
+7. preserve all five behavioural contracts;
+8. make no production-code changes.
+
+Focused validation only:
+
+- `just fmt`;
+- `just fix -p codex-core` if needed;
+- three affected module unit tests;
+- five revised acceptance cases through the aggregated `all` binary;
+- `git status --short`;
+- `git diff --check`.
+
+No new broad or workspace run is requested unless the focused revision exposes a concrete differential failure.
 
 ## Agent states
 
 ### Agent 1
 
-Clean-candidate construction and matched failure inventory are complete.
+Clean-candidate implementation and failure inventory are complete.
 
-Next responsibility: preserve `fix/code-mode-live-session-summary-clean` unchanged and participate in the final sanity review.
+Next: after Agent 2's test-only branch is reviewed, perform a brief sanity check that the revised tests still express the intended contract. Do not reopen production architecture broadly.
 
 ### Agent 2
 
-Focused and acceptance validation work is complete. No additional broad rerun is requested.
+Roundtable testing review found a concrete test-layout and robustness issue.
 
-Next responsibility: independently sanity-check the bounded validation wording and participate in the final team review.
+Next: prepare and validate the test-only polish branch described above. Do not modify production code or publish upstream.
 
 ### Agent 3
 
-Clean-candidate and differential review are complete.
+Production, differential, conventions, and roundtable synthesis reviews are complete.
 
-Next responsibility: participate in the final team sanity review and reject any late scope or validation overstatement.
+Next: review Agent 2's test-only diff and focused validation receipt, then consolidate the final clean head.
 
 ### Agent 4
 
-Issue and PR drafts remain unpublished.
+Publication review is complete, but drafts remain unpublished.
 
-Next responsibility: update the drafts with clean head `3778e1fae6e7e3d885252282a7c5ce67e06730ff`, upstream base `61a44880a85d2fd0d8770908dea5733495e571c8`, the corrected broad counts, and the baseline/environment-limited classification. Do not call the broad suite green.
+Next: wait for the final clean head after test polish, then update issue/PR drafts with final metadata and bounded validation wording. Do not call the broad suite green.
 
-## Patch 2 and Patch 3 clarification
+## Patch 2 and Patch 3
 
-Agent 1 confirmed Patch 2 and Patch 3 were planning labels for separate follow-up families, not approved implementation contracts.
+Patch 2 and Patch 3 are planning labels for separate follow-up families, not approved implementation contracts.
 
-- Patch 2 grouped ownership and cleanup-policy questions such as hidden/subagent completion while yielded work remains live.
-- Patch 3 grouped macOS or runtime-loss orphan-recovery mechanisms such as durable process-group tracking, stale-process sweeps, guardians, or stronger termination reporting.
+- Patch 2: ownership and cleanup-policy questions, including hidden/subagent completion with live yielded work.
+- Patch 3: runtime-loss and macOS recovery mechanisms, including durable process-group tracking, stale-process sweeps, guardians, or stronger termination reporting.
 
-Each family still requires its own executable reproduction, ownership statement, policy decision, and issue. Do not infer additional patch commitments from the labels.
+Each future item requires its own executable reproduction, ownership statement, policy decision, issue, implementation review, and validation. Omit Patch 2 and Patch 3 from public Patch 1 copy.
 
-## Final reconvene agenda
-
-Each lane should review the same clean candidate and final public drafts:
-
-1. Is the clean candidate still exactly equivalent to the reviewed Patch 1 tree?
-2. Is the project-suite differential described accurately as baseline/environment-limited rather than green?
-3. Is the change still visibility-only?
-4. Are validation claims bounded accurately?
-5. Is the one-commit history concise and reviewable?
-6. Does the issue describe loss of model-visible control information rather than intended process persistence as the defect?
-7. Does the PR explain typed ownership, behavioural boundaries, and acceptance coverage without overselling validation?
-8. Is the public copy privacy-safe?
-9. Are related-issue distinctions still current?
-10. Is issue-first-then-PR still the preferred publication order?
-
-## Publication preparation gate
+## Publication gate
 
 Completed:
 
 - [x] Negative reproduction preserved and passed.
-- [x] Corrected acceptance suite integrated.
-- [x] Exact creator-cell isolation covered.
-- [x] Reviewed investigation tree passed final net-diff review.
-- [x] Clean candidate exists on current upstream main.
-- [x] Clean candidate contains one reviewable commit and no research history.
-- [x] Repository-native format passed.
-- [x] Repository-native scoped fix passed.
-- [x] Dedicated acceptance target passed 5/5.
-- [x] Final repository inspection is clean.
-- [x] Clean candidate exact-file equivalence review passed.
-- [x] Matched upstream-base project-suite differential is recorded.
-- [x] Broad project-suite result is classified without overstating it.
-- [x] Agent 4 issue and PR drafts prepared.
-- [x] Related-issue refresh completed.
-- [x] Public-copy privacy scrub completed.
+- [x] Corrected acceptance lineage preserved.
+- [x] Production implementation reviewed.
+- [x] Clean candidate reconstructed on current upstream main.
+- [x] Repository-native format and scoped fix passed.
+- [x] Focused production tests passed.
+- [x] Current five acceptance cases passed.
+- [x] Matched upstream-base differential recorded and classified.
+- [x] Architecture/API conventions review passed.
+- [x] Final roundtable reviews integrated and synthesized.
+- [x] Agent 4 publication draft and privacy preparation completed.
 
 Open:
 
-- [ ] Agent 4 updates the drafts with clean-candidate and corrected validation evidence.
-- [ ] Final team sanity review completes.
+- [ ] Agent 2 test-only revision is prepared.
+- [ ] Revised acceptance cases pass through the aggregate suite.
+- [ ] Agent 3 approves the test-only diff and receipt.
+- [ ] Agent 1 confirms contract coverage remains intact.
+- [ ] Final clean head and comparison are recorded.
+- [ ] Agent 4 updates the public drafts against the final head.
 - [ ] User wording and presentation review completes.
 - [ ] Publication sequence is approved.
 - [ ] Issue and PR links are filled after publication.
 
-## Separate follow-ups
+## Separate deferred follow-ups
 
 These must not expand Patch 1:
 
+- generic process-origin modelling;
 - delayed old-cell invocation crossing into a later turn worker;
-- session shutdown racing with a dispatched nested exec that stores after the manager drain;
-- remote exec-server bulk termination without confirmed completion;
-- natural exit leaving process-manager bookkeeping until later refresh or removal;
-- hidden-subagent lifecycle policy;
-- macOS orphan recovery after abrupt runtime death.
+- shutdown racing with a dispatched nested exec that stores after manager drain;
+- remote bulk termination without confirmed completion;
+- natural exit leaving stale manager bookkeeping;
+- hidden/subagent lifecycle policy;
+- event-driven wake-up after process or subagent completion;
+- macOS or runtime-loss orphan recovery;
+- reusable background-terminal cleanup guards;
+- reusable repository-native validation profiles.
 
-The cross-turn dispatch path remains a high-confidence static finding only. It has not been reproduced. Do not call it a bug without executable evidence of wrong-turn execution or a bounded no-successor failure or hang condition.
+The cross-turn dispatch path remains a high-confidence static finding only. It is not reproduced and must not be described publicly as a confirmed bug.
