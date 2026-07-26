@@ -1,6 +1,6 @@
 # Layered pull-request draft
 
-Status: unpublished. Insert the actual standalone issue number before publication.
+Status: unpublished and PR-ready. Open upstream only if a Codex maintainer explicitly invites the contribution; insert the actual standalone issue number before publication.
 
 ## Proposed title
 
@@ -109,7 +109,7 @@ The complete workspace suite was not run.
 
 - [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
 - [final comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...760216784efaee1ba6a3b1250349f31d5f91c7ca)
-- [public validation summary and disclosure boundary](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md#executable-validation-summary)
+- [public validation summary and disclosure boundary](https://github.com/teamleaderleo/codex/blob/fb8d8fe6c007524e9eddff7186c8517b96f0a129/notes/code-mode-orphan-fix/publication-drafts/works-cited.md#executable-validation-summary)
 
 </details>
 
@@ -117,8 +117,8 @@ The complete workspace suite was not run.
 
 The public deep dive explains the runtime path, historical architecture, Rust ownership model, threat model, test evolution, alternatives, and validation limits:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/fb8d8fe6c007524e9eddff7186c8517b96f0a129/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/fb8d8fe6c007524e9eddff7186c8517b96f0a129/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related work
 
