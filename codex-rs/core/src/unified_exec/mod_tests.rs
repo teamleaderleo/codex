@@ -329,6 +329,71 @@ async fn write_stdin(
         .await
 }
 
+#[tokio::test]
+async fn live_process_ids_created_by_cell_filters_exited_and_sorts() -> anyhow::Result<()> {
+    let (session, turn) = test_session_and_turn().await;
+    let manager = &session.services.unified_exec_manager;
+    #[allow(deprecated)]
+    let cwd = turn.cwd.clone();
+
+    let target_cell = CellId::new("target-cell".to_string());
+    let other_cell = CellId::new("other-cell".to_string());
+    let specifications = [
+        (3_003, Some(target_cell.clone()), false),
+        (1_001, Some(target_cell.clone()), false),
+        (2_002, Some(other_cell), false),
+        (1_000, None, false),
+        (1_500, Some(target_cell.clone()), true),
+    ];
+    let mut active_processes = Vec::new();
+
+    for (process_id, creator_cell_id, exited) in specifications {
+        let (terminate_started_tx, _terminate_started_rx) = watch::channel(false);
+        let allow_terminate = Arc::new(Notify::new());
+        let process = blocking_terminate_unified_process(
+            process_id,
+            terminate_started_tx,
+            Arc::clone(&allow_terminate),
+        )
+        .await?;
+
+        if exited {
+            allow_terminate.notify_one();
+            process.terminate_confirmed().await?;
+        } else {
+            active_processes.push((Arc::clone(&process), allow_terminate));
+        }
+
+        manager.process_store.lock().await.processes.insert(
+            process_id,
+            ProcessEntry {
+                process,
+                call_id: format!("call-{process_id}"),
+                creator_cell_id,
+                process_id,
+                cwd: cwd.clone().into(),
+                initial_exec_command_active: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                hook_command: "test command".to_string(),
+                tty: true,
+                network_approval: None,
+                session: Arc::downgrade(&session),
+                last_used: Instant::now(),
+            },
+        );
+    }
+
+    let actual = manager.live_process_ids_created_by_cell(&target_cell).await;
+
+    for (process, allow_terminate) in active_processes {
+        allow_terminate.notify_one();
+        process.terminate_confirmed().await?;
+    }
+    manager.process_store.lock().await.processes.clear();
+
+    assert_eq!(actual, vec![1_001, 3_003]);
+    Ok(())
+}
+
 #[test]
 fn push_chunk_preserves_prefix_and_suffix() {
     let mut buffer = HeadTailBuffer::default();

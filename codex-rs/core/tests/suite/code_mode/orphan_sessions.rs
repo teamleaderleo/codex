@@ -312,19 +312,36 @@ text("x".repeat(65536));
 
         let request = follow_up_mock.single_request();
         let items = custom_tool_output_items(&request, "call-1");
-        assert_eq!(items.len(), 2, "expected status header and emitted text");
-        let header = text_item(&items, 0);
+        let header_index = items
+            .iter()
+            .position(|item| {
+                item.get("text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|text| text.starts_with(COMPLETED_PREFIX))
+            })
+            .expect("completion status header should remain a separate text item");
+        let header = text_item(&items, header_index);
         assert_completed_prefix(header);
+        assert!(
+            header.contains(BACKGROUND_SESSIONS_WARNING),
+            "status header should retain the live-session warning: {header:?}"
+        );
         let session_summary = session_summary_before_wall_time(header);
         assert_live_session_ids_in_numeric_order(session_summary, &process_ids);
 
         // The emitted payload is intentionally above the default code-mode token limit. The
         // truncator may retain a head/tail excerpt or replace part of it with an omission marker;
-        // this test only requires that the payload remains represented separately from the
-        // untruncated status header.
+        // this test only requires that some non-empty emitted output remains represented
+        // separately from the untruncated status header.
         assert!(
-            !text_item(&items, 1).is_empty(),
-            "large emitted output should remain represented after truncation"
+            items.iter().enumerate().any(|(index, item)| {
+                index != header_index
+                    && item
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .is_some_and(|text| !text.is_empty())
+            }),
+            "large emitted output should remain represented separately after truncation: {items:?}"
         );
 
         Ok(())
