@@ -1,0 +1,8 @@
+path_equivalence=0
+reviewed_equivalence=0
+format=0
+format_dirty=0
+fix=0
+fix_dirty=0
+project_tests=100
+acceptance=0

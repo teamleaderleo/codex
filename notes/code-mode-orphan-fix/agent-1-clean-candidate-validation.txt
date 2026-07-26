@@ -1,0 +1,68 @@
+upstream_base_sha=61a44880a85d2fd0d8770908dea5733495e571c8
+clean_branch=fix/code-mode-live-session-summary-clean
+clean_head_sha=3778e1fae6e7e3d885252282a7c5ce67e06730ff
+reviewed_head_sha=73e5b9fc28de0815975fad3c3d70a6a0b38399b1
+commit_count=1
+worktree_sha_before_format=3778e1fae6e7e3d885252282a7c5ce67e06730ff
+worktree_dirty_before_format=clean
+required_tool_availability=setup-ci,just,dotslash,uv,cargo-nextest
+path_equivalence=0
+reviewed_equivalence=0
+format=0
+format_dirty=0
+fix=0
+fix_dirty=0
+project_tests=100
+acceptance=0
+worktree_sha_after_format_and_fix=3778e1fae6e7e3d885252282a7c5ce67e06730ff
+worktree_dirty_after_format_and_fix=clean_after_reset
+complete_workspace_test=not_run_pending_explicit_human_approval
+comparison=https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...3778e1fae6e7e3d885252282a7c5ce67e06730ff
+
+changed_files:
+codex-rs/core/src/tools/code_mode/mod.rs
+codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+codex-rs/core/src/unified_exec/mod.rs
+codex-rs/core/src/unified_exec/mod_tests.rs
+codex-rs/core/src/unified_exec/process_manager.rs
+codex-rs/core/src/unified_exec/process_manager_tests.rs
+codex-rs/core/tests/code_mode_orphan_sessions.rs
+
+files_changed_by_format:
+
+files_changed_by_fix:
+
+git_status_short_begin
+git_status_short_end
+git_diff_check_begin
+git_diff_check_end
+git_log_begin
+3778e1fae6 (HEAD, origin/fix/code-mode-live-session-summary-clean) fix: surface live nested code-mode sessions
+61a44880a8 Raise the MCP server recursion limit (#35414)
+62fd410384 Ignore generated system skills in the skills watcher (#35408)
+20dafe201d (origin/research/code-mode-live-session-test-ci, origin/main, origin/fix/subagent-yielded-cell-cleanup, origin/fix/macos-orphan-recovery) Make the keymap action menu responsive (#35375)
+322d5b96cf Keep unified mention results fresh (#35365)
+5c36e869c1 Bound Code Mode metadata compatibility headers (#35364)
+af7f6f4d34 Include item start times in completion events (#35363)
+3a08af44b2 Handle exec-server network policy requests in the client (#35359)
+git_log_end
+git_diff_stat_begin
+ codex-rs/core/src/tools/code_mode/mod.rs           | 105 ++++-
+ .../tools/handlers/unified_exec/exec_command.rs    |  10 +-
+ codex-rs/core/src/unified_exec/mod.rs              |  23 +
+ codex-rs/core/src/unified_exec/mod_tests.rs        |   3 +
+ codex-rs/core/src/unified_exec/process_manager.rs  |   1 +
+ .../core/src/unified_exec/process_manager_tests.rs |   1 +
+ codex-rs/core/tests/code_mode_orphan_sessions.rs   | 521 +++++++++++++++++++++
+ 7 files changed, 660 insertions(+), 4 deletions(-)
+git_diff_stat_end
+git_diff_name_status_begin
+M	codex-rs/core/src/tools/code_mode/mod.rs
+M	codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs
+M	codex-rs/core/src/unified_exec/mod.rs
+M	codex-rs/core/src/unified_exec/mod_tests.rs
+M	codex-rs/core/src/unified_exec/process_manager.rs
+M	codex-rs/core/src/unified_exec/process_manager_tests.rs
+A	codex-rs/core/tests/code_mode_orphan_sessions.rs
+git_diff_name_status_end
+overall=1
