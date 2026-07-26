@@ -34,5 +34,5 @@ jobs:
           git add notes/code-mode-orphan-fix/agent-1-actions-runs.tsv
           git config user.name "Agent 1 Actions observer"
           git config user.email "teamleaderleo@users.noreply.github.com"
-          git commit -m "docs: record clean-candidate workflow runs"
-          git push origin HEAD:refs/heads/automation/agent1-actions-observer-results
+          git commit -m "docs: refresh clean-candidate workflow runs"
+          git push --force origin HEAD:refs/heads/automation/agent1-actions-observer-results
