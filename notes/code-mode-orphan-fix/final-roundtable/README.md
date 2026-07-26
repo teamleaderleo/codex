@@ -9,7 +9,7 @@ This directory collects the final lane-specific conventions reviews for the clea
 - Upstream base: `61a44880a85d2fd0d8770908dea5733495e571c8`
 - Clean candidate: `3778e1fae6e7e3d885252282a7c5ce67e06730ff`
 - Clean branch: `fix/code-mode-live-session-summary-clean`
-- Roundtable base commit: `c96e66c47a4f2dc54bd69484905e03535f854c49`
+- Branch-protocol floor: `093c13dc8bf81075b1384ff49705ba11cef9397d`
 
 Do not modify the clean candidate from this roundtable unless a review identifies a concrete blocking defect.
 
@@ -39,7 +39,7 @@ The synthesis will distinguish:
 
 ## Branch protocol
 
-To avoid non-fast-forward conflicts, each agent should create a temporary review branch from the roundtable base commit and commit only its assigned file.
+To avoid non-fast-forward conflicts, each agent should create a temporary review branch from the latest `research/code-mode-orphan-handoffs` head at or after the branch-protocol floor above, and commit only its assigned file.
 
 - Agent 1 branch: `review/code-mode-roundtable-agent-1`
 - Agent 2 branch: `review/code-mode-roundtable-agent-2`
