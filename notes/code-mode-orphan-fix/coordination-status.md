@@ -6,12 +6,12 @@ Investigation baseline: `20dafe201d91d4405eef05ecd1db0257f13a9ac8`
 
 ## Current phase
 
-Patch 1 correctness and clean-candidate code review are complete.
+Patch 1 correctness, clean-candidate review, and matched project-suite differential classification are complete.
 
 The remaining work is:
 
-1. classify the repository-native `codex-core` project-suite failures against a matched upstream-base run;
-2. complete the final team sanity review;
+1. complete the final team sanity review;
+2. update and review the unpublished issue and pull-request drafts against the clean candidate;
 3. complete the user's wording and presentation review;
 4. approve publication sequencing;
 5. publish and cross-link the upstream issue and pull request.
@@ -65,8 +65,6 @@ Upstream base:
 
 `61a44880a85d2fd0d8770908dea5733495e571c8`
 
-Current `openai/codex` main matched this SHA at Agent 3 review time.
-
 Branch:
 
 `fix/code-mode-live-session-summary-clean`
@@ -104,87 +102,95 @@ Review file:
 
 `notes/code-mode-orphan-fix/final-clean-candidate-review-3778e1f.md`
 
-Review commit:
+Initial review commit:
 
 `0600d13b39780f359f83543cbfde308974f22634`
+
+Validation-closure update:
+
+`02bede7640df40661de2640156e7e51656b8ffdf`
 
 ### Code, scope, and history verdict
 
 **Pass.**
 
-Agent 3 independently confirmed that all seven clean-candidate files have the exact same Git blob SHA as the corresponding files at `73e5b9fc28de0815975fad3c3d70a6a0b38399b1`.
+All seven clean-candidate files have the exact same Git blob SHA as the corresponding files at `73e5b9fc28de0815975fad3c3d70a6a0b38399b1`.
 
-Therefore the clean candidate preserves the exact previously reviewed implementation and acceptance-test contents. It introduces no semantic adaptation and no lifecycle-policy expansion.
+The clean candidate preserves the exact previously reviewed implementation and acceptance-test contents. It introduces no semantic adaptation and no lifecycle-policy expansion.
 
 No Patch 1 code change is requested.
 
-### Validation verdict
+## Matched project-suite differential
 
-**Qualified / incomplete.**
+Failure inventory:
 
-Recorded clean-candidate results:
+- File: `notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md`
+- Commit: `a3cdd18d2cd8e60e5997c25dd41d55b1af2ec2db`
 
-- `just fmt`: passed; no changes;
-- `just fix -p codex-core`: passed; no changes;
-- six Patch 1-focused code-mode and unified-exec tests: passed;
-- dedicated `code_mode_orphan_sessions`: 5 passed, 0 skipped;
-- `git status --short`: clean;
-- `git diff --check`: clean;
-- complete workspace test: not run pending explicit human approval.
-
-Repository-native project run:
-
-- command: `just test -p codex-core`;
-- 3,110 tests executed;
-- 3,017 passed;
-- 93 failed;
-- 9 skipped;
-- exit 100.
-
-The handoff identifies missing helper binaries, sandbox aborts, and unrelated assertions among the failures. This is not evidence that Patch 1 failed, because all changed-area focused tests and the complete dedicated acceptance target passed. However, the same project command was not run against the exact upstream base in the same environment, so the full failure set is not yet proven baseline-equivalent.
-
-Do not describe the `codex-core` project suite as green.
-
-## Minimal next validation step
-
-Run the same command on upstream base `61a44880a85d2fd0d8770908dea5733495e571c8` in the same runner configuration:
+Command on both refs:
 
 `just test -p codex-core`
 
-Compare failed-test names, skip set, failure classes, helper/sandbox failures, aggregate counts, and any code-mode or unified-exec failures.
+Corrected candidate result:
 
-Decision rule:
+- 3,110 tests run;
+- 3,015 passed, including one flaky pass;
+- 94 failed;
+- one timed out;
+- nine skipped.
 
-- no new candidate failures relative to upstream base: classify the project result as baseline/environment-limited and close the validation item;
-- new candidate failures: investigate only the differential set before publication.
+Exact upstream-base result:
 
-A complete workspace run is not required for this differential classification and remains subject to explicit human approval.
+- 3,102 tests run;
+- 3,007 passed;
+- 94 failed;
+- one timed out;
+- nine skipped.
+
+Differential:
+
+- 93 failed-test names and the one timeout were shared;
+- candidate-only broad-run failure: `unified_exec_formats_large_output_summary`;
+- upstream-only broad-run failure: `snapshot_rollback_followup_turn_trims_context_updates`;
+- all eight Patch 1-added tests passed.
+
+Both differential tests then passed three of three times on the candidate and three of three times on upstream in one shared runner and target cache. Agent 3 independently inspected the raw project logs and focused artifact and confirmed the counts, set differences, and 12 successful focused executions.
+
+### Validation classification
+
+**Pass, with a baseline-red caveat.**
+
+The broad `codex-core` suite is not green on either ref. Its persistent failures are classified as missing dependencies, sandbox/runner limitations, or assertions reproduced on exact upstream. No persistent candidate-only failure remains; nothing remains potentially related to Patch 1 or unclassified.
+
+Public wording must not claim that the complete `codex-core` project suite or complete workspace suite passed.
+
+A complete workspace run remains unrun and is not required for this differential classification. It still requires explicit human approval if desired.
 
 ## Agent states
 
 ### Agent 1
 
-Clean-candidate construction is complete.
+Clean-candidate construction and matched failure inventory are complete.
 
-Next responsibility: preserve `fix/code-mode-live-session-summary-clean` unchanged unless a concrete differential validation failure requires action.
+Next responsibility: preserve `fix/code-mode-live-session-summary-clean` unchanged and participate in the final sanity review.
 
 ### Agent 2
 
-Focused and acceptance validation work is complete.
+Focused and acceptance validation work is complete. No additional broad rerun is requested.
 
-Next responsibility: run or classify the matched upstream-base `just test -p codex-core` result and report the differential failure set. Do not broaden the claim to a complete workspace run.
+Next responsibility: independently sanity-check the bounded validation wording and participate in the final team review.
 
 ### Agent 3
 
-Clean-candidate code, scope, and history review is complete.
+Clean-candidate and differential review are complete.
 
-Next responsibility: review the matched baseline differential and participate in the final team sanity review.
+Next responsibility: participate in the final team sanity review and reject any late scope or validation overstatement.
 
 ### Agent 4
 
 Issue and PR drafts remain unpublished.
 
-Next responsibility: update the drafts with clean head `3778e1fae6e7e3d885252282a7c5ce67e06730ff`, upstream base `61a44880a85d2fd0d8770908dea5733495e571c8`, and the qualified project-suite result. Do not call the broad suite green.
+Next responsibility: update the drafts with clean head `3778e1fae6e7e3d885252282a7c5ce67e06730ff`, upstream base `61a44880a85d2fd0d8770908dea5733495e571c8`, the corrected broad counts, and the baseline/environment-limited classification. Do not call the broad suite green.
 
 ## Patch 2 and Patch 3 clarification
 
@@ -200,7 +206,7 @@ Each family still requires its own executable reproduction, ownership statement,
 Each lane should review the same clean candidate and final public drafts:
 
 1. Is the clean candidate still exactly equivalent to the reviewed Patch 1 tree?
-2. Does the matched project-suite differential introduce any candidate-only failure?
+2. Is the project-suite differential described accurately as baseline/environment-limited rather than green?
 3. Is the change still visibility-only?
 4. Are validation claims bounded accurately?
 5. Is the one-commit history concise and reviewable?
@@ -225,14 +231,15 @@ Completed:
 - [x] Dedicated acceptance target passed 5/5.
 - [x] Final repository inspection is clean.
 - [x] Clean candidate exact-file equivalence review passed.
+- [x] Matched upstream-base project-suite differential is recorded.
+- [x] Broad project-suite result is classified without overstating it.
 - [x] Agent 4 issue and PR drafts prepared.
 - [x] Related-issue refresh completed.
 - [x] Public-copy privacy scrub completed.
 
 Open:
 
-- [ ] Matched upstream-base project-suite differential is recorded.
-- [ ] Broad project-suite result is classified without overstating it.
+- [ ] Agent 4 updates the drafts with clean-candidate and corrected validation evidence.
 - [ ] Final team sanity review completes.
 - [ ] User wording and presentation review completes.
 - [ ] Publication sequence is approved.
