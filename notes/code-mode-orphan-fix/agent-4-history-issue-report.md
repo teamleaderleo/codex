@@ -117,12 +117,13 @@ Repository-native focused validation on Linux aarch64 recorded:
 
 The five aggregate acceptance cases cover:
 
-- multiple discarded live session IDs in numeric order;
-- exited-session exclusion;
-- exact creator-cell isolation;
-- warning placement outside code-mode emitted-output truncation;
-- yielded-response neutrality; and
-- cleanup across success, returned error, and panic paths.
+1. multiple discarded live session IDs in numeric order;
+2. exited-session exclusion with only the surviving session reported;
+3. exact creator-cell isolation between two cells;
+4. warning placement outside code-mode emitted-output truncation; and
+5. yielded-response neutrality.
+
+The aggregate test harness also verifies cleanup across success, returned error, and panic paths.
 
 A matched broad `codex-core` run was red on both the production-equivalent candidate and the exact upstream base because of environment dependencies, unavailable helper binaries, sandbox or runner limitations, and unrelated baseline failures. Repeated focused comparison left no persistent candidate-only failure. The broad project suite is not claimed as green.
 
@@ -213,16 +214,22 @@ Repository-native focused validation on Linux aarch64:
 - the same two tests, repeated ten times each on exact upstream base `61a44880a85d2fd0d8770908dea5733495e571c8`: `20/20 passed`;
 - clean worktree and `git diff --check`: passed.
 
-Focused coverage verifies:
+The four focused unit tests verify:
 
-- exact creator-cell matching;
-- exclusion of another cell, unattributed entries, and exited processes;
-- deterministic numeric ordering;
-- multiple discarded live session IDs;
-- one-survivor filtering;
-- warning placement outside code-mode emitted-output truncation;
-- yielded-response neutrality;
-- cleanup across success, returned error, and panic paths.
+1. exact-cell, live-only filtering, including exclusion of another cell, unattributed entries, and exited entries, with numeric ordering;
+2. terminal-cell selection excludes `Yielded` responses;
+3. terminal status formatting reports sorted live session IDs; and
+4. yielded status formatting does not disclose completion-only session information.
+
+The five aggregate acceptance cases verify:
+
+1. multiple discarded live session IDs are reported in numeric order;
+2. only the surviving session is reported after another exits;
+3. one cell cannot disclose another cell's process;
+4. a large emitted payload cannot displace the status warning at the code-mode truncation boundary; and
+5. yielded responses remain completion-neutral.
+
+The aggregate harness verifies cleanup across success, returned error, and panic paths.
 
 A matched broad `just test -p codex-core` differential was red on both the production-equivalent candidate and the exact upstream base. Persistent failures were attributable to environment dependencies, unavailable helper binaries, sandbox or runner limitations, or assertions reproduced on the exact base. The two differing broad-run test names both passed repeated focused executions on both refs, leaving no persistent candidate-only failure. The broad project suite is not claimed as green.
 
