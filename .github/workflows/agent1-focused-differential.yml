@@ -1,0 +1,88 @@
+name: Agent 1 focused clean-candidate differential
+
+on:
+  push:
+    branches:
+      - automation/agent1-focused-differential
+
+permissions:
+  contents: write
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 1
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_BACKTRACE: 1
+      CANDIDATE: 3778e1fae6e7e3d885252282a7c5ce67e06730ff
+      BASE: 61a44880a85d2fd0d8770908dea5733495e571c8
+      RESULTS_BRANCH: automation/agent1-focused-differential-results
+    steps:
+      - name: Checkout workflow branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up repository CI tools
+        uses: ./.github/actions/setup-ci
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: cargo-nextest@0.9.114
+
+      - name: Run both differential tests on both refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/differential
+          git fetch origin "$CANDIDATE" "$BASE"
+
+          run_ref() {
+            label="$1"
+            ref="$2"
+            git checkout --force "$ref"
+            for test_name in \
+              unified_exec_formats_large_output_summary \
+              snapshot_rollback_followup_turn_trims_context_updates
+            do
+              for attempt in 1 2 3; do
+                set +e
+                (
+                  cd codex-rs
+                  just test -p codex-core -E "test(${test_name})"
+                ) > "/tmp/differential/${label}-${test_name}-${attempt}.log" 2>&1
+                status=$?
+                set -e
+                printf '%s\t%s\t%s\t%s\n' "$label" "$test_name" "$attempt" "$status" \
+                  >> /tmp/differential/statuses.tsv
+              done
+            done
+          }
+
+          run_ref candidate "$CANDIDATE"
+          run_ref upstream "$BASE"
+
+      - name: Publish focused receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Agent 1 validation"
+          git config user.email "agent1-validation@users.noreply.github.com"
+          git switch --orphan receipt
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p notes/code-mode-orphan-fix/focused-differential
+          cp /tmp/differential/* notes/code-mode-orphan-fix/focused-differential/
+          git add notes/code-mode-orphan-fix/focused-differential
+          git commit -m "test: retain focused clean-candidate differential"
+          git push --force origin HEAD:${RESULTS_BRANCH}
+
+      - name: Upload focused logs
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: agent1-focused-differential
+          path: /tmp/differential
