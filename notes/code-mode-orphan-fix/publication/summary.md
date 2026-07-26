@@ -2,7 +2,7 @@
 
 Code mode can start terminal commands from JavaScript. When a command keeps running, `exec_command` returns a session ID that the model can use to check it, send input, or stop it. The failure occurs when the JavaScript keeps only the command output and drops that ID: the cell can report `Script completed` while the terminal is still live, and the model no longer has the handle needed to control it.
 
-The proposed change records which code-mode cell created each stored live terminal session. When that cell finishes, Codex asks the existing process manager which of its sessions are still live and reports those session IDs in the status. It does not stop processes or change background-process lifetime.
+The proposed change records which code-mode cell created each stored live terminal session. When that cell reaches a terminal result, Codex asks the existing process manager which of that cell's sessions are still live at that moment and reports those session IDs in the status. It does not stop processes or change background-process lifetime.
 
 ## Findings
 
@@ -10,7 +10,7 @@ The proposed change records which code-mode cell created each stored live termin
 2. The fix reports only still-live sessions created by the exact completing cell.
 3. Exited sessions and sessions created by other cells are excluded.
 4. Ordinary yielded responses and the JavaScript result schema are unchanged.
-5. Focused tests passed; the broad `codex-core` run remained red on both candidate and exact base, and the complete workspace suite was not run.
+5. Four focused unit tests and five aggregate acceptance cases passed. Two compatibility tests also passed 20/20 executions on the candidate and 20/20 on the exact base. The broad `codex-core` run remained red on both refs, and the complete workspace suite was not run.
 
 ## Documents
 
