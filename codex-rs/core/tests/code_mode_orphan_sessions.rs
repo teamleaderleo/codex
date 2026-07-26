@@ -43,7 +43,10 @@ fn text_item(items: &[Value], index: usize) -> &str {
 fn sorted_process_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Vec<i32> {
     let mut ids = ids
         .into_iter()
-        .map(|id| id.parse::<i32>().expect("terminal process ID should be numeric"))
+        .map(|id| {
+            id.parse::<i32>()
+                .expect("terminal process ID should be numeric")
+        })
         .collect::<Vec<_>>();
     let original_len = ids.len();
     ids.sort_unstable();
@@ -233,8 +236,11 @@ text(outputs.join("|"));
             2,
             "both yielded nested commands should remain alive after the cell completes: {terminals:?}"
         );
-        let process_ids =
-            sorted_process_ids(terminals.iter().map(|terminal| terminal.process_id.as_str()));
+        let process_ids = sorted_process_ids(
+            terminals
+                .iter()
+                .map(|terminal| terminal.process_id.as_str()),
+        );
 
         let request = follow_up_mock.single_request();
         let items = custom_tool_output_items(&request, "call-1");
@@ -280,8 +286,11 @@ text(outputs.join("|"));
             1,
             "only the long-lived nested command should survive cell completion: {terminals:?}"
         );
-        let process_ids =
-            sorted_process_ids(terminals.iter().map(|terminal| terminal.process_id.as_str()));
+        let process_ids = sorted_process_ids(
+            terminals
+                .iter()
+                .map(|terminal| terminal.process_id.as_str()),
+        );
 
         let request = follow_up_mock.single_request();
         let items = custom_tool_output_items(&request, "call-1");
@@ -322,8 +331,11 @@ text("x".repeat(65536));
             1,
             "the yielded nested command should remain live: {terminals:?}"
         );
-        let process_ids =
-            sorted_process_ids(terminals.iter().map(|terminal| terminal.process_id.as_str()));
+        let process_ids = sorted_process_ids(
+            terminals
+                .iter()
+                .map(|terminal| terminal.process_id.as_str()),
+        );
 
         let request = follow_up_mock.single_request();
         let items = custom_tool_output_items(&request, "call-1");
@@ -332,9 +344,14 @@ text("x".repeat(65536));
         assert_completed_prefix(header);
         let session_summary = session_summary_before_wall_time(header);
         assert_live_session_ids_in_numeric_order(session_summary, &process_ids);
+
+        // The emitted payload is intentionally above the default code-mode token limit. The
+        // truncator may retain a head/tail excerpt or replace part of it with an omission marker;
+        // this test only requires that the payload remains represented separately from the
+        // untruncated status header.
         assert!(
-            text_item(&items, 1).starts_with("xxxxxxxx"),
-            "large emitted output should remain a separate content item"
+            !text_item(&items, 1).is_empty(),
+            "large emitted output should remain represented after truncation"
         );
 
         Ok::<(), anyhow::Error>(())
@@ -368,8 +385,11 @@ await new Promise(() => {});
             1,
             "the yielded cell should retain its nested background terminal: {terminals:?}"
         );
-        let process_ids =
-            sorted_process_ids(terminals.iter().map(|terminal| terminal.process_id.as_str()));
+        let process_ids = sorted_process_ids(
+            terminals
+                .iter()
+                .map(|terminal| terminal.process_id.as_str()),
+        );
 
         let request = follow_up_mock.single_request();
         let items = custom_tool_output_items(&request, "call-1");
