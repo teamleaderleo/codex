@@ -49,6 +49,12 @@ This directory separates the concise maintainer-facing issue and pull request fr
    - Later-stage packet for independent Codex/Claude review of the deep-dive record and public copy.
    - Review questions should separate factual correctness, Rust/code quality, severity framing, publication quality, and provenance/evidence quality.
 
+9. `methodology-and-provenance.md`
+   - Describe the human-led, multi-chat investigation workflow, including the roles played by the four chat instances and external reviewers.
+   - Distinguish human judgement, AI-generated analysis, executable evidence, and independently verified results.
+   - Record limitations and mistakes as well as successes.
+   - Keep this separate from the maintainer-facing issue/PR unless publication is explicitly approved.
+
 ## Shared rules
 
 - Do not call this a literal memory leak unless evidence shows unreachable allocated memory. Preferred terms are “orphaned live process”, “resource leak risk”, “lost control-handle visibility”, or “background-process lifecycle hazard”, depending on the claim.
