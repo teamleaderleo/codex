@@ -1,0 +1,7 @@
+upstream_base_sha=61a44880a85d2fd0d8770908dea5733495e571c8
+runner=ubuntu-latest
+setup=repository .github/actions/setup-ci
+command=just test -p codex-core
+project_status=100
+list_status=0
+complete_workspace_test=not_run
