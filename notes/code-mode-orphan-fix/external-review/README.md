@@ -13,6 +13,7 @@ This directory is the shortest path for an independent reviewer who should not n
 - Test-polish branch: `review/code-mode-roundtable-test-polish`.
 - At packet creation, the test-polish branch is still identical to the clean candidate; no test-polish commit has been pushed yet.
 - No upstream issue or pull request has been published.
+- A standalone upstream issue remains planned; related issue #34866 will be cross-linked but will not replace the canonical issue for this investigation.
 - Two later independent static reviews are consolidated in the [external review triage](triage-2026-07-26.md).
 
 ## Canonical links
