@@ -1,34 +1,112 @@
-# Agent 1 handoff: clean Patch 1 candidate
+# Agent 1 handoff: final Patch 1 candidate
 
 Date: 2026-07-26
 
-## Required handoff
+## Reconvene packet
+
+This section is the current Agent 1 source of truth for Agent 3, Agent 4, and the human coordinator.
 
 ```text
-Agent: 1 — clean candidate owner
-Retrospective comment: https://github.com/teamleaderleo/stensibly/issues/246#issuecomment-5081855675
-Patch 2/3 clarification: Patch 2 and Patch 3 were planning labels for separate follow-up families, with candidate mechanisms sketched, not approved implementation contracts. Patch 2 grouped ownership and cleanup-policy questions such as hidden/subagent completion while live yielded work remains. Patch 3 grouped macOS/runtime-loss orphan-recovery mechanisms such as durable process-group tracking, stale-process sweeps, guardians, or stronger termination reporting. Each family still requires its own executable reproduction, ownership statement, policy decision, and issue.
-Upstream base SHA: 61a44880a85d2fd0d8770908dea5733495e571c8
+Agent: 1 — implementation and clean-candidate lane
+Upstream base: 61a44880a85d2fd0d8770908dea5733495e571c8
+Approved clean candidate: 760216784efaee1ba6a3b1250349f31d5f91c7ca
 Clean branch: fix/code-mode-live-session-summary-clean
-Clean head SHA: 3778e1fae6e7e3d885252282a7c5ce67e06730ff
-Commit structure and rationale: One coherent commit, `fix: surface live nested code-mode sessions`, containing the visibility-only implementation and focused tests. The intermediate investigation, prototype, correction, merge, runtime-report, review, and retrospective ancestry is excluded.
-Changed files: Seven reviewed Rust files only; listed below.
-Upstream conflicts or adaptations: None. Current upstream is two unrelated commits beyond the investigation baseline and touched none of the reviewed files. The reviewed seven-file contents apply unchanged.
-Formatting command and result: `just fmt` — passed, exit 0, no worktree changes.
-Lint/fix command and result: `just fix -p codex-core` — passed, exit 0, no worktree changes.
-Focused/project tests and results: `just test -p codex-core` executed 3,110 tests: 3,017 passed, 93 failed, 9 skipped; command exit 100. All six Patch 1-focused code-mode and unified-exec tests passed. The failing set contains runner-dependent failures including absent helper binaries (`codex`, `test_stdio_server`) and sandbox aborts (`Sandbox(Signal(6))`), plus unrelated existing assertions. This project-wide result is recorded as failed/environment-limited, not as a green crate claim and not as evidence that Patch 1 failed.
-Acceptance command and result: `just test -p codex-core --test code_mode_orphan_sessions --test-threads=1 --no-capture` — passed; 5 tests run, 5 passed, 0 skipped, 17.203 seconds. Nextest warned that `--test-threads` is ignored with `--no-capture`; the named target still ran all five cases successfully in one integration binary.
-Complete workspace test: not run pending explicit human approval.
-Skips, flakes, infrastructure failures, or command-selection failures: Project run had 9 skips and 93 persistent failures after retries on the generic hosted runner. Dedicated acceptance had no skips or flakes. The project command was repository-native and intentionally broad; its runner-dependent failures must remain separate from Patch 1 correctness. No ad hoc Cargo fallback was used. Full workspace validation is not claimed.
-Repository inspection results: Clean status; `git diff --check` clean; one commit beyond upstream; exactly seven changed files; 660 insertions and 4 deletions; no research Markdown or workflow files on the clean branch.
-Clean comparison: https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...3778e1fae6e7e3d885252282a7c5ce67e06730ff
-Equivalence assessment against 73e5b9fc28de0815975fad3c3d70a6a0b38399b1: Exact seven-file equality passed. Path equality passed. No reviewed production or acceptance behaviour is missing; no extra lifecycle-policy or research artifact is present.
-Open risks: The generic hosted-runner `codex-core` project suite is not green, and no clean upstream baseline was run in that same job to classify every one of the 93 failures. Complete workspace testing remains unapproved and unrun. Agent 3 has not yet issued a final verdict on the clean comparison. Upstream main must be refreshed again immediately before publication if it moves.
-Decision requested: Decide whether the targeted green evidence plus the documented generic-runner project failures is sufficient for final clean-candidate review, or whether publication should wait for the project suite under the repository's full official CI harness and/or an explicitly approved complete workspace run.
-Recommended next action: Agent 3 reviews the exact clean comparison; Agent 4 updates the unpublished issue/PR evidence to the clean head; the human coordinator decides the remaining validation and publication gate. Do not open the upstream issue or PR yet.
+Candidate history: 3 commits directly above upstream
+Final verdict from Agent 1: pass
+Required code change: none
+Concrete contract gap: none
+Public-copy correction required: none
+Complete workspace test: not run
+Upstream issue or PR opened: no
 ```
 
-## Changed files
+### Primary links
+
+- Final clean comparison: https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...760216784efaee1ba6a3b1250349f31d5f91c7ca
+- Approved clean head: https://github.com/teamleaderleo/codex/commit/760216784efaee1ba6a3b1250349f31d5f91c7ca
+- Agent 1 implementation-conventions review: https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/final-roundtable/agent-1-implementation-conventions.md
+- Detailed candidate/upstream failure inventory: https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md
+- Agent 1 retrospective: https://github.com/teamleaderleo/stensibly/issues/246#issuecomment-5081855675
+- This handoff: https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-1-clean-candidate-handoff.md
+
+## Final short contract sanity check
+
+Static inspection of the revised tests at `760216784efaee1ba6a3b1250349f31d5f91c7ca` produced a **pass** verdict. No broad tests were rerun for this check.
+
+The final tests clearly retain all five approved behavioural contracts:
+
+1. multiple discarded live sessions are reported once each in deterministic numeric order;
+2. exited sessions are excluded;
+3. the live-session warning remains in a separate status item outside emitted-output truncation;
+4. ordinary yielded responses do not contain the terminal-only warning;
+5. only sessions created by the completing cell are reported.
+
+The manager-query unit test directly covers:
+
+- exact creator-cell matching;
+- exclusion of another cell;
+- exclusion of `creator_cell_id: None`;
+- exclusion of exited entries;
+- deterministic numeric ordering.
+
+Public wording should describe Patch 1 as visibility-only. Preferred scope sentence:
+
+> Terminal code-mode results disclose the IDs of still-live unified-exec sessions created by that completing cell.
+
+Do not imply that Patch 1 terminates, cleans up, recovers, or prevents orphaned processes.
+
+## Implementation-conventions result
+
+Agent 1's roundtable verdict was **pass with notes**, with no required code or test changes.
+
+- `ExecCommandHandler` is the appropriate boundary for converting existing `ToolCallSource::CodeMode` metadata into typed creator-cell identity.
+- `UnifiedExecContext` is an appropriate invocation-scoped carrier.
+- `ProcessEntry` is the appropriate manager-owned persistence point.
+- `UnifiedExecProcessManager::live_process_ids_created_by_cell` is an appropriately narrow, read-only liveness query.
+- The process-store lock is held only for bounded synchronous inspection; there is no nested `.await` while it is held.
+- Naming and crate visibility are acceptable.
+- Double sorting in the manager and formatter is redundant but harmless.
+- The minor `with_creator_cell_id(Option<CellId>)` API-shape wart is not worth changing after validation; it is crate-private and the call site passes a named variable rather than an opaque literal.
+
+Likely maintainer questions are non-blocking:
+
+- whether generic unified-exec state should retain a broader origin type instead of `Option<CellId>`;
+- whether the acceptance coverage could be shortened through shared helpers.
+
+No pre-emptive rewrite is recommended.
+
+## Validation and differential evidence
+
+The corrected retained candidate project-run summary for the earlier clean implementation tree was:
+
+```text
+3,110 tests run
+3,015 passed, including one flaky retry pass
+94 failed
+1 timed out
+9 skipped
+```
+
+The exact upstream base was then run with the same repository-native command and equivalent hosted-runner configuration:
+
+```text
+Candidate: 3,110 run; 3,015 passed; 94 failed; 1 timed out; 9 skipped
+Upstream:  3,102 run; 3,007 passed; 94 failed; 1 timed out; 9 skipped
+```
+
+Ninety-three failed-test names and the timeout were shared. The one candidate-only and one upstream-only failure both passed three of three focused runs on each ref in one shared runner and Cargo target directory. Final classification:
+
+- environment or missing dependency: 53 outcomes;
+- sandbox or runner limitation: 16 outcomes;
+- known or unrelated assertions reproduced upstream: 26 outcomes;
+- potentially related to Patch 1: zero;
+- unclassified: zero.
+
+The detailed inventory and raw artifact references are linked above. The original GitHub-hosted runners and their local caches are no longer available because they were ephemeral.
+
+## Final candidate comparison summary
+
+The approved candidate is three commits above upstream and changes eight files:
 
 1. `codex-rs/core/src/tools/code_mode/mod.rs`
 2. `codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs`
@@ -36,65 +114,35 @@ Recommended next action: Agent 3 reviews the exact clean comparison; Agent 4 upd
 4. `codex-rs/core/src/unified_exec/mod_tests.rs`
 5. `codex-rs/core/src/unified_exec/process_manager.rs`
 6. `codex-rs/core/src/unified_exec/process_manager_tests.rs`
-7. `codex-rs/core/tests/code_mode_orphan_sessions.rs`
+7. `codex-rs/core/tests/suite/code_mode.rs`
+8. `codex-rs/core/tests/suite/code_mode/orphan_sessions.rs`
 
-## Named-tree and verification record
+The later commits contain reviewed test organisation, compatibility coverage, manager-query coverage, and truncation-assertion polish. Agent 1's final sanity check found no behavioural-contract regression.
 
-```text
-upstream_base_sha=61a44880a85d2fd0d8770908dea5733495e571c8
-clean_branch=fix/code-mode-live-session-summary-clean
-clean_head_sha=3778e1fae6e7e3d885252282a7c5ce67e06730ff
-reviewed_head_sha=73e5b9fc28de0815975fad3c3d70a6a0b38399b1
-commit_count=1
-worktree_sha_before_format=3778e1fae6e7e3d885252282a7c5ce67e06730ff
-worktree_dirty_before_format=clean
-required_tool_availability=setup-ci,just,dotslash,uv,cargo-nextest
-path_equivalence=passed
-reviewed_equivalence=passed
-format=passed
-format_dirty=no
-fix=passed
-fix_dirty=no
-project_tests=failed (exit 100; 3017 passed, 93 failed, 9 skipped)
-acceptance=passed (5 passed, 0 skipped)
-worktree_sha_after_format_and_fix=3778e1fae6e7e3d885252282a7c5ce67e06730ff
-worktree_dirty_after_format_and_fix=clean
-complete_workspace_test=not run pending explicit human approval
-```
+## Patch 2 and Patch 3 clarification
 
-Machine-readable receipt branch:
+Patch 2 and Patch 3 were planning labels for separate follow-up families, not approved implementation contracts or promised patches.
 
-`automation/agent1-clean-candidate-results`
+- Patch 2 groups ownership and cleanup-policy questions, including hidden or subagent completion while live yielded work remains.
+- Patch 3 groups runtime-loss and macOS orphan-recovery approaches, including durable process-group tracking, stale-process sweeps, guardians, or stronger termination reporting.
 
-Receipt files:
+Each family requires its own executable reproduction, ownership statement, product-policy decision, issue, implementation review, and validation. The delayed cross-turn dispatch concern also remains separate and must not be described as reproduced without executable evidence.
 
-- `notes/code-mode-orphan-fix/agent-1-clean-candidate-validation.txt`
-- `notes/code-mode-orphan-fix/agent-1-clean-candidate-statuses.txt`
+## Reconvene instructions
 
-## Relevant focused tests observed passing in the repository-native project run
+Agent 3 should use:
 
-```text
-terminal_cell_id_excludes_yielded_responses
-terminal_script_status_surfaces_sorted_live_background_sessions
-yielded_script_status_does_not_surface_background_sessions
-unified_exec_persists_across_requests
-multi_unified_exec_sessions
-pruning_does_not_evict_live_process_while_exited_process_is_finalizing
-```
+1. the final clean comparison;
+2. the integrated Agent 1 conventions review;
+3. the final contract sanity-check section above;
+4. Agent 2's approved test-polish evidence;
+5. the matched upstream failure inventory;
+6. Agent 4's publication review and the roundtable synthesis.
 
-## Dedicated acceptance result
+Agent 4 should keep public copy visibility-only and update unpublished evidence to the approved clean head. The human coordinator retains approval over upstream issue publication, PR publication, broader validation, and merge decisions.
 
-```text
-Summary [17.203s] 5 tests run: 5 passed, 0 skipped
-```
+No upstream Codex issue or pull request was opened by Agent 1.
 
-Covered cases:
+## Historical construction record
 
-- exact Cell A/Cell B creator isolation;
-- one-survivor live filtering;
-- discarded live-session disclosure;
-- warning placement outside emitted-output truncation;
-- yielded-response neutrality;
-- panic-safe cleanup.
-
-No upstream Codex issue or pull request was opened.
+The first clean implementation head was `3778e1fae6e7e3d885252282a7c5ce67e06730ff`, reconstructed directly on upstream `61a44880a85d2fd0d8770908dea5733495e571c8`. It passed formatting, scoped lint/fix, focused units, and the five-case acceptance target. Subsequent reviewed commits reorganised the integration test into the existing code-mode suite and added the final manager-query and compatibility coverage now present at `760216784efaee1ba6a3b1250349f31d5f91c7ca`.
