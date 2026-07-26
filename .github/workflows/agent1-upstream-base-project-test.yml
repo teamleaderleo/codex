@@ -1,0 +1,92 @@
+name: Agent 1 upstream-base codex-core project test
+
+on:
+  push:
+    branches:
+      - automation/agent1-upstream-base-project-test
+
+permissions:
+  contents: write
+
+jobs:
+  test-upstream-base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 1
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_BACKTRACE: 1
+      UPSTREAM_BASE: 61a44880a85d2fd0d8770908dea5733495e571c8
+      RESULTS_BRANCH: automation/agent1-upstream-base-results
+    steps:
+      - name: Checkout exact upstream base
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.UPSTREAM_BASE }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up repository CI tools
+        uses: ./.github/actions/setup-ci
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2.62.49
+        with:
+          tool: cargo-nextest@0.9.114
+
+      - name: Run exact repository-native project command
+        id: project
+        shell: bash
+        run: |
+          set +e
+          cd codex-rs
+          just test -p codex-core 2>&1 | tee /tmp/upstream-project-tests.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Capture nextest test listing
+        id: listing
+        shell: bash
+        run: |
+          set +e
+          cd codex-rs
+          cargo nextest list -p codex-core --message-format json > /tmp/upstream-nextest-list.json 2>/tmp/upstream-nextest-list.err
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish retained receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/upstream-receipt
+          cp /tmp/upstream-project-tests.log /tmp/upstream-receipt/
+          cp /tmp/upstream-nextest-list.json /tmp/upstream-receipt/
+          cp /tmp/upstream-nextest-list.err /tmp/upstream-receipt/
+          cat > /tmp/upstream-receipt/status.txt <<EOF
+          upstream_base_sha=${UPSTREAM_BASE}
+          runner=ubuntu-latest
+          setup=repository .github/actions/setup-ci
+          command=just test -p codex-core
+          project_status=${{ steps.project.outputs.status }}
+          list_status=${{ steps.listing.outputs.status }}
+          complete_workspace_test=not_run
+          EOF
+
+          git config user.name "Agent 1 validation"
+          git config user.email "agent1-validation@users.noreply.github.com"
+          git switch --orphan receipt
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p notes/code-mode-orphan-fix
+          cp /tmp/upstream-receipt/* notes/code-mode-orphan-fix/
+          git add notes/code-mode-orphan-fix
+          git commit -m "test: retain upstream-base codex-core project result"
+          git push --force origin HEAD:${RESULTS_BRANCH}
+
+      - name: Upload raw output
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: agent1-upstream-base-project-test
+          path: /tmp/upstream-receipt
