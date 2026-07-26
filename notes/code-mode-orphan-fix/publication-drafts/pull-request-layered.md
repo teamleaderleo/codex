@@ -1,6 +1,6 @@
 # Layered pull-request draft
 
-Status: unpublished. Insert the actual standalone issue number and pin documentation links before publication.
+Status: unpublished. Insert the actual standalone issue number before publication.
 
 ## Proposed title
 
@@ -142,8 +142,8 @@ The complete workspace suite was not run.
 
 The public deep dive explains the runtime path, historical architecture, Rust ownership model, threat model, test evolution, alternatives, and validation limits:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/docs/code-mode-public-package/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/docs/code-mode-public-package/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related work
 
