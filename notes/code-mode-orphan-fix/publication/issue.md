@@ -85,7 +85,7 @@ The patch does not change process lifetime, automatic termination, persistence, 
 - [Focused Actions run on capped head `eb530466...`](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
 - [Local and Docker acceptance Actions run](https://github.com/teamleaderleo/codex/actions/runs/30217686056)
 
-The validation record distinguishes the exact refs. The behaviourally equivalent pre-decoupling capped workspace passed the two compatibility tests once; exact current head `77e7e314...` has not been rerun for compatibility. Four Docker cases were selected and passed. The survivor case was excluded by the workflow filter for its documented host-path dependency and passed locally. The current guard-only head adds `skip_if_target_windows!` to four POSIX-command cases and awaits a public Wine-exec validation run. See [validation.md](validation.md).
+The validation record distinguishes the exact refs. The behaviourally equivalent pre-decoupling capped workspace passed the two compatibility tests once; exact current head `77e7e314...` has not been rerun for compatibility. Four Docker cases were selected and passed. The survivor case was excluded by the workflow filter for its documented host-path dependency and passed locally. The current guard-only head adds `skip_if_target_windows!` to four POSIX-command cases and awaits a public Wine-exec validation run. See the [commit-pinned validation record](https://github.com/teamleaderleo/codex/blob/173be554a9e61e80ea682e304d7b2925af5cac64/notes/code-mode-orphan-fix/publication/validation.md).
 
 ## Related issue
 
