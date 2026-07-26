@@ -24,7 +24,6 @@ Git blame is a navigation tool, not an ownership oracle. Cite the commit or pull
 | [Exact upstream base `61a44880`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8) | Selected base for the clean candidate and matched comparison. |
 | [Final clean candidate `7602167`](https://github.com/teamleaderleo/codex/commit/760216784efaee1ba6a3b1250349f31d5f91c7ca) | Reviewed implementation and final tests. |
 | [Final comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...760216784efaee1ba6a3b1250349f31d5f91c7ca) | Complete public code/test diff. |
-| [Canonical candidate branch](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-summary-clean) | Review branch; publication still requires explicit approval. |
 
 ## Primary production-code sources
 
@@ -65,10 +64,10 @@ Git blame is a navigation tool, not an ownership oracle. Cite the commit or pull
 
 ## Executable validation records
 
-- [Original aggregate test-polish receipt](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-2-test-polish-validation-receipt.md).
-- [Supplemental repository-native validation receipt](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md).
-- [Final test-polish approval](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-3-final-test-polish-approval-7602167.md).
-- [Matched broad project failure inventory](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md).
+- [Original aggregate test-polish receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-validation-receipt.md).
+- [Supplemental repository-native validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md).
+- [Final test-polish approval](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-3-final-test-polish-approval-7602167.md).
+- [Matched broad project failure inventory](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md).
 
 Bounded public summary:
 
@@ -102,26 +101,26 @@ The standalone issue remains justified because it defines a narrower executable 
 ## Rejected and deferred implementation paths
 
 - [Call-ID-prefix feasibility prototype `cffcd8dc`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9) — demonstrated feasibility but rejected string-based ownership attribution.
-- [Agent 3 design-decision record](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md) — reasons for rejecting or deferring schema changes, second registries, automatic termination, global listing, display capping, generic origin modelling, wake-up events, and recovery work.
+- [Design-decision record](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md) — reasons for rejecting or deferring schema changes, second registries, automatic termination, global listing, display capping, generic origin modelling, wake-up events, and recovery work.
 
 ## Secondary investigation records
 
 These are synthesis and provenance records. They should cite through to primary sources for concrete code or validation claims.
 
-- [Agent 1 investigation reconstruction](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-1/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md).
-- [Agent 2 testing and validation archaeology](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-2/notes/code-mode-orphan-fix/deep-dive/agent-2-test-validation-archaeology.md).
-- [Agent 3 code walkthrough](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-code-walkthrough.md).
-- [Agent 3 design decisions](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md).
-- [Agent 3 history and threat-model notes](https://github.com/teamleaderleo/codex/blob/363fbf606676e10ff11599255cd39ae4b5299f41/notes/code-mode-orphan-fix/deep-dive/agent-3-history-and-threat-model-notes.md).
-- [Agent 4 publication architecture and copy audit](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-4/notes/code-mode-orphan-fix/deep-dive/agent-4-publication-architecture.md).
-- [Methodology and provenance](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-4/notes/code-mode-orphan-fix/deep-dive/methodology-and-provenance.md).
+- [Investigation reconstruction](https://github.com/teamleaderleo/codex/blob/3d81c5bc244c8ac0526eb0a7fa29ee297dfc97b7/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md).
+- [Testing and validation archaeology](https://github.com/teamleaderleo/codex/blob/824f4807a5d1da45e1952378ef390f9278676748/notes/code-mode-orphan-fix/deep-dive/agent-2-test-validation-archaeology.md).
+- [Code walkthrough](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-code-walkthrough.md).
+- [Design decisions](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md).
+- [History and threat-model notes](https://github.com/teamleaderleo/codex/blob/363fbf606676e10ff11599255cd39ae4b5299f41/notes/code-mode-orphan-fix/deep-dive/agent-3-history-and-threat-model-notes.md).
+- [Publication architecture and copy audit](https://github.com/teamleaderleo/codex/blob/02a6c17613b0f2848525fd30cf5d1d391b322dee/notes/code-mode-orphan-fix/deep-dive/agent-4-publication-architecture.md).
+- [Methodology and provenance](https://github.com/teamleaderleo/codex/blob/02a6c17613b0f2848525fd30cf5d1d391b322dee/notes/code-mode-orphan-fix/deep-dive/methodology-and-provenance.md).
 
 ## Independent external static review
 
-- External Codex review: production design passed; test packaging, cleanup protection, direct manager coverage, compatibility repetition, cardinality language, and public-copy corrections were raised.
-- External Claude review: production design passed; compatibility race risk, manager-query coverage, large-output assertion shape, and maintainability questions were raised.
+- [External-review triage](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/external-review/triage-2026-07-26.md) records one Codex review and one Claude review. Both were static rather than executable.
+- Findings that changed the final tests were subsequently checked through repository-native execution before being accepted.
 
-These reviews were static. Findings that changed the final tests were subsequently verified through repository-native execution. They are not substitutes for test results.
+Independent review is useful scrutiny, but it is not a substitute for executable evidence.
 
 ## Private-by-default evidence
 
