@@ -1,44 +1,16 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![allow(clippy::expect_used)]
 
-use anyhow::Result;
+use super::*;
 use anyhow::ensure;
 use codex_core::CodexThread;
-use codex_features::Feature;
-use core_test_support::responses;
-use core_test_support::responses::ResponseMock;
-use core_test_support::responses::ResponsesRequest;
-use core_test_support::responses::ev_assistant_message;
-use core_test_support::responses::ev_completed;
-use core_test_support::responses::ev_custom_tool_call;
-use core_test_support::responses::ev_response_created;
-use core_test_support::responses::sse;
-use core_test_support::skip_if_no_network;
-use core_test_support::test_codex::TestCodex;
-use core_test_support::test_codex::test_codex;
 use futures::FutureExt;
-use serde_json::Value;
+use pretty_assertions::assert_eq;
+use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use wiremock::MockServer;
 
 const COMPLETED_PREFIX: &str = "Script completed\n";
 const WALL_TIME_PREFIX: &str = "\nWall time ";
-
-fn custom_tool_output_items(req: &ResponsesRequest, call_id: &str) -> Vec<Value> {
-    match req.custom_tool_call_output(call_id).get("output") {
-        Some(Value::Array(items)) => items.clone(),
-        Some(Value::String(text)) => {
-            vec![serde_json::json!({ "type": "input_text", "text": text })]
-        }
-        _ => panic!("custom tool output should be serialized as text or content items"),
-    }
-}
-
-fn text_item(items: &[Value], index: usize) -> &str {
-    items[index]
-        .get("text")
-        .and_then(Value::as_str)
-        .expect("content item should be input_text")
-}
+const BACKGROUND_SESSIONS_WARNING: &str = "Background sessions still running:";
 
 fn sorted_process_ids<'a>(ids: impl IntoIterator<Item = &'a str>) -> Vec<i32> {
     let mut ids = ids
@@ -129,42 +101,6 @@ fn assert_process_ids_absent(text: &str, process_ids: &[i32]) {
     }
 }
 
-async fn run_code_mode_turn(
-    server: &MockServer,
-    prompt: &str,
-    code: &str,
-) -> Result<(TestCodex, ResponseMock)> {
-    responses::mount_sse_once(
-        server,
-        sse(vec![
-            ev_response_created("resp-1"),
-            ev_custom_tool_call("call-1", "exec", code),
-            ev_completed("resp-1"),
-        ]),
-    )
-    .await;
-    let follow_up_mock = responses::mount_sse_once(
-        server,
-        sse(vec![
-            ev_assistant_message("msg-1", "done"),
-            ev_completed("resp-2"),
-        ]),
-    )
-    .await;
-
-    let mut builder = test_codex()
-        .with_model("test-gpt-5.1-codex")
-        .with_config(|config| {
-            config
-                .features
-                .enable(Feature::CodeMode)
-                .expect("code mode should be enabled");
-        });
-    let test = builder.build(server).await?;
-    test.submit_turn(prompt).await?;
-    Ok((test, follow_up_mock))
-}
-
 async fn terminate_all_background_terminals(codex: &CodexThread) -> Result<()> {
     let terminals = codex.list_background_terminals().await;
     let mut failures = Vec::new();
@@ -191,10 +127,10 @@ async fn terminate_all_background_terminals(codex: &CodexThread) -> Result<()> {
     Ok(())
 }
 
-async fn finish_with_cleanup(
+async fn finish_with_cleanup<T>(
     codex: &CodexThread,
-    body: std::thread::Result<Result<()>>,
-) -> Result<()> {
+    body: std::thread::Result<Result<T>>,
+) -> Result<T> {
     let cleanup_result = terminate_all_background_terminals(codex).await;
     match body {
         Ok(result) => {
@@ -210,15 +146,22 @@ async fn finish_with_cleanup(
     }
 }
 
+async fn run_with_background_terminal_cleanup<T>(
+    test: &TestCodex,
+    body: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    let body = AssertUnwindSafe(body).catch_unwind().await;
+    finish_with_cleanup(test.codex.as_ref(), body).await
+}
+
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn code_mode_completion_surfaces_discarded_live_exec_sessions() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = run_code_mode_turn(
+    let (test, follow_up_mock) = prepare_code_mode_turn(
         &server,
-        "start two nested commands and discard their session IDs",
         r#"
 const outputs = (await Promise.all([
   tools.exec_command({ cmd: "printf orphan-a; sleep 60", yield_time_ms: 250 }),
@@ -229,7 +172,10 @@ text(outputs.join("|"));
     )
     .await?;
 
-    let body = AssertUnwindSafe(async {
+    run_with_background_terminal_cleanup(&test, async {
+        test.submit_turn("start two nested commands and discard their session IDs")
+            .await?;
+
         let terminals = test.codex.list_background_terminals().await;
         assert_eq!(
             terminals.len(),
@@ -251,12 +197,9 @@ text(outputs.join("|"));
         assert_live_session_ids_in_numeric_order(session_summary, &process_ids);
         assert_eq!(text_item(&items, 1), "orphan-a|orphan-b");
 
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     })
-    .catch_unwind()
-    .await;
-
-    finish_with_cleanup(test.codex.as_ref(), body).await
+    .await
 }
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
@@ -264,22 +207,53 @@ text(outputs.join("|"));
 async fn code_mode_completion_reports_only_surviving_nested_session() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = run_code_mode_turn(
-        &server,
-        "let one yielded nested command exit before the cell completes",
+    let temp_dir = tempfile::TempDir::new()?;
+    let pid_path = temp_dir.path().join("short.pid");
+    let release_path = temp_dir.path().join("release");
+    let pid_path = shlex::try_join([pid_path.to_string_lossy().as_ref()])?;
+    let release_path = shlex::try_join([release_path.to_string_lossy().as_ref()])?;
+    let short_command = format!(
+        "printf '%s' \"$$\" > {pid_path}; printf short; \
+         while [ ! -f {release_path} ]; do sleep 0.05; done"
+    );
+    let await_short_exit_command = format!(
+        "touch {release_path}; \
+         for _ in $(seq 1 100); do \
+           if ! kill -0 \"$(cat {pid_path})\" 2>/dev/null; then \
+             printf exited; exit 0; \
+           fi; \
+           sleep 0.05; \
+         done; \
+         printf timeout; exit 1"
+    );
+    let code = format!(
         r#"
-const outputs = (await Promise.all([
-  tools.exec_command({ cmd: "printf short; sleep 1", yield_time_ms: 250 }),
-  tools.exec_command({ cmd: "printf survivor; sleep 60", yield_time_ms: 250 }),
-])).map(({ output }) => output);
-await tools.exec_command({ cmd: "sleep 2", yield_time_ms: 3000 });
-text(outputs.join("|"));
-"#,
-    )
-    .await?;
+const short = await tools.exec_command({{
+  cmd: {short_command:?},
+  yield_time_ms: 250,
+}});
+const survivor = await tools.exec_command({{
+  cmd: "printf survivor; sleep 60",
+  yield_time_ms: 250,
+}});
+const completion = await tools.exec_command({{
+  cmd: {await_short_exit_command:?},
+  yield_time_ms: 6000,
+}});
+if (completion.output !== "exited") {{
+  throw new Error(`short session did not exit: ${{completion.output}}`);
+}}
+text([short.output, survivor.output].join("|"));
+"#
+    );
 
-    let body = AssertUnwindSafe(async {
+    let server = responses::start_mock_server().await;
+    let (test, follow_up_mock) = prepare_code_mode_turn(&server, &code).await?;
+
+    run_with_background_terminal_cleanup(&test, async {
+        test.submit_turn("let one yielded nested command exit before the cell completes")
+            .await?;
+
         let terminals = test.codex.list_background_terminals().await;
         assert_eq!(
             terminals.len(),
@@ -300,12 +274,9 @@ text(outputs.join("|"));
         assert_live_session_ids_in_numeric_order(session_summary, &process_ids);
         assert_eq!(text_item(&items, 1), "short|survivor");
 
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     })
-    .catch_unwind()
-    .await;
-
-    finish_with_cleanup(test.codex.as_ref(), body).await
+    .await
 }
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
@@ -314,9 +285,8 @@ async fn large_emitted_output_does_not_truncate_live_session_warning() -> Result
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = run_code_mode_turn(
+    let (test, follow_up_mock) = prepare_code_mode_turn(
         &server,
-        "emit a large payload after yielding a nested command",
         r#"
 await tools.exec_command({ cmd: "printf large; sleep 60", yield_time_ms: 250 });
 text("x".repeat(65536));
@@ -324,7 +294,10 @@ text("x".repeat(65536));
     )
     .await?;
 
-    let body = AssertUnwindSafe(async {
+    run_with_background_terminal_cleanup(&test, async {
+        test.submit_turn("emit a large payload after yielding a nested command")
+            .await?;
+
         let terminals = test.codex.list_background_terminals().await;
         assert_eq!(
             terminals.len(),
@@ -354,12 +327,9 @@ text("x".repeat(65536));
             "large emitted output should remain represented after truncation"
         );
 
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     })
-    .catch_unwind()
-    .await;
-
-    finish_with_cleanup(test.codex.as_ref(), body).await
+    .await
 }
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
@@ -368,9 +338,8 @@ async fn yielded_cell_response_does_not_include_completion_session_warning() -> 
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
-    let (test, follow_up_mock) = run_code_mode_turn(
+    let (test, follow_up_mock) = prepare_code_mode_turn(
         &server,
-        "yield an ordinary running code-mode cell",
         r#"
 await tools.exec_command({ cmd: "sleep 60", yield_time_ms: 250 });
 await new Promise(() => {});
@@ -378,17 +347,15 @@ await new Promise(() => {});
     )
     .await?;
 
-    let body = AssertUnwindSafe(async {
+    run_with_background_terminal_cleanup(&test, async {
+        test.submit_turn("yield an ordinary running code-mode cell")
+            .await?;
+
         let terminals = test.codex.list_background_terminals().await;
         assert_eq!(
             terminals.len(),
             1,
             "the yielded cell should retain its nested background terminal: {terminals:?}"
-        );
-        let process_ids = sorted_process_ids(
-            terminals
-                .iter()
-                .map(|terminal| terminal.process_id.as_str()),
         );
 
         let request = follow_up_mock.single_request();
@@ -398,14 +365,14 @@ await new Promise(() => {});
             header.starts_with("Script running with cell ID "),
             "expected an ordinary yielded-cell status, got {header:?}"
         );
-        assert_process_ids_absent(header, &process_ids);
+        assert!(
+            !header.contains(BACKGROUND_SESSIONS_WARNING),
+            "yielded output must not contain the completion-only background-session warning: {header:?}"
+        );
 
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     })
-    .catch_unwind()
-    .await;
-
-    finish_with_cleanup(test.codex.as_ref(), body).await
+    .await
 }
 
 #[cfg_attr(windows, ignore = "no exec_command on Windows")]
@@ -462,7 +429,7 @@ text("cell-b");
         });
     let test = builder.build(&server).await?;
 
-    let body = AssertUnwindSafe(async {
+    run_with_background_terminal_cleanup(&test, async {
         test.submit_turn("start a background process from cell A")
             .await?;
         let cell_a_terminals = test.codex.list_background_terminals().await;
@@ -512,10 +479,7 @@ text("cell-b");
         assert_process_ids_absent(session_summary, &[cell_a_process_id]);
         assert_eq!(text_item(&items, 1), "cell-b");
 
-        Ok::<(), anyhow::Error>(())
+        Ok(())
     })
-    .catch_unwind()
-    .await;
-
-    finish_with_cleanup(test.codex.as_ref(), body).await
+    .await
 }

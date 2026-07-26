@@ -70,6 +70,8 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
+mod orphan_sessions;
+
 fn custom_tool_output_items(req: &ResponsesRequest, call_id: &str) -> Vec<Value> {
     match req.custom_tool_call_output(call_id).get("output") {
         Some(Value::Array(items)) => items.clone(),
@@ -199,9 +201,23 @@ async fn run_code_mode_turn_with_model_and_config(
     run_code_mode_turn_with_builder(server, prompt, code, builder).await
 }
 
-async fn run_code_mode_turn_with_builder(
+async fn prepare_code_mode_turn(
     server: &MockServer,
-    prompt: &str,
+    code: &str,
+) -> Result<(TestCodex, ResponseMock)> {
+    let builder = test_codex()
+        .with_model("test-gpt-5.1-codex")
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CodeMode)
+                .expect("code mode should be enabled");
+        });
+    prepare_code_mode_turn_with_builder(server, code, builder).await
+}
+
+async fn prepare_code_mode_turn_with_builder(
+    server: &MockServer,
     code: &str,
     mut builder: TestCodexBuilder,
 ) -> Result<(TestCodex, ResponseMock)> {
@@ -226,6 +242,16 @@ async fn run_code_mode_turn_with_builder(
     )
     .await;
 
+    Ok((test, second_mock))
+}
+
+async fn run_code_mode_turn_with_builder(
+    server: &MockServer,
+    prompt: &str,
+    code: &str,
+    builder: TestCodexBuilder,
+) -> Result<(TestCodex, ResponseMock)> {
+    let (test, second_mock) = prepare_code_mode_turn_with_builder(server, code, builder).await?;
     test.submit_turn(prompt).await?;
     Ok((test, second_mock))
 }
