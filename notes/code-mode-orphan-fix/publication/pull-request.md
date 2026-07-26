@@ -84,3 +84,5 @@ A matched broad `just test -p codex-core` run was red on both candidate and exac
 ## Related issue
 
 [#34866](https://github.com/openai/codex/issues/34866) covers a related symptom involving `Script completed` and a still-live nested shell. The standalone issue for this change defines the narrower case where JavaScript discards live session IDs and terminal rendering reports the exact-cell live sessions.
+
+Additional technical background and the classified evidence hierarchy are available in the [deep dive](https://github.com/teamleaderleo/codex/blob/50d02e84ed0501ee90e067aae276a4cd2b663495/notes/code-mode-orphan-fix/publication/deep-dive.md) and [source index](https://github.com/teamleaderleo/codex/blob/50d02e84ed0501ee90e067aae276a4cd2b663495/notes/code-mode-orphan-fix/publication/sources.md).
