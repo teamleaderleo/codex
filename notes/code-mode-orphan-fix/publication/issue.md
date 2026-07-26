@@ -79,6 +79,8 @@ The status line is added outside code mode's emitted-output truncation step. The
 - [Exact-cell live-session query](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L168-L180)
 - [Terminal response rendering](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/code_mode/mod.rs#L199-L300)
 
+For the full ownership path, design rationale, test evolution, historical context, and evidence hierarchy, see the [technical deep dive](https://github.com/teamleaderleo/codex/blob/50d02e84ed0501ee90e067aae276a4cd2b663495/notes/code-mode-orphan-fix/publication/deep-dive.md) and [source index](https://github.com/teamleaderleo/codex/blob/50d02e84ed0501ee90e067aae276a4cd2b663495/notes/code-mode-orphan-fix/publication/sources.md).
+
 ## Validation
 
 Repository-native focused validation on Linux aarch64 recorded:
