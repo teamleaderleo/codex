@@ -1,0 +1,9 @@
+RUST_MIN_STACK=8388608 NEXTEST_PROFILE=local cargo nextest run --no-fail-fast "$@"
+warning: in config file .config/nextest.toml, ignoring unknown configuration keys:  profile.local.inherits
+    Finished `test` profile [unoptimized] target(s) in 0.76s
+────────────
+ Nextest run ID 5f53acca-0936-4853-90ed-0defcfe1c8bd with nextest profile: local
+    Starting 1 test across 5 binaries (3118 tests skipped)
+        PASS [   0.460s] (1/1) codex-core::all suite::compact_resume_fork::snapshot_rollback_followup_turn_trims_context_updates
+────────────
+     Summary [   0.472s] 1 test run: 1 passed, 3118 skipped

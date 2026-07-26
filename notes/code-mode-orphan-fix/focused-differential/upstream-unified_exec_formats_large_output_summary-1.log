@@ -1,0 +1,13 @@
+RUST_MIN_STACK=8388608 NEXTEST_PROFILE=local cargo nextest run --no-fail-fast "$@"
+warning: in config file .config/nextest.toml, ignoring unknown configuration keys:  profile.local.inherits
+   Compiling codex-core v0.0.0 (/home/runner/work/codex/codex/codex-rs/core)
+   Compiling codex-image-generation-extension v0.0.0 (/home/runner/work/codex/codex/codex-rs/ext/image-generation)
+   Compiling core_test_support v0.0.0 (/home/runner/work/codex/codex/codex-rs/core/tests/common)
+   Compiling codex-web-search-extension v0.0.0 (/home/runner/work/codex/codex/codex-rs/ext/web-search)
+    Finished `test` profile [unoptimized] target(s) in 1m 06s
+────────────
+ Nextest run ID 2e7e5002-c2c4-444b-90da-117977b292ab with nextest profile: local
+    Starting 1 test across 4 binaries (3110 tests skipped)
+        PASS [   0.631s] (1/1) codex-core::all suite::unified_exec::unified_exec_formats_large_output_summary
+────────────
+     Summary [   0.643s] 1 test run: 1 passed, 3110 skipped
