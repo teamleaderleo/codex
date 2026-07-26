@@ -1,0 +1,91 @@
+name: Patch 1 Wine target guards
+
+on:
+  push:
+    branches:
+      - validation/code-mode-wine-target-guards
+
+permissions:
+  contents: read
+
+jobs:
+  wine-target-guards:
+    name: Validate orphan-session Windows-target guards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bazel-ci
+        with:
+          target: Linux
+
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev
+
+      - name: Run targeted Wine-exec validation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          artifact_dir="$RUNNER_TEMP/patch1-wine-target-guards"
+          mkdir -p "$artifact_dir"
+          log_file="$artifact_dir/validation.log"
+          exec > >(tee "$log_file") 2>&1
+
+          finish() {
+            status=$?
+            git status --short --untracked-files=all > "$artifact_dir/git-status.txt" || true
+            git diff --check > "$artifact_dir/git-diff-check.txt" 2>&1 || true
+            printf 'exit_status=%s\n' "$status" > "$artifact_dir/result.txt"
+            exit "$status"
+          }
+          trap finish EXIT
+
+          code_head="$(git rev-parse HEAD^)"
+          expected_head="77e7e3149df366236db2426596c23ebbe1d6bb48"
+          [[ "$code_head" == "$expected_head" ]]
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("codex-rs/core/tests/suite/code_mode/orphan_sessions.rs")
+          text = path.read_text()
+          expected = 4
+          actual = text.count("skip_if_target_windows!(")
+          if actual != expected:
+              raise SystemExit(f"expected {expected} target-Windows guards, found {actual}")
+          if text.count("skip_if_remote!(") != 1:
+              raise SystemExit("expected one local-only survivor guard")
+          PY
+
+          bazel test //codex-rs/core:core-all-wine-exec-test \
+            --test_filter='suite::code_mode::orphan_sessions::' \
+            --test_output=all
+
+          git diff --check
+          [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]
+
+          {
+            printf 'Code head: %s\n' "$code_head"
+            printf 'Wine-exec target: //codex-rs/core:core-all-wine-exec-test\n'
+            printf 'Filter: suite::code_mode::orphan_sessions::\n'
+            printf 'Target-Windows guards found: 4\n'
+            printf 'Local-only survivor guard found: 1\n'
+            printf 'git diff --check: passed\n'
+            printf 'Worktree: clean\n'
+          } > "$artifact_dir/receipt.txt"
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: patch1-wine-target-guards-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/patch1-wine-target-guards
+          if-no-files-found: error
+          retention-days: 14
