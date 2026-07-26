@@ -4,7 +4,7 @@ Status: unpublished. The proposed body below is intended for upstream publicatio
 
 ## Proposed title
 
-`Script completed` can omit session IDs for live nested terminals
+"Script completed" can omit session IDs for live nested terminals
 
 ## Proposed body
 
@@ -74,7 +74,7 @@ The proposed fix is visibility-only:
 - ordinary yielded code-cell responses remain unchanged;
 - nested tool-call IDs remain opaque;
 - the JavaScript-visible nested result schema is unchanged; and
-- no process-lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, or protocol policy changes.
+- no changes to process lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, or protocol behaviour.
 
 The status line is added outside code mode's emitted-output truncation step. The complete tool result remains subject to later global conversation-history limits.
 
