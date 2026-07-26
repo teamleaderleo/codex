@@ -1,0 +1,38 @@
+name: Agent 1 Actions observer
+
+on:
+  push:
+    branches:
+      - automation/agent1-actions-observer
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: true
+
+      - name: Query and publish workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p notes/code-mode-orphan-fix
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+            --jq '.workflow_runs[] | [.id, .name, .head_branch, .head_sha, .status, (.conclusion // ""), .created_at, .updated_at, .html_url] | @tsv' \
+            > notes/code-mode-orphan-fix/agent-1-actions-runs.tsv
+          git switch -c automation/agent1-actions-observer-results
+          git add notes/code-mode-orphan-fix/agent-1-actions-runs.tsv
+          git config user.name "Agent 1 Actions observer"
+          git config user.email "teamleaderleo@users.noreply.github.com"
+          git commit -m "docs: record clean-candidate workflow runs"
+          git push origin HEAD:refs/heads/automation/agent1-actions-observer-results
