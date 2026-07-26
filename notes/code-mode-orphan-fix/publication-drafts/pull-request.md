@@ -89,7 +89,7 @@ The five aggregate acceptance cases verify:
 4. a large emitted payload cannot displace the status warning at the code-mode truncation boundary; and
 5. yielded responses remain completion-neutral.
 
-The aggregate harness verifies cleanup across success, returned error, and panic paths.
+The aggregate harness uses cleanup protection that runs after success, returned errors, and panics while preserving an original panic.
 
 A matched broad `just test -p codex-core` differential was red on both the production-equivalent candidate and the exact upstream base. Persistent failures were attributable to environment dependencies, unavailable helper binaries, sandbox or runner limitations, or assertions reproduced on the exact base. The two differing broad-run test names both passed repeated focused executions on both refs, leaving no persistent candidate-only failure. The broad project suite is not claimed as green.
 
