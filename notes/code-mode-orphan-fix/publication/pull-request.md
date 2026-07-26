@@ -1,7 +1,5 @@
 # Report live nested session IDs in code mode
 
-Unpublished pull-request text. Replace `#ISSUE_NUMBER` after the issue is opened.
-
 Fixes #ISSUE_NUMBER.
 
 ## Why
@@ -13,9 +11,9 @@ The change restores that control information without changing when background pr
 ## What changed
 
 1. [`ExecCommandHandler`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138) carries the existing code-mode cell ID into unified exec.
-2. [`UnifiedExecContext` and `ProcessEntry`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L76-L99) retain that attribution with stored live process entries.
+2. [`UnifiedExecContext`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L76-L99) carries that attribution to process creation, and [`ProcessEntry`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L189-L199) retains it beside the stored process.
 3. [`live_process_ids_created_by_cell`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L168-L180) returns the exact cell's still-live session IDs in numeric order.
-4. [Terminal code-mode response handling](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/code_mode/mod.rs#L199-L300) adds those IDs to `Result` and `Terminated` status output.
+4. [Terminal code-mode response handling](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/code_mode/mod.rs#L199-L300) adds those IDs to terminal `Result` and `Terminated` status output.
 
 The existing process manager remains the only liveness authority. The change does not infer ownership from JavaScript output, command text, or call-ID strings, and it does not add a second process registry.
 
@@ -40,6 +38,8 @@ Output:
 - Process lifetime, automatic termination, pruning, shutdown, interrupt, recovery, wake-up, and public-protocol behaviour do not change.
 
 Code-mode emitted output is truncated before the status header is added, so the live-session line is outside that truncation step. The complete tool result remains subject to later global conversation-history limits.
+
+The lookup is a point-in-time liveness check. A process can exit immediately after the status is formatted; the line reports what the existing manager considers live at that moment rather than promising future liveness.
 
 <details>
 <summary>Alternatives considered</summary>
@@ -73,7 +73,7 @@ Repository-native focused validation on Linux aarch64:
 - `just fix -p codex-core`: passed;
 - four focused unit tests: `4 passed; 0 failed`;
 - five aggregate acceptance cases: `5 passed; 0 failed`;
-- two compatibility tests on the final candidate: `20/20 passed`;
+- two compatibility tests, repeated ten times each on the final candidate: `20/20 passed`;
 - the same tests on exact upstream base `61a44880a85d2fd0d8770908dea5733495e571c8`: `20/20 passed`;
 - clean worktree and `git diff --check`: passed.
 
