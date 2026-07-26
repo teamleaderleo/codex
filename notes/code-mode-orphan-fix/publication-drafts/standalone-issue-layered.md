@@ -108,7 +108,7 @@ A matched broad `codex-core` run was red on both refs. Exact-base comparison and
 - [terminal-only lookup and status rendering](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/code_mode/mod.rs#L199-L300)
 - [direct manager-query unit test](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod_tests.rs#L332-L395)
 - [single aggregate integration-test convention](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/all.rs#L1-L9)
-- [public validation summary and disclosure boundary](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md#executable-validation-summary)
+- [public validation summary and disclosure boundary](https://github.com/teamleaderleo/codex/blob/fb8d8fe6c007524e9eddff7186c8517b96f0a129/notes/code-mode-orphan-fix/publication-drafts/works-cited.md#executable-validation-summary)
 
 </details>
 
@@ -116,8 +116,8 @@ A matched broad `codex-core` run was red on both refs. Exact-base comparison and
 
 The fuller engineering record covers the ownership path, code walkthrough, historical context, rejected alternatives, test evolution, threat model, validation limits, and evidence provenance:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/fb8d8fe6c007524e9eddff7186c8517b96f0a129/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/fb8d8fe6c007524e9eddff7186c8517b96f0a129/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related issues
 
