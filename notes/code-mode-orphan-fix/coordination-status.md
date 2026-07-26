@@ -8,6 +8,11 @@ Baseline: `20dafe201d91d4405eef05ecd1db0257f13a9ac8`
 
 Patch 1 correctness work is complete. The remaining work is submission hygiene, one final team sanity review, the user's wording and presentation review, and publication sequencing.
 
+Active clean-candidate dispatch:
+
+- File: `notes/code-mode-orphan-fix/agent-1-clean-candidate-dispatch.md`
+- Dispatch commit: `f039be83561aeeb2a82868394f7b17f783efee12`
+
 Do not publish the upstream issue or open the upstream pull request until the remaining gate items below are complete.
 
 ## Selected Patch 1 contract
@@ -135,7 +140,7 @@ Agent 4 found no newer exact duplicate or merged typed-creator-cell visibility f
 
 Implementation, integration, formatting publication, and tested branch work are complete.
 
-Next responsibility: prepare or help prepare a clean candidate without prototype, investigation, or research ancestry while preserving the reviewed net effect.
+Next responsibility: execute `notes/code-mode-orphan-fix/agent-1-clean-candidate-dispatch.md` from dispatch commit `f039be83561aeeb2a82868394f7b17f783efee12`, preserving the reviewed net effect without prototype, investigation, or research ancestry.
 
 ### Agent 2
 
