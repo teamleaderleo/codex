@@ -102,32 +102,40 @@ Keep machine-specific log paths private.
 
 Branch: `fix/code-mode-live-session-summary`
 
-Current branch head: `cea3f73d97897ca5ede37010cbd96addbabda6a5`
+Current integrated head: `4263facaf3c7d30b26cae33fd1e679278ac02105`
 
-Current state:
+Integration details:
+
+- First parent: reviewed implementation head `cea3f73d97897ca5ede37010cbd96addbabda6a5`.
+- Second parent: verified acceptance head `89ffd99b81e872e3a961767e67fb8ec410df7eae`.
+- The merge tree adds `codex-rs/core/tests/code_mode_orphan_sessions.rs` to the implementation tree.
+- Agent 2's documentation-only handoff file is intentionally omitted from the production branch.
+- The original negative reproduction and corrected positive acceptance lineage are now preserved in branch ancestry.
+- The two-cell integration case supplies exact creator-cell isolation coverage, so no duplicate manager-level test was added.
+
+Current code state:
 
 - `ExecCommandHandler` converts `ToolCallSource::CodeMode` into optional typed `CellId` attribution on `UnifiedExecContext`.
 - `store_process` copies that attribution onto each stored `ProcessEntry`.
 - `UnifiedExecProcessManager::live_process_ids_created_by_cell` uses exact typed matching, excludes exited processes, and returns sorted IDs.
 - Outer code-mode reporting queries that method only for `Result` and `Terminated`.
-- Nested call IDs are opaque again.
+- Nested call IDs are opaque.
 - Existing JavaScript results and persistence policy are unchanged.
 - Formatter-level unit tests cover success, failure, termination, sorting, and yielded exclusion.
-- Agent 2 verified the full five-test integration suite against this implementation in a temporary applied tree.
-- The branch itself still does not contain the acceptance commits and has not advanced beyond `cea3f73d97897ca5ede37010cbd96addbabda6a5`.
-- Formatting, focused unit validation, broader validation, and a clean integrated review head remain pending.
+- The combined production-and-test state matches the state Agent 2 exercised successfully.
 
-Agent 1 next actions:
+Validation still pending on the canonical integrated branch:
 
-1. Integrate the four ordered test commits listed above onto the implementation branch. The documentation-only handoff commits are optional.
-2. Confirm the branch contains the same code and test state that produced the five-test pass.
-3. Run the repository formatting command and inspect the net diff.
-4. Run the relevant code-mode and unified-exec unit tests.
-5. Re-run the complete `code_mode_orphan_sessions` file from the clean integrated branch using the verified command above.
-6. Record exact commands, results, skips, and any flakes.
-7. Review the net diff from the baseline for unintended lifecycle-policy changes.
-8. Only after the combined branch is green and reviewed, prepare a clean comparison or squashed candidate commit.
-9. Do not open an upstream PR yet.
+1. Run the repository formatting command and inspect the net diff.
+2. Compile or run a focused no-run test build before the repeated integration run.
+3. Run relevant code-mode and unified-exec unit tests.
+4. Repeat the complete `code_mode_orphan_sessions` file from `4263facaf3c7d30b26cae33fd1e679278ac02105` using the verified VM settings.
+5. Record exact commands, results, platform skips, and flakes.
+6. Review the net diff from the baseline for unintended lifecycle-policy changes.
+7. Do not squash prototype history until this integrated branch is green and reviewed.
+8. Do not open an upstream PR yet.
+
+Static net comparison from the baseline currently contains seven changed files and 663 changed lines, below the repository's 800-line change-size guidance. No GitHub Actions run was attached automatically to the merge head.
 
 ### Agent 2: regression and acceptance-test owner
 
@@ -144,26 +152,26 @@ Report update: `8739905480cc02753e8e7e57dcc4f5170335480e`
 State: acceptance work complete for Patch 1.
 
 - The negative reproduction remains unchanged as clean baseline evidence.
-- The header assertion now allows the session-summary line before wall time.
+- The header assertion allows the session-summary line before wall time.
 - One-survivor timing respects the unified-exec yield floor.
 - A two-cell integration test proves exact creator-cell isolation.
-- The large-output test now checks the intended contract without over-specifying truncator output.
+- The large-output test checks the intended contract without over-specifying truncator output.
 - The complete five-test file passed against Agent 1's implementation.
 
 Agent 2 next actions:
 
-1. Avoid further changes unless Agent 1's clean integration run exposes a genuine test defect.
+1. Avoid further changes unless the canonical integrated run exposes a genuine test defect.
 2. Preserve the verified branch head and ordered ancestry.
 3. Help interpret any clean-branch failure, distinguishing implementation, test, and environment causes.
 4. Do not claim full `codex-core` or workspace validation; only the focused file has been verified.
 
-### Agent 3 / integrator review: ownership audit and follow-up research
+### Agent 3: ownership audit and review
 
 Completed Patch 1 work:
 
 - confirmed the callback-task versus manager-owned process boundary;
 - identified typed creator-cell attribution as the smallest reliable ownership API;
-- reviewed Agent 1's net implementation and Agent 2's acceptance suite;
+- reviewed Agent 1's implementation and Agent 2's acceptance suite;
 - identified the original header assertion mismatch before execution;
 - confirmed the corrected acceptance branch and five-test result;
 - kept lifecycle-policy changes out of Patch 1.
@@ -176,22 +184,12 @@ Current parallel research:
 - Topic: whether a delayed nested invocation from an old yielded cell can be consumed by a later turn worker through the shared dispatch receiver.
 - Status: high-confidence static crossover path; not yet reproduced.
 
-Confirmed static facts for the follow-up:
-
-- yielded cells keep their callback cancellation token live;
-- their dispatch gate remains open;
-- the session-level broker queue survives the initiating turn worker;
-- every later turn worker clones the competing receiver and binds it to that later turn's runtime;
-- messages carry a cell ID but no originating turn or worker generation.
-
 Agent 3 next actions:
 
-1. Review Agent 1's clean integrated branch and repeated validation results.
+1. Review integrated head `4263facaf3c7d30b26cae33fd1e679278ac02105` and the eventual repeated validation results.
 2. Check the final net diff for attribution correctness, liveness filtering, output placement, and lifecycle-policy expansion.
 3. Keep the cross-turn dispatch test separate from Patch 1.
-4. When capacity permits, implement or delegate the deterministic two-turn reproduction from the test assignment.
-5. Do not call the follow-up a reproduced bug until a test observes the wrong-turn execution or indefinite no-successor wait.
-6. Update this execution board as verified heads change.
+4. Do not call the follow-up a reproduced bug until a test observes wrong-turn execution or indefinite no-successor wait.
 
 ### Agent 4: history, evidence, and unpublished issue owner
 
@@ -201,17 +199,16 @@ Current state:
 
 - The report correctly describes intended persistence, the ownership boundary, the verified negative reproduction, typed attribution, non-goals, and the publication gate.
 - It remains private; no issue, PR, or comment has been published.
-- Positive integration evidence is now available, but there is not yet a clean combined implementation branch or final broader validation result.
+- A canonical combined implementation branch now exists, but formatting, focused unit validation, repeated acceptance validation, and final net review remain pending.
 
 Agent 4 next actions:
 
-1. Record the positive integration evidence from Agent 2's report commit `8739905480cc02753e8e7e57dcc4f5170335480e`.
-2. Record the verified acceptance head `89ffd99b81e872e3a961767e67fb8ec410df7eae`, ordered commits, exact command, and `5 passed; 0 failed; 0 ignored` result.
-3. Clearly state that the pass came from a temporary applied integration against implementation head `cea3f73d97897ca5ede37010cbd96addbabda6a5`.
-4. Keep the final clean implementation commit, formatting result, focused unit results, and broader validation placeholders open.
-5. Keep the issue unpublished.
-6. Refresh related issue status and recent maintainer discussion after Agent 1 supplies the clean tested head.
-7. Preserve both publication variants: issue immediately before the PR, and issue linked alongside a draft PR.
+1. Record integrated head `4263facaf3c7d30b26cae33fd1e679278ac02105` and its two-parent ancestry.
+2. Record Agent 2's exact command and `5 passed; 0 failed; 0 ignored` result as verified on the equivalent combined state.
+3. Keep formatting, focused-unit, repeated canonical-branch validation, and final review placeholders open.
+4. Keep the issue unpublished.
+5. Refresh related issue status and recent maintainer discussion after Agent 1 supplies the green reviewed head.
+6. Preserve both publication variants: issue immediately before the PR, and issue linked alongside a draft PR.
 
 ## Publication gate
 
@@ -223,22 +220,22 @@ Do not publish the upstream issue or open the upstream PR until all of the follo
 - [x] Positive acceptance suite is prepared.
 - [x] Incorrect completion-header assertion is fixed.
 - [x] Exact creator-cell isolation is covered.
-- [x] Temporary combined implementation and acceptance state compiles.
-- [x] Full positive acceptance file passes with panic-safe teardown.
+- [x] Corrected tests are integrated onto Agent 1's branch.
+- [x] Equivalent combined implementation and acceptance state compiles.
+- [x] Full positive acceptance file passes with panic-safe teardown on the equivalent combined state.
 - [x] One-survivor and truncation cases pass deterministically.
 - [x] Yielded-cell behaviour remains completion-neutral.
-- [ ] Corrected tests are integrated onto Agent 1's branch.
-- [ ] Formatting completes with an inspected diff.
-- [ ] Relevant code-mode and unified-exec unit tests pass on the integrated branch.
-- [ ] Full positive acceptance file is repeated from the clean integrated branch.
+- [ ] Formatting completes with an inspected diff on the canonical branch.
+- [ ] Relevant code-mode and unified-exec unit tests pass on the canonical branch.
+- [ ] Full positive acceptance file is repeated from the canonical integrated branch.
 - [ ] Clean tested implementation commit or PR comparison exists.
 - [ ] Agent 4 fills all evidence placeholders and refreshes related-issue research.
 - [ ] Final net-diff review finds no lifecycle-policy expansion.
 
 ## Immediate execution order
 
-1. Agent 1 integrates the four verified test commits onto the implementation branch.
-2. Agent 1 formats, runs focused unit tests, and repeats the five-test acceptance file from that clean branch.
+1. Agent 1 formats the canonical integrated branch and inspects the resulting diff.
+2. Agent 1 compiles, runs focused unit tests, and repeats the five-test acceptance file.
 3. Agent 3 reviews the clean net diff and validation record.
 4. Agent 4 fills the remaining evidence placeholders and refreshes related issues.
 5. Prepare a clean candidate commit or draft PR comparison.
