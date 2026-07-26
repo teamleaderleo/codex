@@ -9,9 +9,8 @@ This is the canonical cross-agent execution board for the code-mode orphan inves
 
 - Every agent should read this file before starting or resuming work.
 - The integrator owns updates to this file so parallel agents do not conflict while editing it.
-- Each agent should keep detailed work in its own report file or implementation branch, then leave a compact handoff containing branch/ref, changed files, tests actually run, blockers, and decisions needed.
+- Each agent should keep detailed work in its own report or implementation branch, then leave a compact handoff containing branch/ref, changed files, tests actually run, blockers, and decisions needed.
 - Do not overwrite another agent's report.
-- Use a PR review when a PR exists. Otherwise record cross-branch reviews here.
 - Do not publish the upstream issue or open an upstream PR until the publication gate below is met.
 
 ## Selected Patch 1 contract
@@ -33,57 +32,21 @@ This is the canonical cross-agent execution board for the code-mode orphan inves
 - Branch: `research/code-mode-live-session-test`
 - Commit: `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`
 - Test: `code_mode_completion_does_not_surface_discarded_live_exec_sessions`
-- Environment: Linux aarch64 in a local Lima VM hosted on macOS
+- Environment: Linux aarch64 in Lima
 - Result: `1 passed; 0 failed; 0 ignored`
 
 The test confirms that two nested `exec_command` calls can yield, JavaScript can discard both copied `session_id` fields, the outer cell can report `Script completed`, and both manager-owned processes can remain alive without their IDs appearing in the outer result. Panic-safe teardown removed all test processes.
 
-Exact command:
+### Corrected acceptance lineage
 
-```sh
-RUST_MIN_STACK=8388608 \
-CARGO_BUILD_JOBS=4 \
-CARGO_INCREMENTAL=1 \
-CARGO_PROFILE_TEST_DEBUG=0 \
-CARGO_TARGET_DIR=/home/lima/.cache/codex-orphan-target \
-RUST_BACKTRACE=1 \
-cargo test -p codex-core \
-  --test code_mode_orphan_sessions \
-  code_mode_completion_does_not_surface_discarded_live_exec_sessions \
-  -- --exact --nocapture
-```
+- Branch: `research/code-mode-live-session-acceptance`
+- Verified head: `89ffd99b81e872e3a961767e67fb8ec410df7eae`
+- Negative proof: `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`
+- Initial acceptance: `528171c72c06d8be3471752322b7755a1eac3ac8`
+- Contract/isolation correction: `0ba57a73ea5895883a21aeb88e923d75a74ed38d`
+- Truncation assertion correction: `89ffd99b81e872e3a961767e67fb8ec410df7eae`
 
-### Positive integration run
-
-Agent 2 applied the corrected acceptance lineage to Agent 1's typed-attribution implementation and ran the complete focused integration file.
-
-- Implementation tested: `cea3f73d97897ca5ede37010cbd96addbabda6a5`
-- Acceptance branch verified head: `89ffd99b81e872e3a961767e67fb8ec410df7eae`
-- Ordered test commits:
-  1. `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`
-  2. `528171c72c06d8be3471752322b7755a1eac3ac8`
-  3. `0ba57a73ea5895883a21aeb88e923d75a74ed38d`
-  4. `89ffd99b81e872e3a961767e67fb8ec410df7eae`
-- Environment: Linux aarch64 under Lima
-- Result: `5 passed; 0 failed; 0 ignored`
-- Harness-reported execution time: `16.37s`
-- Agent 2 report update: `8739905480cc02753e8e7e57dcc4f5170335480e`
-
-Exact successful command:
-
-```sh
-RUST_MIN_STACK=8388608 \
-CARGO_BUILD_JOBS=4 \
-CARGO_INCREMENTAL=1 \
-CARGO_PROFILE_TEST_DEBUG=0 \
-CARGO_TARGET_DIR=/home/lima/.cache/codex-orphan-target \
-RUST_BACKTRACE=1 \
-cargo test -p codex-core \
-  --test code_mode_orphan_sessions \
-  -- --nocapture --test-threads=1
-```
-
-Verified cases:
+Coverage:
 
 - both discarded surviving session IDs appear exactly once and in numeric order;
 - one exited process is excluded while the survivor is reported;
@@ -92,154 +55,168 @@ Verified cases:
 - exact creator-cell isolation excludes Cell A's process from Cell B's summary;
 - panic-safe teardown leaves no registered background terminals.
 
-The first integrated run reached `4 passed; 1 failed` because the large-output test over-specified the retained text excerpt. Commit `89ffd99b81e872e3a961767e67fb8ec410df7eae` corrected only that test assertion; the complete file then passed.
+### Canonical validation run
 
-Keep machine-specific log paths private.
+Detailed report: `notes/code-mode-orphan-fix/agent-2-test-runtime-report.md`
+
+Dispatch commit: `ddaad65e0ad98c8bc3400937b11f53fb14dd52b9`
+
+Validated starting branch/head:
+
+- Branch: `fix/code-mode-live-session-summary`
+- Remote starting head: `4263facaf3c7d30b26cae33fd1e679278ac02105`
+- First parent: implementation `cea3f73d97897ca5ede37010cbd96addbabda6a5`
+- Second parent: acceptance `89ffd99b81e872e3a961767e67fb8ec410df7eae`
+- Platform: Linux aarch64 in Lima
+
+Formatting:
+
+- Full repository `just fmt` was unavailable because `just`, `dotslash`, and `uv` were absent.
+- `cargo fmt --all` was run from `codex-rs` because Patch 1 changes Rust files only.
+- Rust formatting changed only:
+  - `codex-rs/core/src/tools/code_mode/mod.rs`
+  - `codex-rs/core/src/unified_exec/process_manager.rs`
+- The changes were formatting-only.
+- The local formatting-only commit SHA was not captured.
+- The remote branch still resolves to unformatted merge head `4263facaf3c7d30b26cae33fd1e679278ac02105`.
+
+Validation results on the local Rust-formatted descendant:
+
+- `cargo check --manifest-path codex-rs/Cargo.toml -p codex-core --tests`: passed in 7m48s.
+- Focused code-mode library tests: `3 passed; 0 failed`.
+- Focused unified-exec library tests: `3 passed; 0 failed`.
+- Complete `code_mode_orphan_sessions` target: `5 passed; 0 failed; 0 ignored` in 17.12s.
+- No skips, flakes, or retries were observed for the correctly scoped commands.
+- Panic-safe acceptance cleanup remained active.
+
+Infrastructure note:
+
+- One incorrectly broad `cargo test -p codex-core <test-name>` fallback widened the build to unrelated integration binaries and linkers were killed with signal 9.
+- This was a runner/resource and command-selection failure, not a Patch 1 compile failure or test assertion failure.
+- The corrected explicit `--lib` selections all passed.
+- Full workspace validation is not claimed.
+
+## Preliminary net-diff review
+
+Review file: `notes/code-mode-orphan-fix/preliminary-net-diff-review-4263fac.md`
+
+Review commit: `85e3324b2dd6fc78305a1bdd843dd1ec024a33f9`
+
+Preliminary static verdict for `4263facaf3c7d30b26cae33fd1e679278ac02105` against the baseline: pass, with final sign-off reserved.
+
+Confirmed:
+
+- typed `ToolCallSource::CodeMode` attribution flows through `UnifiedExecContext` into stored `ProcessEntry`;
+- manager lookup uses exact `CellId` equality, excludes exited processes, and sorts logical process IDs;
+- manager lookup is read-only and does not change removal, pruning, persistence, or termination policy;
+- only `Result` and `Terminated` query for live sessions;
+- `Yielded` remains completion-neutral;
+- emitted output is truncated before the status header is prepended;
+- nested call IDs remain opaque UUID-based IDs;
+- no shutdown, interrupt, dispatch, recovery, cell-runtime, or public protocol policy is changed.
+
+Minor notes:
+
+- process IDs are sorted in the manager and again by the formatter;
+- prototype history remains and should not be squashed until the published formatted head is reviewed;
+- Unix/network-backed test limitations remain documented.
+
+Final sign-off is still reserved until the exact formatted tested tree is pushed and compared.
 
 ## Current workstreams
 
-### Agent 1: typed-attribution implementation and integration owner
+### Agent 1: publish the exact tested tree
 
-Branch: `fix/code-mode-live-session-summary`
+Current remote branch/head:
 
-Current integrated head: `4263facaf3c7d30b26cae33fd1e679278ac02105`
+- `fix/code-mode-live-session-summary`
+- `4263facaf3c7d30b26cae33fd1e679278ac02105`
 
-Integration details:
+Next actions:
 
-- First parent: reviewed implementation head `cea3f73d97897ca5ede37010cbd96addbabda6a5`.
-- Second parent: verified acceptance head `89ffd99b81e872e3a961767e67fb8ec410df7eae`.
-- The merge tree adds `codex-rs/core/tests/code_mode_orphan_sessions.rs` to the implementation tree.
-- Agent 2's documentation-only handoff file is intentionally omitted from the production branch.
-- The original negative reproduction and corrected positive acceptance lineage are now preserved in branch ancestry.
-- The two-cell integration case supplies exact creator-cell isolation coverage, so no duplicate manager-level test was added.
+1. Recover the local formatting-only commit or recreate it with `cargo fmt --all` from `codex-rs` on `4263facaf3c7d30b26cae33fd1e679278ac02105`.
+2. Confirm only the two expected Rust files change.
+3. Push that exact formatting-only commit to `fix/code-mode-live-session-summary` and record the published SHA.
+4. Run and record:
+   - `git status --short`;
+   - `git diff --check`;
+   - `git log --oneline --decorate -8`;
+   - baseline `git diff --stat`;
+   - baseline `git diff --name-status`.
+5. Do not squash yet.
+6. Do not open an upstream PR yet.
 
-Current code state:
+### Agent 2: validation owner
 
-- `ExecCommandHandler` converts `ToolCallSource::CodeMode` into optional typed `CellId` attribution on `UnifiedExecContext`.
-- `store_process` copies that attribution onto each stored `ProcessEntry`.
-- `UnifiedExecProcessManager::live_process_ids_created_by_cell` uses exact typed matching, excludes exited processes, and returns sorted IDs.
-- Outer code-mode reporting queries that method only for `Result` and `Terminated`.
-- Nested call IDs are opaque.
-- Existing JavaScript results and persistence policy are unchanged.
-- Formatter-level unit tests cover success, failure, termination, sorting, and yielded exclusion.
-- The combined production-and-test state matches the state Agent 2 exercised successfully.
+State: Patch 1 regression, acceptance, and runtime-validation work is complete.
 
-Validation still pending on the canonical integrated branch:
+Preserve:
 
-1. Run the repository formatting command and inspect the net diff.
-2. Compile or run a focused no-run test build before the repeated integration run.
-3. Run relevant code-mode and unified-exec unit tests.
-4. Repeat the complete `code_mode_orphan_sessions` file from `4263facaf3c7d30b26cae33fd1e679278ac02105` using the verified VM settings.
-5. Record exact commands, results, platform skips, and flakes.
-6. Review the net diff from the baseline for unintended lifecycle-policy changes.
-7. Do not squash prototype history until this integrated branch is green and reviewed.
-8. Do not open an upstream PR yet.
+- negative proof `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`;
+- acceptance head `89ffd99b81e872e3a961767e67fb8ec410df7eae`.
 
-Static net comparison from the baseline currently contains seven changed files and 663 changed lines, below the repository's 800-line change-size guidance. No GitHub Actions run was attached automatically to the merge head.
+Next actions:
 
-### Agent 2: regression and acceptance-test owner
+1. Avoid further branch changes unless the published formatted tree differs from the tested tree or a concrete test-contract defect is found.
+2. Help classify any later failure as implementation, test, environment, or command-selection related.
+3. Do not claim full workspace validation.
 
-Negative branch: `research/code-mode-live-session-test`
+### Agent 3: final review owner
 
-Negative commit: `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`
+Completed:
 
-Acceptance branch: `research/code-mode-live-session-acceptance`
+- ownership-boundary audit;
+- typed creator-cell API recommendation;
+- implementation and acceptance review;
+- preliminary net-diff review;
+- confirmation of the canonical validation record.
 
-Verified acceptance head: `89ffd99b81e872e3a961767e67fb8ec410df7eae`
+Next actions:
 
-Report update: `8739905480cc02753e8e7e57dcc4f5170335480e`
+1. Wait for Agent 1 to publish the exact formatting-only descendant.
+2. Compare the published head against `4263facaf3c7d30b26cae33fd1e679278ac02105` and verify only the two expected formatting changes.
+3. Re-run the net-diff inspection against the baseline.
+4. Confirm attribution, liveness filtering, terminal-only placement, yielded neutrality, opaque IDs, and absence of lifecycle-policy expansion.
+5. Give or withhold final sign-off based on the published tested tree.
 
-State: acceptance work complete for Patch 1.
+### Agent 4: evidence and unpublished issue owner
 
-- The negative reproduction remains unchanged as clean baseline evidence.
-- The header assertion allows the session-summary line before wall time.
-- One-survivor timing respects the unified-exec yield floor.
-- A two-cell integration test proves exact creator-cell isolation.
-- The large-output test checks the intended contract without over-specifying truncator output.
-- The complete five-test file passed against Agent 1's implementation.
+Next actions:
 
-Agent 2 next actions:
-
-1. Avoid further changes unless the canonical integrated run exposes a genuine test defect.
-2. Preserve the verified branch head and ordered ancestry.
-3. Help interpret any clean-branch failure, distinguishing implementation, test, and environment causes.
-4. Do not claim full `codex-core` or workspace validation; only the focused file has been verified.
-
-### Agent 3: ownership audit and review
-
-Completed Patch 1 work:
-
-- confirmed the callback-task versus manager-owned process boundary;
-- identified typed creator-cell attribution as the smallest reliable ownership API;
-- reviewed Agent 1's implementation and Agent 2's acceptance suite;
-- identified the original header assertion mismatch before execution;
-- confirmed the corrected acceptance branch and five-test result;
-- kept lifecycle-policy changes out of Patch 1.
-
-Current parallel research:
-
-- Audit: `notes/code-mode-orphan-fix/follow-up-cross-turn-dispatch-audit.md`
-- Test assignment: `notes/code-mode-orphan-fix/follow-up-cross-turn-dispatch-test-assignment.md`
-- Assignment commit: `477a911ee39f2110b6e3bd512fc43e3accdd6e9c`
-- Topic: whether a delayed nested invocation from an old yielded cell can be consumed by a later turn worker through the shared dispatch receiver.
-- Status: high-confidence static crossover path; not yet reproduced.
-
-Agent 3 next actions:
-
-1. Review integrated head `4263facaf3c7d30b26cae33fd1e679278ac02105` and the eventual repeated validation results.
-2. Check the final net diff for attribution correctness, liveness filtering, output placement, and lifecycle-policy expansion.
-3. Keep the cross-turn dispatch test separate from Patch 1.
-4. Do not call the follow-up a reproduced bug until a test observes wrong-turn execution or indefinite no-successor wait.
-
-### Agent 4: history, evidence, and unpublished issue owner
-
-Research file: `notes/code-mode-orphan-fix/agent-4-history-issue-report.md`
-
-Current state:
-
-- The report correctly describes intended persistence, the ownership boundary, the verified negative reproduction, typed attribution, non-goals, and the publication gate.
-- It remains private; no issue, PR, or comment has been published.
-- A canonical combined implementation branch now exists, but formatting, focused unit validation, repeated acceptance validation, and final net review remain pending.
-
-Agent 4 next actions:
-
-1. Record integrated head `4263facaf3c7d30b26cae33fd1e679278ac02105` and its two-parent ancestry.
-2. Record Agent 2's exact command and `5 passed; 0 failed; 0 ignored` result as verified on the equivalent combined state.
-3. Keep formatting, focused-unit, repeated canonical-branch validation, and final review placeholders open.
-4. Keep the issue unpublished.
-5. Refresh related issue status and recent maintainer discussion after Agent 1 supplies the green reviewed head.
-6. Preserve both publication variants: issue immediately before the PR, and issue linked alongside a draft PR.
+1. Record dispatch commit `ddaad65e0ad98c8bc3400937b11f53fb14dd52b9` and the canonical validation results.
+2. Record the formatting runbook deviation and the two expected formatting-only files.
+3. Record compile/check, focused `3 + 3` library tests, acceptance `5/5`, no skips/flakes, and the unrelated broad-command OOM incident.
+4. Keep the final formatted SHA and Agent 3 sign-off placeholders open.
+5. Keep the issue and PR unpublished.
+6. Refresh related-issue status and maintainer discussion only after Agent 1 publishes the final head and Agent 3 completes review.
 
 ## Publication gate
 
-Do not publish the upstream issue or open the upstream PR until all of the following are true:
+Do not publish the upstream issue or open the upstream PR until all items are complete.
 
-- [x] Baseline negative reproduction is preserved at a clean commit.
-- [x] Baseline negative reproduction has passed in the local VM.
+- [x] Baseline negative reproduction is preserved and passed.
 - [x] Typed creator-cell implementation is prepared.
-- [x] Positive acceptance suite is prepared.
-- [x] Incorrect completion-header assertion is fixed.
+- [x] Corrected acceptance suite is integrated.
 - [x] Exact creator-cell isolation is covered.
-- [x] Corrected tests are integrated onto Agent 1's branch.
-- [x] Equivalent combined implementation and acceptance state compiles.
-- [x] Full positive acceptance file passes with panic-safe teardown on the equivalent combined state.
-- [x] One-survivor and truncation cases pass deterministically.
-- [x] Yielded-cell behaviour remains completion-neutral.
-- [ ] Formatting completes with an inspected diff on the canonical branch.
-- [ ] Relevant code-mode and unified-exec unit tests pass on the canonical branch.
-- [ ] Full positive acceptance file is repeated from the canonical integrated branch.
-- [ ] Clean tested implementation commit or PR comparison exists.
-- [ ] Agent 4 fills all evidence placeholders and refreshes related-issue research.
-- [ ] Final net-diff review finds no lifecycle-policy expansion.
+- [x] Preliminary net-diff review found no lifecycle-policy expansion.
+- [x] Rust formatting completed locally with only the two expected files changed.
+- [x] Canonical local formatted descendant passed compile/check.
+- [x] Six focused library tests passed.
+- [x] Complete five-test acceptance target passed with panic-safe teardown.
+- [x] No skips or flakes were observed in the correctly scoped validation.
+- [ ] Exact formatted tested commit is published on `fix/code-mode-live-session-summary`.
+- [ ] Published formatting diff is confirmed limited to the two expected Rust files.
+- [ ] Final baseline net-diff review is completed on the published tested head.
+- [ ] Clean candidate commit or draft PR comparison exists.
+- [ ] Agent 4 fills all evidence placeholders and refreshes related research.
 
 ## Immediate execution order
 
-1. Agent 1 formats the canonical integrated branch and inspects the resulting diff.
-2. Agent 1 compiles, runs focused unit tests, and repeats the five-test acceptance file.
-3. Agent 3 reviews the clean net diff and validation record.
-4. Agent 4 fills the remaining evidence placeholders and refreshes related issues.
-5. Prepare a clean candidate commit or draft PR comparison.
-6. Decide issue/PR ordering only after the publication gate is otherwise complete.
+1. Agent 1 publishes the exact formatting-only tested descendant and records inspection output.
+2. Agent 3 performs final comparison and sign-off review.
+3. Agent 4 fills the final SHA/review evidence and refreshes related issues.
+4. Prepare a clean candidate comparison.
+5. Decide issue/PR ordering only after the publication gate is otherwise complete.
 
 ## Separate candidate follow-ups
 
@@ -252,7 +229,9 @@ These must not expand Patch 1:
 - hidden-subagent lifecycle policy;
 - macOS orphan recovery after abrupt runtime death.
 
-Each needs an independent reproduction, ownership statement, and issue decision.
+The cross-turn dispatch path remains a high-confidence static finding only. It has not been reproduced. Do not call it a bug without executable evidence of wrong-turn execution or a bounded no-successor failure/hang condition.
+
+Each follow-up needs an independent reproduction, ownership statement, and issue decision.
 
 ## Compact handoff template
 
