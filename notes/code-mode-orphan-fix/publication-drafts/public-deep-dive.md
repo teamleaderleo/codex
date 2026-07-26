@@ -18,7 +18,7 @@ That distinction matters. Background terminal persistence is intentional in Code
 
 A live process without an obvious model-visible control path may continue consuming CPU, memory, file descriptors, sockets, locks, subprocesses, network activity, or filesystem state until it exits naturally or is found and terminated by another route.
 
-The original incident involved long-lived browser and Node-related work after a task appeared complete. That incident context is secondary and partly private; raw rollout logs, machine paths, process listings, and user data are not published here. The public defect claim rests on an executable repository reproduction rather than on private evidence alone.[^investigation]
+The original incident involved long-lived browser and Node-related work after a task appeared complete. That incident context is secondary and partly private; raw rollout logs, machine paths, process listings, and user data are not published here. The public defect claim rests on an executable repository reproduction rather than on private evidence alone.
 
 This should not be described as proof of a literal Rust memory leak. The manager still owns reachable process objects. A more accurate description is **lost session-handle visibility with operational resource-retention risk**.
 
@@ -72,7 +72,7 @@ The failure crosses three ownership boundaries:
 2. **Unified exec owns the process.** Once a yielded process is stored, the existing process manager owns the live process independently of the JavaScript object that contained a copied numeric ID.
 3. **Terminal rendering owns the final model-visible status.** Before the patch, the outer status was derived only from the code-cell runtime response. It did not consult the process manager for surviving sessions.
 
-The baseline already carried typed code-mode cell identity at nested tool dispatch, but that identity was not retained on the stored process entry. Once JavaScript discarded its copied `session_id`, terminal rendering had no exact, typed way to recover the live sessions created by the completing cell.[^baseline-path]
+The baseline already carried code-mode cell identity at nested tool dispatch, but that identity was not retained on the stored process entry. Once JavaScript discarded its copied `session_id`, terminal rendering had no exact, typed way to recover the live sessions created by the completing cell.[^baseline-path]
 
 ## The selected fix
 
@@ -135,7 +135,7 @@ This patch therefore separates two questions:
 - **Visibility:** does the model still know which sessions are live?
 - **Lifecycle:** when should those sessions stop?
 
-Patch 1 answers only the first question. Cleanup policy, owner-loss recovery, event-driven wake-up, hidden-subagent policy, and automatic termination remain separate design topics.[^decisions]
+Patch 1 answers only the first question. Cleanup policy, owner-loss recovery, event-driven wake-up, hidden-subagent policy, and automatic termination remain separate design topics. See [rejected and deferred paths](works-cited.md#rejected-and-deferred-implementation-paths).
 
 ## Threat-model and information-disclosure review
 
@@ -175,11 +175,11 @@ That change was not cosmetic. It reduced duplicate harness logic, avoided anothe
 
 ### Why fixed sleeps were removed
 
-An early survivor test used `sleep 1` and then waited two seconds. That tested elapsed time rather than the state transition that mattered. The final test uses a bounded release-and-poll handshake: the short process writes its PID, waits for a release file, and a foreground command confirms the process has exited before allowing the JavaScript cell to complete.[^test-archaeology]
+An early survivor test used `sleep 1` and then waited two seconds. That tested elapsed time rather than the state transition that mattered. The final test uses a bounded release-and-poll handshake: the short process writes its PID, waits for a release file, and a foreground command confirms the process has exited before allowing the JavaScript cell to complete.[^test-evolution]
 
 ## Validation and limits
 
-Repository-native focused validation recorded on Linux aarch64:[^validation]
+Repository-native focused validation recorded on Linux aarch64:[^validation-summary]
 
 - `just fmt`: passed;
 - `just fix -p codex-core`: passed;
@@ -189,7 +189,7 @@ Repository-native focused validation recorded on Linux aarch64:[^validation]
 - the same compatibility tests: 20/20 passed on the exact upstream base;
 - clean worktree and `git diff --check`: passed.
 
-A matched broad `codex-core` run remained red on both candidate and exact base because of environment dependencies, unavailable helper binaries, sandbox or runner limitations, timeouts, and unrelated baseline failures. Focused comparison left no persistent candidate-only failure. The broad project suite is not claimed as green.[^broad-differential]
+A matched broad `codex-core` run remained red on both candidate and exact base. Exact-base comparison and focused reruns left no persistent candidate-only failure. The broad project suite is not claimed as green.[^validation-summary]
 
 The complete workspace suite was not run. The focused tests compile and exercise the affected `codex-core` paths, but they do not establish every Codex product surface, operating system, remote environment, or private deployment path.
 
@@ -247,7 +247,7 @@ That history explains the patch boundary: the code-mode cell actor owns cell lif
 
 ## Methodology and provenance
 
-One human coordinated four separate ChatGPT chats with bounded lanes for implementation, executable testing, architecture review, and publication research. Code, tests, analysis, and prose were treated as proposals until checked against primary source, executable tests, exact comparisons, independent review, or explicit human judgement.[^methodology]
+One human coordinated four separate ChatGPT chats with bounded lanes for implementation, executable testing, architecture review, and publication research. Code, tests, analysis, and prose were treated as proposals until checked against primary source, executable tests, exact comparisons, independent review, or explicit human judgement.
 
 This provenance is optional and is not evidence of correctness by itself. Raw private chats, rollout logs, machine-specific paths, and user data remain private by default.
 
@@ -256,8 +256,7 @@ This provenance is optional and is not evidence of correctness by itself. Raw pr
 The full classified bibliography is in [works-cited.md](works-cited.md). The most important primary sources are the final comparison, the immutable negative reproduction, the production code links, the aggregate acceptance module, the manager unit test, and the repository's aggregate-test convention.
 
 [^negative-proof]: [Immutable negative reproduction, commit `7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5).
-[^investigation]: [Investigation reconstruction](https://github.com/teamleaderleo/codex/blob/3d81c5bc244c8ac0526eb0a7fa29ee297dfc97b7/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md), secondary internal synthesis with evidence labels and privacy boundaries.
-[^baseline-path]: [Investigation reconstruction: actual ownership and information-loss path](https://github.com/teamleaderleo/codex/blob/3d81c5bc244c8ac0526eb0a7fa29ee297dfc97b7/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md#what-the-system-was-actually-doing).
+[^baseline-path]: [Baseline nested-exec handler](https://github.com/teamleaderleo/codex/blob/20dafe201d91d4405eef05ecd1db0257f13a9ac8/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs) and [baseline terminal response handling](https://github.com/teamleaderleo/codex/blob/20dafe201d91d4405eef05ecd1db0257f13a9ac8/codex-rs/core/src/tools/code_mode/mod.rs).
 [^dispatch]: [`ExecCommandHandler` creator-cell capture](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138).
 [^context-entry]: [`UnifiedExecContext` and stored creator field](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L76-L99) and [`ProcessEntry`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L189-L199).
 [^manager-query]: [`live_process_ids_created_by_cell`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L168-L180).
@@ -265,14 +264,11 @@ The full classified bibliography is in [works-cited.md](works-cited.md). The mos
 [^acceptance]: [Final aggregate acceptance module](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/suite/code_mode/orphan_sessions.rs).
 [^manager-test]: [Direct manager-query unit test](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod_tests.rs#L332-L395).
 [^test-convention]: [Single aggregate integration-test binary](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/all.rs#L1-L9) and [existing code-mode suite](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/suite/code_mode.rs#L59-L77).
-[^test-archaeology]: [Testing and validation archaeology](https://github.com/teamleaderleo/codex/blob/824f4807a5d1da45e1952378ef390f9278676748/notes/code-mode-orphan-fix/deep-dive/agent-2-test-validation-archaeology.md), secondary synthesis of test evolution and retained commands.
-[^validation]: [Supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md).
-[^broad-differential]: [Matched project failure inventory](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md).
-[^decisions]: [Design-decision record](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md).
+[^test-evolution]: [Aggregate-suite test-polish commit `cc01596`](https://github.com/teamleaderleo/codex/commit/cc01596b75abb38335ecdfe07688f155b0dd15a9) and [supplemental test commit `7602167`](https://github.com/teamleaderleo/codex/commit/760216784efaee1ba6a3b1250349f31d5f91c7ca).
+[^validation-summary]: [Works-cited validation summary and disclosure boundary](works-cited.md#executable-validation-summary).
 [^call-id-prototype]: [Rejected call-ID-prefix feasibility prototype, commit `cffcd8dc`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9).
 [^unified-history]: [Unified execution, commit `c09ed74a`](https://github.com/openai/codex/commit/c09ed74a163ecea69c32d61ab2bfa1c8490eb611).
 [^tool-history]: [Tool-system refactor, commit `33d3ecbc`](https://github.com/openai/codex/commit/33d3ecbccca4b92cfb2a77002387de30302f337f).
 [^js-history]: [Feature-gated JavaScript REPL, commit `42e22f3b`](https://github.com/openai/codex/commit/42e22f3bde6c851422eb4f7b502457fe86ba91db).
 [^v8-history]: [Code mode on V8, commit `e4eedd61`](https://github.com/openai/codex/commit/e4eedd6170580d5b06fb539635a78f261a6b7369).
 [^actor-history]: [Code-mode cell actor, commit `e2f074e1`](https://github.com/openai/codex/commit/e2f074e16c522bfa55d9bcd344a5ea0ba5a4580f).
-[^methodology]: [Methodology and provenance record](https://github.com/teamleaderleo/codex/blob/02a6c17613b0f2848525fd30cf5d1d391b322dee/notes/code-mode-orphan-fix/deep-dive/methodology-and-provenance.md).
