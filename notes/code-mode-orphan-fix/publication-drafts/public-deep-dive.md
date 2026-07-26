@@ -18,9 +18,9 @@ That distinction matters. Background terminal persistence is intentional in Code
 
 A live process without an obvious model-visible control path may continue consuming CPU, memory, file descriptors, sockets, locks, subprocesses, network activity, or filesystem state until it exits naturally or is found and terminated by another route.
 
-The incident that motivated this investigation involved long-lived browser and Node-related work observed after the original task had apparently completed. The private local evidence was sufficient to motivate the investigation, but raw rollout logs, machine paths, process listings, and user data are not required to review this patch and are not published here. The public claim rests on an executable repository reproduction rather than on private logs alone.[^investigation]
+The original incident involved long-lived browser and Node-related work after a task appeared complete. That incident context is secondary and partly private; raw rollout logs, machine paths, process listings, and user data are not published here. The public defect claim rests on an executable repository reproduction rather than on private evidence alone.[^investigation]
 
-This should not be described as proof of a literal Rust memory leak. The manager still owns reachable process objects. A more accurate description is **lost session-handle visibility with operational resource-leak risk**.
+This should not be described as proof of a literal Rust memory leak. The manager still owns reachable process objects. A more accurate description is **lost session-handle visibility with operational resource-retention risk**.
 
 ## Minimal reproduction
 
@@ -106,7 +106,7 @@ The process manager exposes a read-only query for process IDs that:
 - exclude direct or unattributed entries; and
 - are returned in deterministic numeric order.[^manager-query]
 
-The query briefly acquires the existing process-store mutex, scans in-memory entries, and releases the lock. It does not wait for child processes, terminate anything, read process output, or change lifecycle state.
+The query acquires the existing process-store mutex, scans the current in-memory entries without awaiting inside the scan, sorts the matching IDs, and releases the lock. It does not wait for child processes, terminate anything, read process output, or change lifecycle state.
 
 ### 4. Report only at terminal cell boundaries
 
@@ -151,7 +151,7 @@ The new disclosure is intentionally narrow:
 - no OS PIDs;
 - no unrelated cell's sessions.
 
-The session IDs are not newly invented secrets. The nested `exec_command` result already returns them to the same code-mode cell. The failure occurs because JavaScript can project those values away. The patch restores the same control information at the terminal boundary.
+The patch exposes only session IDs that the same code-mode cell could already receive from nested `exec_command` results. The failure occurs because JavaScript can project those values away; the patch restores that control information at the terminal boundary.
 
 The evidence does not establish privilege escalation, sandbox escape, cross-user disclosure, or attacker-controlled persistence, so this should not automatically be labelled a security vulnerability. It is a reliability and resource-management defect whose practical impact depends on the processes left running.
 
@@ -171,7 +171,7 @@ A direct, network-independent manager unit test separately covers exact-cell inc
 
 The first acceptance implementation created a standalone integration-test binary and duplicated helpers. Review found explicit repository comments establishing one aggregate integration-test binary and an existing code-mode suite. The final cases live under `tests/suite/code_mode/orphan_sessions.rs` and reuse the parent suite's helpers.[^test-convention]
 
-That change was not cosmetic. It reduced duplicate harness logic, avoided another compile/link target, and aligned focused nextest filtering with the repository's documented topology.
+That change was not cosmetic. It reduced duplicate harness logic, avoided another integration binary, and aligned focused nextest filtering with the repository's documented topology.
 
 ### Why fixed sleeps were removed
 
@@ -230,7 +230,7 @@ The nested JavaScript result already contains `session_id`; the problem is that 
 <details>
 <summary>Why not add a display cap?</summary>
 
-The purpose of the line is to preserve live control handles. A separate display cap would knowingly omit some handles. The selected implementation reports the complete exact-cell point-in-time list and relies on normal manager behaviour plus later global history limits. A future cap should first define another way to discover omitted sessions.
+The purpose of the line is to preserve live control handles. A separate display cap would knowingly omit some handles. The selected implementation reports the complete exact-cell point-in-time list; the full tool result remains subject to later global conversation-history limits. A future cap should first define another way to discover omitted sessions.
 </details>
 
 ## Historical context
@@ -245,23 +245,19 @@ The architecture reflects several earlier upstream changes:
 
 That history explains the patch boundary: the code-mode cell actor owns cell lifecycle, the unified-exec manager owns process liveness, and the nested tool handler is where typed provenance enters unified exec.
 
-Current repository ownership for `/codex-rs/core/` is assigned to `@openai/codex-core-agent-team` through CODEOWNERS. Individual blame authors are useful historical references, but the last person to edit a line should not be treated as the current owner or blamed for the defect.[^codeowners]
-
 ## Methodology and provenance
 
-The investigation was coordinated by one human across four regular ChatGPT chat instances with separate lanes for implementation, executable tests, architecture review, and publication research. AI-generated code and prose were treated as proposals until checked against commit-pinned source, executable tests, exact candidate/base comparison, retained command output, independent review, or explicit human judgement.[^methodology]
+One human coordinated four separate ChatGPT chats with bounded lanes for implementation, executable testing, architecture review, and publication research. Code, tests, analysis, and prose were treated as proposals until checked against primary source, executable tests, exact comparisons, independent review, or explicit human judgement.[^methodology]
 
-That methodology is not required to understand or accept the patch. It is documented separately because the investigation history—including mistakes, reversals, and discarded ideas—may be useful to maintainers or researchers evaluating AI-assisted engineering workflows.
-
-Raw private chats, rollout logs, machine-specific paths, and user data remain private by default.
+This provenance is optional and is not evidence of correctness by itself. Raw private chats, rollout logs, machine-specific paths, and user data remain private by default.
 
 ## Works cited
 
 The full classified bibliography is in [works-cited.md](works-cited.md). The most important primary sources are the final comparison, the immutable negative reproduction, the production code links, the aggregate acceptance module, the manager unit test, and the repository's aggregate-test convention.
 
 [^negative-proof]: [Immutable negative reproduction, commit `7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5).
-[^investigation]: [Agent 1 investigation reconstruction](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-1/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md), secondary internal synthesis with evidence labels and privacy boundaries.
-[^baseline-path]: [Agent 1 reconstruction: actual ownership and information-loss path](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-1/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md#what-the-system-was-actually-doing).
+[^investigation]: [Investigation reconstruction](https://github.com/teamleaderleo/codex/blob/3d81c5bc244c8ac0526eb0a7fa29ee297dfc97b7/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md), secondary internal synthesis with evidence labels and privacy boundaries.
+[^baseline-path]: [Investigation reconstruction: actual ownership and information-loss path](https://github.com/teamleaderleo/codex/blob/3d81c5bc244c8ac0526eb0a7fa29ee297dfc97b7/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md#what-the-system-was-actually-doing).
 [^dispatch]: [`ExecCommandHandler` creator-cell capture](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138).
 [^context-entry]: [`UnifiedExecContext` and stored creator field](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L76-L99) and [`ProcessEntry`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L189-L199).
 [^manager-query]: [`live_process_ids_created_by_cell`](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod.rs#L168-L180).
@@ -269,15 +265,14 @@ The full classified bibliography is in [works-cited.md](works-cited.md). The mos
 [^acceptance]: [Final aggregate acceptance module](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/suite/code_mode/orphan_sessions.rs).
 [^manager-test]: [Direct manager-query unit test](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/src/unified_exec/mod_tests.rs#L332-L395).
 [^test-convention]: [Single aggregate integration-test binary](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/all.rs#L1-L9) and [existing code-mode suite](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/suite/code_mode.rs#L59-L77).
-[^test-archaeology]: [Agent 2 testing and validation archaeology](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-2/notes/code-mode-orphan-fix/deep-dive/agent-2-test-validation-archaeology.md), secondary synthesis of test evolution and retained commands.
-[^validation]: [Supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md).
-[^broad-differential]: [Matched project failure inventory](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md).
-[^decisions]: [Agent 3 design-decision record](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md).
+[^test-archaeology]: [Testing and validation archaeology](https://github.com/teamleaderleo/codex/blob/824f4807a5d1da45e1952378ef390f9278676748/notes/code-mode-orphan-fix/deep-dive/agent-2-test-validation-archaeology.md), secondary synthesis of test evolution and retained commands.
+[^validation]: [Supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md).
+[^broad-differential]: [Matched project failure inventory](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md).
+[^decisions]: [Design-decision record](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md).
 [^call-id-prototype]: [Rejected call-ID-prefix feasibility prototype, commit `cffcd8dc`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9).
 [^unified-history]: [Unified execution, commit `c09ed74a`](https://github.com/openai/codex/commit/c09ed74a163ecea69c32d61ab2bfa1c8490eb611).
 [^tool-history]: [Tool-system refactor, commit `33d3ecbc`](https://github.com/openai/codex/commit/33d3ecbccca4b92cfb2a77002387de30302f337f).
 [^js-history]: [Feature-gated JavaScript REPL, commit `42e22f3b`](https://github.com/openai/codex/commit/42e22f3bde6c851422eb4f7b502457fe86ba91db).
 [^v8-history]: [Code mode on V8, commit `e4eedd61`](https://github.com/openai/codex/commit/e4eedd6170580d5b06fb539635a78f261a6b7369).
 [^actor-history]: [Code-mode cell actor, commit `e2f074e1`](https://github.com/openai/codex/commit/e2f074e16c522bfa55d9bcd344a5ea0ba5a4580f).
-[^codeowners]: [CODEOWNERS for `codex-rs/core`](https://github.com/openai/codex/blob/61a44880a85d2fd0d8770908dea5733495e571c8/.github/CODEOWNERS#L1-L10).
-[^methodology]: [Methodology and provenance record](https://github.com/teamleaderleo/codex/blob/docs/code-mode-deep-dive-agent-4/notes/code-mode-orphan-fix/deep-dive/methodology-and-provenance.md).
+[^methodology]: [Methodology and provenance record](https://github.com/teamleaderleo/codex/blob/02a6c17613b0f2848525fd30cf5d1d391b322dee/notes/code-mode-orphan-fix/deep-dive/methodology-and-provenance.md).
