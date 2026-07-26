@@ -4,92 +4,103 @@ Date: 2026-07-26
 
 Audience: Agents 1, 3, and 4
 
-Detailed evidence: `notes/code-mode-orphan-fix/agent-2-test-runtime-report.md`
+Final test-polish receipt:
 
-Published summary: `notes/code-mode-orphan-fix/agent-2-published-validation-summary.md`
+- `notes/code-mode-orphan-fix/agent-2-test-polish-validation-receipt.md`
+- receipt commit: `4ea7d60c562058003afce58ef159ff9ea429a584`
 
-## Shared facts
+Earlier runtime evidence remains at:
 
-- Canonical implementation branch: `fix/code-mode-live-session-summary`
-- Published tested head: `73e5b9fc28de0815975fad3c3d70a6a0b38399b1`
-- Formatting commit parent: `4263facaf3c7d30b26cae33fd1e679278ac02105`
-- Baseline: `20dafe201d91d4405eef05ecd1db0257f13a9ac8`
-- Publication method: exact recovered commit object, fast-forward only, no squash
-- Platform: Linux aarch64 in Lima
-- Rust formatting changed only:
-  - `codex-rs/core/src/tools/code_mode/mod.rs`
-  - `codex-rs/core/src/unified_exec/process_manager.rs`
-- `git status --short`: no output; clean
-- `git diff --check`: no output; passed
-- Compile/check: passed
-- Focused code-mode library tests: `3 passed; 0 failed`
-- Focused unified-exec library tests: `3 passed; 0 failed`
-- Complete acceptance target: `5 passed; 0 failed; 0 ignored`, 17.12-second execution
-- No test skips or flakes were observed.
-- One incorrectly broad `cargo test` fallback caused unrelated integration-test linkers to be killed by signal 9. This was an infrastructure/tool-selection failure; the correctly scoped `--lib` tests all passed.
-- GitHub confirms the formatting commit is one commit ahead of its parent and changes only the approved pair.
-- GitHub baseline comparison remains limited to the expected seven implementation/test files: 664 additions and 4 deletions across 18 commits.
+- `notes/code-mode-orphan-fix/agent-2-test-runtime-report.md`
+- `notes/code-mode-orphan-fix/agent-2-published-validation-summary.md`
 
-## Message to Agent 1
+## Current shared facts
 
-The exact Rust-formatted tree that passed compile, focused, and acceptance validation is published at:
+- Upstream base: `61a44880a85d2fd0d8770908dea5733495e571c8`
+- Clean candidate before test polish: `3778e1fae6e7e3d885252282a7c5ce67e06730ff`
+- Test-polish branch: `review/code-mode-roundtable-test-polish`
+- Test-polish head: `cc01596b75abb38335ecdfe07688f155b0dd15a9`
+- Test-polish relationship: one commit ahead of the clean candidate, zero behind
+- Scope: tests only; no production files changed
+- Changed logical test paths:
+  - `codex-rs/core/tests/suite/code_mode.rs`
+  - standalone `codex-rs/core/tests/code_mode_orphan_sessions.rs` moved to `codex-rs/core/tests/suite/code_mode/orphan_sessions.rs`
+- `just fmt`: passed
+- `just fix -p codex-core`: passed
+- Three affected code-mode unit tests: `3 passed; 0 failed; 0 ignored`
+- Five revised cases through the aggregated `all` test binary: `5 passed; 0 failed; 0 ignored`
+- `git status --short --untracked-files=all`: clean after commit
+- `git diff --check`: passed
+- Exact commit bundle verification and publication: passed
+- No new broad project or workspace suite was run
+- The prior broad-suite classification remains baseline/environment-limited and not green
 
-```text
-73e5b9fc28de0815975fad3c3d70a6a0b38399b1
-```
+## What changed in the tests
 
-No further formatting or publication work is needed unless Agent 3 identifies a concrete defect. Preserve the current ancestry and do not squash yet.
+1. The standalone acceptance target was moved into the established aggregated code-mode suite.
+2. The child module reuses parent response extraction, text-item access, feature setup, and turn-preparation helpers.
+3. Turn submission and every process-creating setup step now run inside cleanup protection.
+4. Cleanup runs on success, returned error, and panic while preserving the original panic.
+5. The yielded case directly asserts absence of `Background sessions still running:`.
+6. The exited-session case uses a bounded PID/filesystem completion handshake instead of fixed sleeps.
+7. All five behavioural contracts remain covered.
 
 ## Message to Agent 3
 
-Begin the final net-diff review now against:
+Please review this exact test-only diff:
 
 ```text
-20dafe201d91d4405eef05ecd1db0257f13a9ac8...73e5b9fc28de0815975fad3c3d70a6a0b38399b1
+3778e1fae6e7e3d885252282a7c5ce67e06730ff...cc01596b75abb38335ecdfe07688f155b0dd15a9
 ```
 
-Review for:
+Review focus:
 
-1. exact typed creator-cell attribution from `ToolCallSource::CodeMode` to stored `ProcessEntry`;
-2. current-liveness filtering and deterministic sorting;
-3. terminal-only reporting for `Result` and `Terminated`;
-4. yielded-response neutrality;
-5. status insertion after emitted-output truncation;
-6. no automatic termination or expansion into shutdown, interrupt, subagent, dispatch, or macOS recovery policy;
-7. no accidental changes caused by the test-backend fallback incident;
-8. formatting commit limited to the two approved files.
+1. no production-code changes;
+2. correct registration under `tests/suite/code_mode.rs`;
+3. removal of the standalone integration target;
+4. reuse of existing parent code-mode helpers;
+5. cleanup protection begins before each process-creating `submit_turn`;
+6. bounded deterministic exit without a fixed scheduler race;
+7. direct yielded-warning absence assertion;
+8. preservation of all five acceptance contracts.
 
-The canonical validation is green, the worktree is clean, and the whitespace check passed. Keep the cross-turn dispatch audit separate from Patch 1.
+After approval, consolidate `cc01596b75abb38335ecdfe07688f155b0dd15a9` as the final clean candidate head and update the integrator-owned coordination status.
+
+Suggested coordination checkbox updates after review:
+
+- Agent 2 test-only revision is prepared: complete.
+- Revised acceptance cases pass through the aggregate suite: complete.
+- Agent 3 approves the test-only diff and receipt: pending Agent 3.
+- Agent 1 confirms contract coverage remains intact: pending Agent 1.
+- Final clean head and comparison are recorded: pending Agent 3 consolidation.
+
+## Message to Agent 1
+
+Please perform only the short contract sanity check requested by the roundtable. Confirm that the revised aggregate tests still express:
+
+- multiple live-session ordering;
+- exited-session exclusion;
+- warning placement outside truncation;
+- yielded neutrality;
+- exact completing-cell attribution.
+
+A new full implementation or architecture review is not requested.
 
 ## Message to Agent 4
 
-Use `73e5b9fc28de0815975fad3c3d70a6a0b38399b1` as the published tested head.
+Keep the upstream issue and pull-request drafts unpublished.
 
-Update the private history/issue report with:
+After Agent 3 approves and consolidates the final clean head:
 
-- canonical merge head `4263facaf3c7d30b26cae33fd1e679278ac02105` and its two-parent ancestry;
-- published formatting head `73e5b9fc28de0815975fad3c3d70a6a0b38399b1`;
-- exact-commit credentialless handoff and fast-forward-only publication;
-- Rust-only formatting deviation because `just`, `dotslash`, and `uv` were absent;
-- formatting commit limited to the two approved files;
-- clean `git status --short` and passing `git diff --check`;
-- compile/check success after 7m48s;
-- focused code-mode result: `3 passed; 0 failed`;
-- focused unified-exec result: `3 passed; 0 failed`;
-- acceptance result: `5 passed; 0 failed; 0 ignored`, 17.12-second execution;
-- no skips or flakes;
-- invalid broad fallback/OOM incident classified as infrastructure rather than patch failure;
-- baseline comparison limited to the expected seven files.
-
-Keep the upstream issue and PR unpublished until Agent 3 completes review and the integrator updates the publication gate.
+- update all draft commit metadata to the consolidated head;
+- state that repository-native formatting and scoped fix passed;
+- state that three focused unit tests and five aggregate acceptance cases passed;
+- retain the baseline-red caveat for the broad `codex-core` suite;
+- state that the complete workspace suite was not run;
+- omit research ancestry, agent identities, machine paths, launcher iterations, and raw logs from public copy.
 
 ## Agent 2 state
 
-Agent 2's regression, acceptance, runtime interpretation, and publication-evidence work is complete unless Agent 3 finds a concrete test-contract defect or the published branch moves unexpectedly.
+Agent 2's test-conventions revision and focused validation are complete.
 
-Preserve:
-
-- negative proof: `research/code-mode-live-session-test` at `7298dcf44f61164ffc25b8bdf5f136281caeb9f5`;
-- acceptance head: `research/code-mode-live-session-acceptance` at `89ffd99b81e872e3a961767e67fb8ec410df7eae`.
-
-Do not move either branch for documentation-only updates. Do not squash the implementation branch yet.
+Agent 2 should re-enter only if Agent 3 identifies a concrete test defect or if the test-polish branch moves unexpectedly. Do not modify production code, publish upstream, or run a new broad suite without a concrete differential reason.
