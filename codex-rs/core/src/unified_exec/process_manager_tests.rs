@@ -541,6 +541,7 @@ async fn pruning_does_not_evict_live_process_while_exited_process_is_finalizing(
                     Arc::clone(&live_process)
                 },
                 call_id: format!("call-{process_id}"),
+                creator_cell_id: None,
                 process_id,
                 cwd: cwd.clone(),
                 initial_exec_command_active: Arc::new(AtomicBool::new(false)),

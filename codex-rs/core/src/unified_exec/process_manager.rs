@@ -960,6 +960,7 @@ impl UnifiedExecProcessManager {
         let entry = ProcessEntry {
             process: Arc::clone(&process),
             call_id: context.call_id.clone(),
+            creator_cell_id: context.creator_cell_id.clone(),
             process_id,
             cwd: cwd.clone(),
             initial_exec_command_active,

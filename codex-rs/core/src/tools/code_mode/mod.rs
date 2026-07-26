@@ -202,7 +202,17 @@ pub(super) async fn handle_runtime_response(
     max_output_tokens: Option<usize>,
     started_at: std::time::Instant,
 ) -> Result<FunctionToolOutput, String> {
-    let script_status = format_script_status(&response);
+    let background_session_ids = match terminal_cell_id(&response) {
+        Some(cell_id) => {
+            exec.session
+                .services
+                .unified_exec_manager
+                .live_process_ids_created_by_cell(cell_id)
+                .await
+        }
+        None => Vec::new(),
+    };
+    let script_status = format_script_status(&response, &background_session_ids);
 
     match response {
         RuntimeResponse::Yielded { content_items, .. } => {
@@ -242,12 +252,21 @@ pub(super) async fn handle_runtime_response(
     }
 }
 
+fn terminal_cell_id(response: &RuntimeResponse) -> Option<&CellId> {
+    match response {
+        RuntimeResponse::Yielded { .. } => None,
+        RuntimeResponse::Terminated { cell_id, .. } | RuntimeResponse::Result { cell_id, .. } => {
+            Some(cell_id)
+        }
+    }
+}
+
 fn sanitize_runtime_image_detail(turn: &TurnContext, items: &mut [FunctionCallOutputContentItem]) {
     sanitize_image_detail_items(can_request_original_image_detail(&turn.model_info), items);
 }
 
-fn format_script_status(response: &RuntimeResponse) -> String {
-    match response {
+fn format_script_status(response: &RuntimeResponse, background_session_ids: &[i32]) -> String {
+    let mut status = match response {
         RuntimeResponse::Yielded { cell_id, .. } => {
             format!("Script running with cell ID {cell_id}")
         }
@@ -259,7 +278,21 @@ fn format_script_status(response: &RuntimeResponse) -> String {
                 "Script failed".to_string()
             }
         }
+    };
+
+    if !matches!(response, RuntimeResponse::Yielded { .. }) && !background_session_ids.is_empty() {
+        let mut session_ids = background_session_ids.to_vec();
+        session_ids.sort_unstable();
+        let session_ids = session_ids
+            .into_iter()
+            .map(|session_id| session_id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        status.push_str("\nBackground sessions still running: ");
+        status.push_str(&session_ids);
     }
+
+    status
 }
 
 fn prepend_script_status(
@@ -381,8 +414,11 @@ mod tests {
 
     use super::CodeModeService;
     use super::build_nested_tool_payload;
+    use super::format_script_status;
+    use super::terminal_cell_id;
     use super::truncate_code_mode_result;
     use crate::tools::context::ToolPayload;
+    use codex_code_mode::CellId;
     use codex_code_mode::CodeModeToolKind;
     use codex_code_mode::ExecuteRequest;
     use codex_code_mode::FunctionCallOutputContentItem as CodeModeOutputContentItem;
@@ -392,6 +428,69 @@ mod tests {
     use codex_protocol::models::FunctionCallOutputContentItem;
     use codex_tools::ToolName;
     use serde_json::json;
+
+    #[test]
+    fn terminal_cell_id_excludes_yielded_responses() {
+        let yielded = RuntimeResponse::Yielded {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+        };
+        let terminated = RuntimeResponse::Terminated {
+            cell_id: CellId::new("97".to_string()),
+            content_items: Vec::new(),
+        };
+
+        assert_eq!(terminal_cell_id(&yielded), None);
+        assert_eq!(
+            terminal_cell_id(&terminated).map(CellId::as_str),
+            Some("97")
+        );
+    }
+
+    #[test]
+    fn terminal_script_status_surfaces_sorted_live_background_sessions() {
+        let completed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: None,
+        };
+        let failed = RuntimeResponse::Result {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+            error_text: Some("boom".to_string()),
+        };
+        let terminated = RuntimeResponse::Terminated {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+        };
+        let session_ids = [11236, 6306];
+
+        assert_eq!(
+            format_script_status(&completed, &session_ids),
+            "Script completed\nBackground sessions still running: 6306, 11236"
+        );
+        assert_eq!(
+            format_script_status(&failed, &session_ids),
+            "Script failed\nBackground sessions still running: 6306, 11236"
+        );
+        assert_eq!(
+            format_script_status(&terminated, &session_ids),
+            "Script terminated\nBackground sessions still running: 6306, 11236"
+        );
+    }
+
+    #[test]
+    fn yielded_script_status_does_not_surface_background_sessions() {
+        let response = RuntimeResponse::Yielded {
+            cell_id: CellId::new("96".to_string()),
+            content_items: Vec::new(),
+        };
+
+        assert_eq!(
+            format_script_status(&response, &[6306, 11236]),
+            "Script running with cell ID 96"
+        );
+    }
 
     #[test]
     fn build_nested_tool_payload_uses_function_kind() {
