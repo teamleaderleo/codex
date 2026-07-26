@@ -109,8 +109,7 @@ The complete workspace suite was not run.
 
 - [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
 - [final comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...760216784efaee1ba6a3b1250349f31d5f91c7ca)
-- [supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md)
-- [matched broad-suite differential](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md)
+- [public validation summary and disclosure boundary](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md#executable-validation-summary)
 
 </details>
 
@@ -118,8 +117,8 @@ The complete workspace suite was not run.
 
 The public deep dive explains the runtime path, historical architecture, Rust ownership model, threat model, test evolution, alternatives, and validation limits:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/c511e3041e9b6f683cb8899968006e54f5e2489f/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related work
 
