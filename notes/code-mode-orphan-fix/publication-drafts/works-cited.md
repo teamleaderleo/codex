@@ -2,7 +2,7 @@
 
 Status: public-facing draft bibliography; unpublished.
 
-This index separates primary sources from secondary synthesis. A link appearing here does not mean every public issue or pull request should include it. The public issue should cite only the sources needed to verify the problem and expected behaviour. The pull request should cite the implementation, tests, conventions, and bounded validation. The deep dive may cite the full record.
+This index separates primary sources from secondary synthesis. A link appearing here does not mean every public issue or pull request should include it. The public issue should cite only the sources needed to verify the problem and expected behaviour. The pull request should cite the implementation, tests, conventions, and bounded validation. The deep dive may cite the full public record.
 
 ## Citation policy
 
@@ -62,12 +62,9 @@ Git blame is a navigation tool, not an ownership oracle. Cite the commit or pull
 - [Existing code-mode suite and child-module registration](https://github.com/teamleaderleo/codex/blob/760216784efaee1ba6a3b1250349f31d5f91c7ca/codex-rs/core/tests/suite/code_mode.rs#L59-L77).
 - [CODEOWNERS assigns `/codex-rs/core/` to `@openai/codex-core-agent-team`](https://github.com/openai/codex/blob/61a44880a85d2fd0d8770908dea5733495e571c8/.github/CODEOWNERS#L1-L10).
 
-## Executable validation records
+## Executable validation summary
 
-- [Original aggregate test-polish receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-validation-receipt.md).
-- [Supplemental repository-native validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md).
-- [Final test-polish approval](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-3-final-test-polish-approval-7602167.md).
-- [Matched broad project failure inventory](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md).
+Retained internal receipts record the exact commands, runner preparation, focused results, compatibility repetitions, and matched broad-suite classification. Those raw receipts are not linked from the public package because they also contain internal workflow metadata and machine-specific troubleshooting that is unnecessary for patch review.
 
 Bounded public summary:
 
@@ -76,8 +73,10 @@ Bounded public summary:
 - five aggregate acceptance cases passed;
 - two compatibility tests passed 20/20 executions on the candidate and 20/20 on the exact base;
 - the matched broad `codex-core` suite was red on both refs and is not claimed green;
-- no persistent candidate-only failure remained;
+- exact-base comparison and focused reruns left no persistent candidate-only failure;
 - the complete workspace suite was not run.
+
+The commit-pinned test sources above establish what was exercised. The execution claims are a public summary of retained internal receipts; the underlying raw logs and workflow records remain private by default.
 
 ## Upstream architecture and history
 
@@ -101,26 +100,19 @@ The standalone issue remains justified because it defines a narrower executable 
 ## Rejected and deferred implementation paths
 
 - [Call-ID-prefix feasibility prototype `cffcd8dc`](https://github.com/teamleaderleo/codex/commit/cffcd8dca93ab5c2ff8fa1af262ae7676f5b97a9) — demonstrated feasibility but rejected string-based ownership attribution.
-- [Design-decision record](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md) — reasons for rejecting or deferring schema changes, second registries, automatic termination, global listing, display capping, generic origin modelling, wake-up events, and recovery work.
+- The public [pull-request draft](pull-request-layered.md#alternatives-considered) and [technical deep dive](public-deep-dive.md#alternatives-considered) summarise the reviewed alternatives and clearly separate rejection from deferral.
 
-## Secondary investigation records
+## Secondary synthesis and methodology
 
-These are synthesis and provenance records. They should cite through to primary sources for concrete code or validation claims.
+The investigation also produced detailed chronology, test archaeology, code walkthroughs, design records, publication audits, and methodology notes. They are secondary synthesis rather than primary evidence. They are not directly linked from this public bibliography because they contain internal lane labels, workflow history, or private-source descriptions that are unnecessary for reviewing the patch.
 
-- [Investigation reconstruction](https://github.com/teamleaderleo/codex/blob/3d81c5bc244c8ac0526eb0a7fa29ee297dfc97b7/notes/code-mode-orphan-fix/deep-dive/agent-1-investigation-reconstruction.md).
-- [Testing and validation archaeology](https://github.com/teamleaderleo/codex/blob/824f4807a5d1da45e1952378ef390f9278676748/notes/code-mode-orphan-fix/deep-dive/agent-2-test-validation-archaeology.md).
-- [Code walkthrough](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-code-walkthrough.md).
-- [Design decisions](https://github.com/teamleaderleo/codex/blob/08a04bbe36ce0fc10fe205849a4800d91acf4412/notes/code-mode-orphan-fix/deep-dive/agent-3-design-decisions.md).
-- [History and threat-model notes](https://github.com/teamleaderleo/codex/blob/363fbf606676e10ff11599255cd39ae4b5299f41/notes/code-mode-orphan-fix/deep-dive/agent-3-history-and-threat-model-notes.md).
-- [Publication architecture and copy audit](https://github.com/teamleaderleo/codex/blob/02a6c17613b0f2848525fd30cf5d1d391b322dee/notes/code-mode-orphan-fix/deep-dive/agent-4-publication-architecture.md).
-- [Methodology and provenance](https://github.com/teamleaderleo/codex/blob/02a6c17613b0f2848525fd30cf5d1d391b322dee/notes/code-mode-orphan-fix/deep-dive/methodology-and-provenance.md).
+Concrete claims in this package link through to the commit-pinned code, tests, comparisons, upstream history, or clearly labelled public interpretation above.
 
 ## Independent external static review
 
-- [External-review triage](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/external-review/triage-2026-07-26.md) records one Codex review and one Claude review. Both were static rather than executable.
-- Findings that changed the final tests were subsequently checked through repository-native execution before being accepted.
+Two independent static reviews examined the production design and raised test-convention, cleanup, compatibility, cardinality, and maintainability questions. They did not compile or run the candidate. Findings that changed the final tests were subsequently checked through repository-native execution.
 
-Independent review is useful scrutiny, but it is not a substitute for executable evidence.
+The detailed review packet and triage remain internal because they contain workflow context rather than additional primary evidence. Independent review is useful scrutiny, but it is not a substitute for executable evidence.
 
 ## Private-by-default evidence
 
@@ -131,6 +123,7 @@ The following should not be published automatically:
 - machine-specific file paths;
 - process snapshots containing unrelated user data;
 - tokens, URLs, image payloads, prompts, or conversation identifiers;
-- unsanitised one-off analysis scripts.
+- unsanitised one-off analysis scripts;
+- internal lane handoffs, launcher troubleshooting, and raw validation logs.
 
 A scrubbed excerpt or private handoff may be considered when it materially answers a maintainer question and the human coordinator explicitly approves disclosure.
