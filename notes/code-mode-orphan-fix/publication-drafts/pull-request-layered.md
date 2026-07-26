@@ -12,7 +12,7 @@ code-mode: report live nested session IDs in terminal results
 
 A code-mode cell can launch nested `exec_command` calls, discard their returned session IDs while retaining only `.output`, and then finish while those terminal sessions remain live. The outer result currently has no way to restore the missing handles even though the existing unified-exec process manager still owns the processes.
 
-This PR carries the existing typed creator-cell identity into stored process entries, queries the existing manager for exact-cell still-live sessions when the cell reaches a terminal result, and reports those session IDs in the status header.
+This PR carries the existing typed creator-cell identity into stored live process entries, queries the existing manager for exact-cell still-live sessions when the cell reaches a terminal result, and reports those session IDs in the status header.
 
 Fixes #ISSUE_NUMBER.
 
@@ -38,7 +38,7 @@ This PR is visibility-only.
 - Direct or unattributed process entries are excluded.
 - Nested tool-call IDs remain opaque.
 - The JavaScript-visible nested result schema is unchanged.
-- No process termination, pruning, persistence, shutdown, interrupt, recovery, wake-up, or public-protocol policy changes.
+- No process-lifetime, termination, pruning, shutdown, interrupt, recovery, wake-up, or public-protocol policy changes.
 
 The code-mode emitted output is truncated before the status header is prepended, so the live-session warning is outside that specific truncation boundary. The complete tool result remains subject to later global conversation-history limits.
 
@@ -61,39 +61,15 @@ The failure is narrower: the manager still owns the live processes, but terminal
 ### Alternatives considered
 
 <details>
-<summary>Infer ownership from JavaScript output</summary>
+<summary>Optional design alternatives</summary>
 
-Rejected because the confirmed failure occurs when JavaScript discards the result object or retains only `.output`.
-</details>
+- **Infer ownership from JavaScript output:** rejected because the confirmed failure occurs when JavaScript discards the result object or keeps only `.output`.
+- **Append IDs to command output:** rejected because it mixes control metadata with command output, changes an established result contract, and still depends on JavaScript preserving that output.
+- **Encode creator identity in call-ID strings:** a feasibility prototype showed prefix filtering could work, but it would turn opaque identifier formatting into an ownership API and introduce collision and tracing concerns.
+- **Add a second per-cell registry:** rejected because the unified-exec manager already owns the process handles and defines liveness; a second registry would duplicate lifecycle and race handling.
+- **Terminate or wait for matching sessions:** rejected for this PR because either choice changes product lifecycle policy and can break legitimate long-running background work.
+- **Add a JavaScript or app-server schema field:** rejected because the nested result already contains `session_id`, JavaScript can discard any returned field, and a public protocol change would require separate compatibility and ordering design.
 
-<details>
-<summary>Append session IDs to nested command output</summary>
-
-Rejected because it mixes control metadata with command output, changes an established result contract, and still depends on JavaScript preserving or emitting that output.
-</details>
-
-<details>
-<summary>Encode creator identity in nested call IDs</summary>
-
-A feasibility prototype showed prefix filtering could work, but it would turn opaque identifier formatting into an ownership API and introduce collision and tracing concerns. Typed `CellId` attribution is retained instead.
-</details>
-
-<details>
-<summary>Add a second per-cell process registry</summary>
-
-Rejected because the unified-exec manager already owns the process handles and defines liveness. A second registry would duplicate insertion, exit, pruning, cleanup, and race handling.
-</details>
-
-<details>
-<summary>Terminate sessions automatically or wait for them before completion</summary>
-
-Rejected for this PR because either choice changes product lifecycle policy and can break legitimate long-running background work.
-</details>
-
-<details>
-<summary>Add a new JavaScript or app-server schema field</summary>
-
-Rejected because the nested JavaScript result already contains `session_id`; JavaScript can discard any returned field. A public protocol change would also require client compatibility and ordering design.
 </details>
 
 ### Tests
@@ -133,8 +109,8 @@ The complete workspace suite was not run.
 
 - [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
 - [final comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...760216784efaee1ba6a3b1250349f31d5f91c7ca)
-- [supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md)
-- [matched broad-suite differential](https://github.com/teamleaderleo/codex/blob/research/code-mode-orphan-handoffs/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md)
+- [supplemental focused validation receipt](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-2-test-polish-supplemental-validation-receipt.md)
+- [matched broad-suite differential](https://github.com/teamleaderleo/codex/blob/728e2e07462aea6505925366158b5f04644ad034/notes/code-mode-orphan-fix/agent-1-clean-candidate-project-failure-inventory.md)
 
 </details>
 
@@ -142,9 +118,9 @@ The complete workspace suite was not run.
 
 The public deep dive explains the runtime path, historical architecture, Rust ownership model, threat model, test evolution, alternatives, and validation limits:
 
-- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
-- [works cited](https://github.com/teamleaderleo/codex/blob/b95e14b1e034d208ed314f56203b4f921cdca0b2/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
+- [public technical deep dive](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/public-deep-dive.md)
+- [works cited](https://github.com/teamleaderleo/codex/blob/01be2774a304529db9962d827d678576a85f4330/notes/code-mode-orphan-fix/publication-drafts/works-cited.md)
 
 ### Related work
 
-[#34866](https://github.com/openai/codex/issues/34866) provides related prior symptom coverage involving `Script completed` and a still-live nested shell. The standalone issue for this PR defines the narrower executable contract where JavaScript discards still-live session IDs and terminal rendering restores exact creator-cell handles.
+[#34866](https://github.com/openai/codex/issues/34866) provides related prior symptom coverage involving `Script completed` and a still-live nested shell. The standalone issue for this PR defines the narrower executable contract where JavaScript discards still-live session IDs and terminal rendering reports the exact-cell live session IDs.
