@@ -6,7 +6,7 @@ I used an exploratory implementation to trace the data flow, test the narrow fix
 
 ## Executive summary
 
-Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The terminal response still identifies the cell, and the unified-exec manager still owns the processes, but manager-owned process entries don't retain the corresponding creator-cell provenance. The completion path therefore can't map that cell back to its live logical session IDs.
+Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The terminal response still identifies the cell, and the unified-exec manager still owns the processes, but manager-owned process entries don't retain the corresponding creator-cell provenance. The completion path therefore can't map that cell back to its live session IDs.
 
 The proposed approach would carry the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, query still-live entries for that exact cell when its terminal response is formatted, and add their IDs to the existing status text. It wouldn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
 
@@ -31,9 +31,9 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-Those copied JavaScript values don't own the processes. The session-level unified-exec manager keeps the yielded processes alive, but its process entries don't preserve the creator-cell relationship needed to recover the discarded session IDs when the cell finishes.
+Those copied JavaScript values don't own the processes. The session-level unified-exec manager keeps the yielded processes alive, but its process entries don't preserve the creator-cell relationship needed to recover the session IDs when the cell finishes.
 
-The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that before-state as an executable test.
+The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that before-state as an executable test. It checks both halves of the failure: two background terminals remain manager-owned, and the model-visible completion header contains no session handle.
 
 ## Relationship to #34866
 
@@ -43,33 +43,35 @@ This issue isolates a smaller invariant: a completing cell should retain access 
 
 ## Exploratory implementation
 
-The implementation and tests are together on one branch:
+The implementation and its main test coverage are together on one branch:
 
 - [exploratory implementation and tests](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-ids)
 - [base-to-head comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48)
 - [prototype head `77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48)
 
-There isn't a separate test branch. The other commits and workflow runs below are checkpoints from the same exploratory line of work, not parallel implementations.
+The negative reproduction is a separate, earlier before-state artifact at [`7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5), cut from `20dafe2` before the fix existed. The other commits and workflow runs below are checkpoints from the exploratory implementation work, not parallel implementations.
 
 ## Production data flow
 
 ### 1. Preserve the existing creator identity
 
-Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. An implementation can copy the protocol value with `cell_id.as_str().to_string()` and reconstruct the typed `CellId` at the unified-exec boundary.
+Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. In the exploratory prototype, the dispatch site serialises the typed protocol value with `cell_id.to_string()`, and the unified-exec boundary reconstructs a typed `CellId` from that string.
 
-Using `as_str()` makes the matching contract explicit and avoids coupling ownership to a `Display` implementation meant for presentation.
+`CellId`'s current `Display` implementation writes `as_str()` verbatim, so that round trip is lossless today. Using `cell_id.as_str().to_string()` at the dispatch site would make the ownership key an explicit data contract rather than relying on a presentation trait continuing to remain verbatim.
 
 ### 2. Store provenance with the manager-owned process
 
-`UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the logical session ID and manager-owned process, and `store_process` copies it into the entry.
+`UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the manager process ID and manager-owned process, and `store_process` copies it into the entry.
 
-That provenance stays crate-internal. Public tool results, protocol events, and call-ID formats wouldn't change.
+The manager tracks this value internally as `process_id`; the tool surface exposes the same control handle to the model as `session_id`. Creator provenance stays crate-internal, so public tool results, protocol events, and call-ID formats wouldn't change.
 
 ### 3. Query the existing liveness authority
 
-A read-only manager query can select entries whose creator matches the exact `CellId`, filter them through existing `has_exited()` state, and return their logical session IDs.
+A read-only manager query can select entries whose creator matches the exact `CellId`, filter them through existing `has_exited()` state, and return their manager process IDs.
 
 Numeric ordering belongs in the formatter because it's a display contract. The exploratory prototype sorts in both the manager and formatter; the smaller implementation only needs the formatter sort.
+
+The lookup reports every still-live process attributed to the cell. It can't know whether JavaScript discarded, retained, printed, or otherwise used the returned session handle.
 
 ### 4. Choose the terminal responses in scope
 
@@ -106,11 +108,13 @@ The narrow contract is:
 
 > Report only manager-owned processes attributed to the exact cell whose terminal response is being formatted.
 
+For remote code-mode hosts, public cell IDs are already namespaced by host generation: generation one uses the bare ID, later generations use `g{N}:<id>`, and stale-generation IDs are rejected when translated back to a remote ID. That makes `CellId` equality a stable attribution key across remote host restarts within one Codex session.
+
 ## Display contract
 
 The prototype formats IDs in numeric order and applies a model-visible bound. The issue intentionally leaves the exact wording and bound open.
 
-Manager capacity and model-visible output policy serve different purposes, so they should remain independent if a bound is retained.
+The prototype's display bound and manager process cap currently both equal 64, although they are separate constants with different responsibilities. The over-limit formatter tests therefore verify the output policy directly rather than demonstrating an ordinary steady-state manager path. Keeping the bounds independent would still allow the model-visible policy to remain stable if manager capacity changes later.
 
 ## Upstream status
 
@@ -126,9 +130,11 @@ The exploratory comparison contains 903 changed lines, dominated by a 527-line a
 - focused manager and formatter tests;
 - one primary end-to-end discarded-handle regression.
 
+The exploratory prototype contains five acceptance cases because it was also used to probe truncation, cross-cell attribution, yielded responses, and local-versus-remote liveness boundaries.
+
 ## Validation
 
-These checks establish prototype feasibility. They span closely related refs and workspaces rather than one final SHA.
+These checks establish prototype feasibility. They span closely related refs and workspaces rather than one final SHA. A broad project or workspace suite wasn't completed; the recorded evidence is limited to the focused, acceptance, compatibility, formatting, and diff checks below.
 
 ### Relevant refs
 
@@ -145,15 +151,17 @@ These checks establish prototype feasibility. They span closely related refs and
 |---|---|---|
 | Focused formatter and manager tests | `eb530466...` | 9 passed |
 | Formatting, scoped fixes, diff, and worktree checks | `eb530466...` | passed |
-| Local acceptance | pre-decoupling capped workspace with final remote harness | 5 passed |
-| Docker/Linux remote acceptance | same workspace; four remote-safe cases | 4 passed |
-| Existing compatibility tests | same workspace | 2 passed |
+| Local acceptance cases | Acceptance workspace containing the capped formatter and final remote-executor harness | 5 passed |
+| Docker/Linux remote acceptance | Same acceptance workspace using an `ubuntu:24.04` executor | 4 passed |
+| Existing compatibility tests | Same acceptance workspace | 2 passed |
 
 ### Focused validation
 
 - [GitHub Actions run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
 - GitHub-hosted Ubuntu 24.04
-- validated head: `eb530466cafac0a5aee86342cd2b5ada9047d448`
+- validated commit: `eb530466cafac0a5aee86342cd2b5ada9047d448`
+
+The run page shows the workflow commit that triggered the job. The workflow applied the display-bound decoupling edit and amended the validated result to `eb530466`, which is why the run's visible head SHA differs from the commit recorded here.
 
 <details>
 <summary>Commands</summary>
@@ -178,7 +186,7 @@ Results:
 - diff checks passed;
 - the worktree was empty of changes.
 
-The direct manager test covers exact-cell filtering, exited-entry exclusion, and logical ID ordering in the prototype.
+The direct manager test covers exact-cell filtering, exited-entry exclusion, and manager process ID ordering in the prototype. The display-cap cases are formatter-level policy tests; the display and manager caps currently coincide at 64.
 
 ### Acceptance validation
 
@@ -198,21 +206,24 @@ Results:
 
 ### Upstream code
 
-- [Code-mode terminal response formatting](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275)
-- [`ToolInvocation` carries `ToolCallSource`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L47-L71)
+- [Code-mode terminal response formatting](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275)
+- [`ToolInvocation` carries `ToolCallSource`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L46-L71)
 - [`ExecCommandHandler` constructs unified-exec context without creator-cell provenance](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L108-L133)
 - [Existing unified-exec context and process entries](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/unified_exec/mod.rs#L77-L181)
+- [Remote public cell-ID generation namespacing and stale-generation rejection](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/code-mode/src/remote_session/connection/driver/cell_ids.rs#L14-L45)
 
 ### Exploratory code
 
-- [`ExecCommandHandler` captures the source cell](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138)
+- [Nested dispatch serialises the source cell through `Display`](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L362-L374)
+- [`CellId::Display` currently writes `as_str()` verbatim](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/code-mode-protocol/src/session.rs#L28-L51)
+- [`ExecCommandHandler` reconstructs the typed source cell](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138)
 - [`UnifiedExecContext` carries creator metadata](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L76-L99)
 - [`ProcessEntry` retains creator-cell attribution](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L189-L200)
 - [`store_process` copies creator metadata into the entry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L944-L976)
 - [`live_process_ids_created_by_cell`](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L168-L180)
 - [Terminal-response lookup and `Yielded` exclusion](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L201-L269)
 - [Bounded status formatting](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L270-L305)
-- [`has_exited()` backend asymmetry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process.rs#L194-L205)
+- [`has_exited()` backend asymmetry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process.rs#L199-L210)
 
 ### Prototype tests
 
