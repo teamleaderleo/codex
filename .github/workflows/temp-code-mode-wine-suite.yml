@@ -1,5 +1,6 @@
 name: Temporary code-mode Wine exec suite
 
+# Manual retrigger: 2026-07-28
 on:
   push:
     branches:
