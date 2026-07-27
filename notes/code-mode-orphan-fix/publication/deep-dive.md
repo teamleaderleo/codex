@@ -112,9 +112,9 @@ For remote code-mode hosts, public cell IDs are already namespaced by host gener
 
 ## Display contract
 
-The prototype formats IDs in numeric order and applies a model-visible bound. Its 64-ID display limit matches the manager's current 64-process capacity, so it cannot omit a reachable manager-owned ID.
+The prototype formats IDs in numeric order and caps the model-visible list at 64. That equals `MAX_UNIFIED_EXEC_PROCESSES`, but the manager limit is a soft cap: the store can temporarily exceed it while an exited process is locked during terminal-event publication.
 
-The constants can remain conceptually separate because they serve different responsibilities, but the implementation must ensure that the display limit cannot fall below manager capacity unless another model-visible path can enumerate omitted IDs. The over-limit formatter tests verify that policy directly rather than demonstrating an ordinary steady-state manager path.
+During that overshoot window, the prototype's `(+N more)` suffix can omit still-live IDs, recreating the same accessibility problem for the omitted handles. A polished implementation must surface every matching live ID or provide another model-visible path that enumerates any omitted IDs. The over-limit formatter tests document the current output policy; they don't establish that every reachable live handle remains visible end to end.
 
 ## Upstream status
 
@@ -186,7 +186,7 @@ Results:
 - diff checks passed;
 - the worktree was empty of changes.
 
-The direct manager test covers exact-cell filtering, exited-entry exclusion, and manager process ID ordering in the prototype. The display-cap cases are formatter-level policy tests; the display and manager caps currently coincide at 64.
+The direct manager test covers exact-cell filtering, exited-entry exclusion, and manager process ID ordering in the prototype. The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible during soft-cap overshoot.
 
 ### Acceptance validation
 
@@ -224,6 +224,7 @@ Results:
 - [Terminal-response lookup and `Yielded` exclusion](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L201-L269)
 - [Bounded status formatting](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L270-L305)
 - [`has_exited()` backend asymmetry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process.rs#L199-L210)
+- [Soft-cap pruning and temporary overshoot](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L1381-L1423)
 
 ### Prototype tests
 
