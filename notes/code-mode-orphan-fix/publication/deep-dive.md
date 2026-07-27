@@ -1,6 +1,6 @@
 # How code-mode completion can lose live session handles
 
-This is the technical record behind [openai/codex#35613](https://github.com/openai/codex/issues/35613), the tested implementation, and the associated validation history.
+This is the technical record behind [openai/codex#35613](https://github.com/openai/codex/issues/35613), the tested implementation, and the associated [validation history](validation-history.md).
 
 ## Executive summary
 
@@ -8,10 +8,11 @@ A code-mode JavaScript cell can start nested `exec_command` calls, keep only eac
 
 The resulting defect is not merely missing status text. The manager still owns the work, but the model has lost every control handle exposed by the current tool surface for inspecting, continuing, or terminating it.
 
-The tested implementation preserves the existing code-mode `CellId` through unified exec, stores it on the manager-owned process entry, queries still-live entries for the exact terminal cell, and adds their logical session IDs to the existing status text.
+The tested implementation carries the code-mode cell ID from `ToolCallSource::CodeMode` as a string, reconstructs a typed `CellId` at the unified-exec boundary, stores that creator identity on the manager-owned process entry, queries still-live entries for the exact terminal cell, and adds their logical session IDs to the existing status text.
 
 ```text
-CodeMode CellId
+ToolCallSource::CodeMode cell_id: String
+  → CellId::new(cell_id) at unified-exec boundary
   → UnifiedExecContext
   → ProcessEntry
   → exact-cell live-process lookup
@@ -31,7 +32,7 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-The JavaScript values copied into `outputs` do not own the nested processes. Unified exec keeps the yielded processes alive, while the copied `session_id` values disappear with the discarded result objects.
+The copied JavaScript values do not own the nested processes. Unified exec keeps the yielded processes alive, while the copied `session_id` values disappear with the discarded result objects.
 
 Before the fix, the terminal response can therefore look like:
 
@@ -83,7 +84,7 @@ Issue #35613 isolates a smaller invariant:
 
 > A terminal code-mode cell should preserve model-visible access to still-live manager-owned nested commands attributed to that exact cell, even when JavaScript discards every returned result object.
 
-The proposed implementation does not redefine wrapper completion, process lifetime, cleanup, polling, wake-up behaviour, or recovery policy.
+The implementation does not redefine wrapper completion, process lifetime, cleanup, polling, wake-up behaviour, or recovery policy.
 
 ## Tested implementation
 
@@ -92,15 +93,15 @@ The implementation and test coverage are on [`fix/code-mode-live-session-ids`](h
 Relevant refs:
 
 - selected upstream base: [`61a44880`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8);
-- bounded implementation milestone: [`eb530466`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448);
-- latest implementation head: [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48);
+- validated bounded implementation milestone: [`eb530466`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448);
+- current implementation branch head: [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48);
 - base-to-head comparison: [`61a44880...77e7e314`](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48).
 
-The implementation branch currently resolves to `77e7e314`. That commit contains the same production implementation as `eb530466`; its additional commit only adds test-side Windows-target skips for POSIX acceptance commands.
+`77e7e314` contains the same production implementation as `eb530466`; its additional commit only adds test-side Windows-target guards for POSIX acceptance commands.
 
 ### Preserve creator identity
 
-Nested dispatch already carries the public code-mode cell ID through `ToolCallSource::CodeMode`. The implementation carries that identity through `UnifiedExecContext` and stores it on the manager-owned `ProcessEntry`.
+`ToolCallSource::CodeMode` carries `cell_id` as a `String`. `ExecCommandHandler` reconstructs a typed `CellId` with `CellId::new(cell_id)` at the unified-exec boundary, places it on `UnifiedExecContext`, and stores it on the manager-owned `ProcessEntry`.
 
 Creator provenance remains crate-internal. It adds no JavaScript field, public result property, protocol event, or call-ID encoding.
 
@@ -116,7 +117,7 @@ The lookup cannot determine whether JavaScript retained, printed, copied, or dis
 
 Ordinary `RuntimeResponse::Yielded` responses describe a code-mode cell that remains active and resumable. They keep their existing status.
 
-The implementation reports live IDs for terminal responses:
+The prototype reports live IDs for terminal responses:
 
 - successful `Result`;
 - failed `Result`;
@@ -154,24 +155,33 @@ const MAX_INLINE_BACKGROUND_SESSION_IDS: usize = 64;
 
 A future process-store capacity change should not silently change the model-visible output budget. Under normal manager capacity, all exact-cell live IDs remain visible.
 
-Because the current tool surface has no separate session-enumeration operation, IDs beyond the rare over-limit prefix are not directly recoverable from the suffix. A future model-visible enumeration path would close that remaining edge case without requiring an unbounded terminal fragment.
+In the rare overflow case, IDs represented only by `(+N more)` are not directly recoverable because the current tool surface has no model-visible session-enumeration operation. Any implementation that retains this bound therefore needs a model-visible enumeration path for the omitted IDs; until then, overflow remains an explicit residual limitation.
 
-## Liveness semantics
+## Liveness semantics and remote coverage boundary
 
 The lookup describes manager-observed state at one instant. A selected process can exit immediately after lookup.
 
-`UnifiedExecProcess::has_exited()` also has a backend asymmetry:
+`UnifiedExecProcess::has_exited()` has a backend asymmetry:
 
 - local processes consult cached state and the live local handle;
 - exec-server-backed processes consult cached manager state.
 
-A recently exited remote process can therefore remain visible until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting. The exit-then-exclude survivor case ran locally because it embeds host `TempDir` paths not shared with Docker or Wine executors.
+A recently exited remote process can therefore remain visible until its exit is reflected in manager state.
+
+Four Docker acceptance cases exercised exec-server live-process reporting. The exit-then-exclude survivor case ran locally because it embeds host `TempDir` paths not shared with Docker or Wine executors. That skipped case is the only acceptance case exercising exit-then-exclude, so stale remote-exit exclusion remains untested.
+
+## Open maintainer decisions
+
+The implementation records the prototype's current behaviour, but two policy choices remain for upstream review:
+
+- Should live session IDs appear only for successful completion, or also for failed `Result` responses and `Terminated`?
+- Is manager-observed liveness sufficient for exec-server-backed processes, given that remote exit reflection can briefly lag the underlying process?
 
 ## Windows and Wine-exec test boundary
 
 Wine-exec is not a native Windows-host run. The Rust integration-test process runs on an x86-64 Linux host while Bazel cross-builds the Windows exec server and launches that server under Wine. The test environment consequently reports a Windows **execution target** even though the test binary itself is Linux.
 
-That distinction explains the two skip mechanisms visible in `orphan_sessions.rs`:
+That distinction explains the skip mechanisms visible in `orphan_sessions.rs`:
 
 - `#[cfg_attr(windows, ignore = "no exec_command on Windows")]` applies only when the Rust test binary itself is compiled for Windows. It does not fire in Wine-exec because the test binary is Linux.
 - `skip_if_target_windows!` checks the selected remote execution target at runtime. It does fire in Wine-exec.
@@ -179,28 +189,17 @@ That distinction explains the two skip mechanisms visible in `orphan_sessions.rs
 
 For Patch 1 specifically:
 
-- `code_mode_completion_surfaces_discarded_live_exec_sessions` skips under Wine because its nested commands use POSIX shell syntax;
-- `large_emitted_output_does_not_truncate_live_session_warning` skips under Wine for the same reason;
-- `yielded_cell_response_does_not_include_completion_session_warning` skips under Wine for the same reason;
-- `code_mode_completion_reports_only_sessions_created_by_current_cell` skips under Wine for the same reason;
+- four acceptance cases skip under Wine because their nested commands use POSIX shell syntax;
 - `code_mode_completion_reports_only_surviving_nested_session` skips in every remote environment because its PID/release handshake embeds host `TempDir` paths unavailable to the executor.
 
-Therefore, a successful Wine suite validates the Bazel/Wine harness and the broader shared `codex-core` suite on the latest implementation head. It does **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
+Therefore, a successful Wine suite validates the Bazel/Wine harness and the broader shared `codex-core` suite on the implementation head. It does **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
 
-A prior attempt that failed during Bazel or Wine setup would not have printed those runtime skip messages because the Rust test process never started. That is a harness failure, not evidence that the skip conditions were absent or incorrect.
+A prior attempt that failed during Bazel or Wine setup would not print those runtime skip messages because the Rust test process never started. That is a harness failure, not evidence that the skip conditions were absent or incorrect.
 
-The repository-native command is:
+Repository-native command:
 
 ```sh
 bazel test //codex-rs/core:core-all-wine-exec-test
-```
-
-The temporary latest-head workflow uses the same target with full output and cache disabled:
-
-```sh
-bazel test //codex-rs/core:core-all-wine-exec-test \
-  --nocache_test_results \
-  --test_output=all
 ```
 
 ## Validation
@@ -209,7 +208,7 @@ The complete evidence ledger is maintained separately so public CI receipts, rep
 
 - [validation history](validation-history.md)
 
-Summary:
+Established results include:
 
 | Coverage | Ref or tested tree | Result |
 |---|---|---|
@@ -219,12 +218,10 @@ Summary:
 | Local acceptance | Value-equivalent bounded implementation workspace | 5 passed |
 | Docker/Ubuntu 24.04 remote acceptance | Same workspace | 4 passed; 1 explicit host-`TempDir` skip |
 | Existing compatibility tests | Same workspace | 2 passed |
-| Full `codex-core` library suite | Latest implementation head `77e7e314` | queued when this revision was published |
-| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | queued when this revision was published |
 
 Public receipts and launchers:
 
-- [focused final-head run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228);
+- [focused milestone run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228);
 - [local and Docker acceptance run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056);
 - [latest-head full library workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml);
 - [full-library launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954);
@@ -238,7 +235,7 @@ Two earlier Actions attempts failed in the validation harness before producing p
 ### Upstream baseline
 
 - [Code-mode terminal response formatting](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275)
-- [`ToolInvocation` carries `ToolCallSource`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L46-L71)
+- [`ToolInvocation` carries string-valued `ToolCallSource`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L46-L71)
 - [`ExecCommandHandler` baseline context construction](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L108-L133)
 - [Unified-exec tool surface](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec.rs#L22-L27)
 
