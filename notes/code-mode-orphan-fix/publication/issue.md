@@ -1,7 +1,5 @@
 # `Script completed` can omit session IDs for live nested commands
 
-<!-- Unpublished issue draft. -->
-
 ## What happened
 
 A code-mode JavaScript cell can start nested terminal commands, keep only their `.output`, and discard the returned session IDs. The cell can then report `Script completed` while those commands are still running.
@@ -54,7 +52,7 @@ It does not change process ownership, lifetime, cleanup, polling, wake-up behavi
 - [Current code and test comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48)
 - [Focused Actions run](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
 - [Local and Docker acceptance run](https://github.com/teamleaderleo/codex/actions/runs/30217686056)
-- [Detailed validation record](https://github.com/teamleaderleo/codex/blob/617bc3a81ae9ddf0964bac9ee6c4096c57559b76/notes/code-mode-orphan-fix/publication/validation.md)
+- [Detailed validation record](https://github.com/teamleaderleo/codex/blob/review/code-mode-final-draft/notes/code-mode-orphan-fix/publication/validation.md)
 
 A targeted Wine-exec run was also attempted on the current guarded head, but an unrelated Bazel BUILD/macro mismatch stopped analysis before any Rust test ran.
 
