@@ -1,6 +1,6 @@
 # Surface live nested exec session IDs in code-mode completion
 
-Carries code-mode `CellId` provenance into manager-owned process entries and reports still-live session IDs when that cell reaches a terminal response. It won't change process lifecycle behaviour, JavaScript result fields, or public protocol shapes.
+Carries code-mode `CellId` provenance into manager-owned process entries and reports still-live session IDs when that cell reaches an in-scope terminal response. It doesn't change process lifecycle behaviour, JavaScript result fields, or public protocol shapes.
 
 ## Implementation synopsis
 
@@ -32,7 +32,7 @@ if let Some(cell_id) = terminal_cell_id(&response) {
 - Add a read-only lookup for live processes created by an exact cell.
 - Include the matching manager process IDs, exposed to the model as `session_id`, in terminal code-mode responses.
 - Leave ordinary `Yielded` responses unchanged.
-- Add focused manager and formatter tests plus one primary end-to-end regression.
+- Add a focused manager test, formatter tests, and one primary end-to-end regression.
 
 ## Why
 
@@ -44,16 +44,16 @@ Those commands can remain live after the cell finishes. The unified-exec manager
 
 Nested tool dispatch already identifies calls originating from code mode. This change carries that existing typed cell identity into the unified-exec process entry.
 
-When the cell reaches a terminal response, response handling asks the existing manager for processes that:
+When the cell reaches an in-scope terminal response, response handling asks the existing manager for processes that:
 
 - were created by that exact cell; and
 - remain live according to manager state at lookup time.
 
-The formatter presents those IDs deterministically in the existing status header. The lookup won't wait for, terminate, prune, or mutate any process.
+The formatter presents those IDs deterministically in the existing status header. The lookup doesn't wait for, terminate, prune, or mutate any process.
 
 The lookup reports every still-live process attributed to the cell, including processes whose returned IDs the JavaScript retained; response handling can't distinguish retained handles from discarded ones.
 
-The exploratory prototype reports IDs for successful and failed `Result` responses and for `Terminated`, while leaving `Yielded` unchanged.
+The exploratory prototype reports IDs for successful and failed `Result` responses and for `Terminated`, while leaving `Yielded` unchanged. It includes both local and exec-server-backed entries; exec-server exit visibility follows manager-observed state and can briefly lag an underlying remote exit.
 
 ```text
 Script completed
@@ -63,9 +63,11 @@ Output:
 ...
 ```
 
-## Liveness semantics
+## Display bound
 
-The lookup uses existing manager-observed state. Local handles can expose process exit directly. Exec-server-backed handles rely on exit already reflected in manager state, so reporting can briefly lag an underlying remote exit.
+The prototype's 64-ID display limit matches the manager's current 64-process capacity, so it cannot omit a reachable manager-owned ID.
+
+The display and manager constants can remain separate, but the display limit must not fall below manager capacity unless another model-visible path can enumerate omitted IDs.
 
 ## Scope
 
@@ -85,7 +87,7 @@ The proposed PR shape needs one primary end-to-end discarded-handle regression. 
 
 These checks span related prototype refs and workspaces rather than one final SHA, and a broad project or workspace suite wasn't completed. The deep dive records the exact validation boundaries.
 
-- focused manager tests for exact-cell attribution, exited-entry filtering, and manager process ID handling;
+- a focused manager test for exact-cell attribution, exited-entry filtering, and manager process ID handling;
 - formatter tests for terminal-response selection, deterministic ordering, empty-session behaviour, and the model-visible display policy;
 - five local acceptance cases, including the primary discarded-handle regression;
 - four Docker cases exercising exec-server live-process reporting;
