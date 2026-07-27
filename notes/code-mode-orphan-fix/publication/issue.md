@@ -48,7 +48,7 @@ The exact wording and display bound are implementation choices. The required pro
 
 Nested tool dispatch already carries the originating code-mode cell ID. Yielded commands remain owned by the session-level unified-exec manager, but the final code-mode response is formatted from `RuntimeResponse` alone.
 
-Once JavaScript discards a nested result object, the completion path has no source from which to recover its `session_id`, even though the manager still has both the process and its logical ID.
+Once JavaScript discards a nested result object, the completion path has no cell-scoped path to identify and recover its `session_id`, even though the manager still has both the process and its logical ID.
 
 [Current upstream `handle_runtime_response`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275) still formats terminal cell output without an equivalent manager lookup.
 
