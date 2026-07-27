@@ -1,23 +1,28 @@
-# Code-mode live session IDs
+# Code-mode completion can lose live session handles
 
-A code-mode cell can start nested terminal commands, keep only their output, and discard the returned session IDs while the processes remain live in the session-level unified-exec manager. The final result can then say `Script completed` without showing the handles needed to inspect, continue, or stop those commands.
+A code-mode cell can start nested terminal commands, keep only their output, and discard the returned session IDs while the processes remain live in the session-level unified-exec manager.
 
-The patch retains the existing creator-cell identity on stored process entries and, when a cell finishes, asks the existing manager which processes created by that exact cell are still live. It reports their logical session IDs in numeric order.
+The final result can then report `Script completed` without showing the handles needed to inspect, continue, or terminate those commands.
 
-## What changes
+## Relationship to #34866
 
-- Final `Result` and `Terminated` responses can include `Background sessions still running: ...`.
-- Only still-live processes created by the exact completing cell are reported.
-- At most 64 IDs are displayed, followed by an exact omitted count when needed.
-- Ordinary `Yielded` responses remain unchanged.
-- Process ownership, lifetime, cleanup, wake-up behaviour, and public protocol shapes remain unchanged.
+[#34866](https://github.com/openai/codex/issues/34866) covers the broader contradiction between wrapper completion and nested-process state and discusses richer lifecycle representation.
 
-## Evidence
+This report isolates one compatibility-preserving case: recover discarded manager-owned handles in the existing completion status without changing lifecycle policy, JavaScript result fields, or protocol shapes.
 
-- Current upstream `main` snapshot `95637f70...` still formats completion status from the runtime response alone and contains no equivalent manager lookup.
-- Nine focused formatter and manager tests passed on capped head `eb530466...`.
-- Five acceptance cases passed locally, and four remote-safe cases passed through the Docker executor, on the behaviourally equivalent pre-decoupling capped workspace.
-- Current code head `77e7e314...` adds only target-Windows routing guards for POSIX-command acceptance cases.
-- A targeted Wine-exec run was attempted on the current code head, but an unrelated Bazel BUILD/macro mismatch stopped analysis before any Rust tests were discovered or executed.
+## Proposed direction
 
-See [validation.md](validation.md) for exact refs and run boundaries, and [deep-dive.md](deep-dive.md) for the implementation details.
+- retain the originating typed code-mode `CellId` on manager-owned process entries;
+- query the existing manager for processes created by the exact terminal cell whose manager-observed state remains live;
+- report their logical session IDs deterministically in the existing status text;
+- leave ordinary `Yielded` responses unchanged.
+
+## Important boundary
+
+Local handles can expose process exit directly. Exec-server-backed handles rely on exit already reflected in manager state, so a recently exited remote process may appear until cached state advances.
+
+## Prototype
+
+A tested prototype demonstrates exact-cell attribution, exited-entry filtering, deterministic formatting, and the discarded-handle end-to-end case.
+
+Before an invited PR, rebuild the small version directly on then-current upstream `main`, retain one primary acceptance regression, apply the code cleanups listed in [review.md](review.md), and rerun every claimed check on one final SHA.
