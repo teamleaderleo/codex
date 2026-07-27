@@ -62,9 +62,8 @@ Remote executor: Docker `ubuntu:24.04`
 Results:
 
 - five local acceptance cases passed;
-- four remote-safe Docker cases passed and therefore exercised the exec-server path;
-- the exited-process/survivor case passed locally and was excluded from the Docker filter because it used host-only temporary paths;
-- remote stale-exit behaviour was not exercised by that survivor case;
+- four remote-safe Docker cases exercised the exec-server path and passed;
+- the exited-process/survivor case passed locally and was excluded from the Docker filter, so stale remote-exit exclusion remains untested;
 - two existing code-mode compatibility tests passed;
 - `git diff --check` passed.
 
@@ -77,6 +76,7 @@ Create the smaller submission branch directly from then-current upstream `main`.
 - relevant existing compatibility tests;
 - any terminal-outcome cases agreed in the issue;
 - `just test -p codex-core`;
+- repository-wide `just test` when requested or approved for the invited contribution;
 - `just fix -p codex-core`;
 - `just fmt`;
 - `git diff --check`.
