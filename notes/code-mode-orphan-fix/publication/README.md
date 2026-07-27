@@ -6,8 +6,9 @@ This directory contains the publication and review package for a standalone Code
 
 1. [Issue form draft](issue.md): reproduction-first bug report for the Codex app issue form
 2. [Technical deep dive](deep-dive.md): data flow, implementation evidence, limitations, validation, and related reports
-3. [Proposed pull-request description](pull-request.md): compact description of the intended production change
-4. [Proposed #34866 cross-link comment](related-34866-comment.md): explanation of the relationship and independent scope
+3. [Validation history](validation-history.md): local repetition counts, commit boundaries, successful CI receipts, harness-only failures, and the latest-head full-suite run
+4. [Proposed pull-request description](pull-request.md): compact description of the intended production change
+5. [Proposed #34866 cross-link comment](related-34866-comment.md): explanation of the relationship and independent scope
 
 ## Exploratory code
 
@@ -21,4 +22,4 @@ This directory contains the publication and review package for a standalone Code
 
 Review edits live on `review/code-mode-issue-ready`. The exploratory implementation branch remains unchanged.
 
-The issue-form draft still contains the local `uname -mprs` placeholder, and the #34866 comment still contains the eventual new issue-number placeholder.
+The public validation ledger records which checks ran on which ref so repeated earlier validation is preserved without being misattributed to a later commit.
