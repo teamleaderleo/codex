@@ -1,10 +1,34 @@
-# Code-mode completion can omit IDs for still-live nested exec sessions
+# Codex app bug report
 
-Code-mode JavaScript can discard the `session_id` values returned by nested `exec_command` calls while the unified-exec manager continues to own the live processes. This proposal would carry the originating cell ID into the manager's process entries and report any still-live IDs in the cell's completion status; it wouldn't change process lifecycle behaviour or public protocol shapes.
+## Title
 
-Related: [#34866](https://github.com/openai/codex/issues/34866) reports the broader mismatch between wrapper completion and nested-process state, including JavaScript forwarding only `output`. This report isolates one independently fixable case: the final cell response loses model-visible control handles even though the unified-exec manager still owns the live processes.
+Code-mode completion can omit IDs for still-live nested exec sessions
 
-## Reproduction
+## What version of the Codex App are you using?
+
+ChatGPT Powered by Codex & OWL Version 26.721.41059  
+Released Jul 25, 2026
+
+## What subscription do you have?
+
+ChatGPT Plus
+
+## What platform is your computer?
+
+MacBook Air (15-inch), macOS  
+`uname -mprs`: `<paste command output>`
+
+## What issue are you seeing?
+
+Code-mode JavaScript can discard the `session_id` values returned by nested `exec_command` calls while the unified-exec manager continues to own the live processes.
+
+The cell can then report `Script completed` without showing the session IDs needed to inspect, continue, or terminate those commands.
+
+This is the narrower lost-handle case within the broader wrapper/process mismatch reported in [#34866](https://github.com/openai/codex/issues/34866).
+
+## What steps can reproduce the bug?
+
+Run a code-mode JavaScript cell that starts nested commands, then keeps only each command's `.output` and discards the returned `session_id`:
 
 ```js
 const outputs = (await Promise.all([
@@ -15,11 +39,7 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-The cell deliberately keeps only each command's `.output` and discards the returned `session_id`.
-
-An [executable negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) confirms both nested sessions remain listed by the unified-exec manager after the cell finishes, while the model-visible completion result omits their IDs.
-
-## Observed behaviour
+The cell returns output similar to:
 
 ```text
 Script completed
@@ -28,11 +48,17 @@ Output:
 orphan-a|orphan-b
 ```
 
-The nested commands remain live, but the response no longer contains the handles needed to inspect, continue, or terminate them.
+Both nested commands can still be live and listed by the unified-exec manager, but their logical session IDs are absent from the model-visible response because the JavaScript code discarded the original result objects.
 
-## Proposed behaviour
+An [executable negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves this before-state as a test.
 
-A terminal cell response could include the matching live handles in its existing status text:
+Session ID, token-limit usage, and context-window usage don't appear material to the reproduction.
+
+## What is the expected behavior?
+
+When a code-mode cell reaches a terminal result, its existing status text should include the logical IDs of any still-live nested commands created by that exact cell.
+
+For example:
 
 ```text
 Script completed
@@ -42,21 +68,7 @@ Output:
 orphan-a|orphan-b
 ```
 
-The exact wording and display bound are implementation choices. The required property is that a completing cell preserves access to manager-owned nested commands whose JavaScript result objects were discarded.
-
-## Root cause
-
-Nested tool dispatch already carries the originating code-mode cell ID. Yielded commands remain owned by the session-level unified-exec manager, but the final code-mode response is formatted from `RuntimeResponse` alone.
-
-Once JavaScript discards a nested result object, the completion path has no cell-scoped path to identify and recover its `session_id`, even though the manager still has both the process and its logical ID.
-
-[Current upstream `handle_runtime_response`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275) still formats terminal cell output without an equivalent manager lookup.
-
-## Proposed direction
-
-1. Retain the originating typed `CellId` on manager-owned process entries created through code mode.
-2. For a terminal cell response, query the existing manager for processes created by that exact cell whose manager-observed state remains live.
-3. Include their logical session IDs in deterministic order in the model-visible status.
+The exact wording and display bound are implementation choices. The required property is that the completing cell preserves model-visible access to manager-owned nested commands whose JavaScript result objects were discarded.
 
 Conceptually, with names and surrounding fields omitted:
 
@@ -71,15 +83,13 @@ let live_session_ids =
     process_manager.live_process_ids_created_by_cell(&cell_id);
 ```
 
-The query would be read-only. It wouldn't wait for, terminate, prune, or otherwise mutate any process.
+The lookup would be read-only. It wouldn't wait for, terminate, prune, or otherwise mutate any process.
 
-## Liveness boundary
+## Additional information
 
-This would report manager-observed liveness at lookup time. Local process handles can expose exit directly; exec-server-backed entries rely on exit state already reflected in the manager. A recently exited remote process could therefore appear until that cached state advances.
+Nested tool dispatch already carries the originating code-mode cell ID. Yielded commands remain owned by the session-level unified-exec manager, but the final code-mode response is formatted from `RuntimeResponse` alone.
 
-That asymmetry already exists in `UnifiedExecProcess::has_exited()` and should be considered when maintainers choose whether this narrow status fix is desirable or whether broader lifecycle reporting from #34866 should land first.
-
-## Scope
+Once JavaScript discards a nested result object, the completion path has no cell-scoped path to identify and recover its `session_id`, even though the manager still has both the process and its logical ID. [Current upstream `handle_runtime_response`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275) still formats terminal cell output without an equivalent manager lookup.
 
 The proposed fix would leave these unchanged:
 
@@ -91,11 +101,13 @@ The proposed fix would leave these unchanged:
 
 It would report only sessions created by the exact cell whose terminal response is being formatted, so one cell couldn't claim another cell's live work.
 
-## Scope questions
+One backend boundary is worth deciding explicitly. Local process handles can expose process exit directly, while exec-server-backed entries rely on exit state already reflected in the manager. A recently exited remote process could therefore appear until the manager's cached state advances.
+
+The remaining scope questions are:
 
 - Should live session IDs be shown only when a cell completes successfully, or also when it fails or is terminated?
 - Should the first version include exec-server-backed sessions, accepting that their exit state can briefly lag, or should it be limited to local sessions?
 
-## Technical notes
+I did a deeper technical review of the prototype, including the data flow, exploratory implementation, validation history, limitations, source references, and design tradeoffs: [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md).
 
-I did a deeper technical review of the prototype, including the data flow, validation history, limitations, and design tradeoffs. You can read my findings and reasoning in the [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md).
+The exploratory implementation and tests are together on [`fix/code-mode-live-session-ids`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-ids).
