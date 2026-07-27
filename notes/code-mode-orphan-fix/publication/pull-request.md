@@ -42,7 +42,7 @@ Those commands can remain live after the cell finishes. The unified-exec manager
 
 ## How it works
 
-Nested tool dispatch already identifies calls originating from code mode. This change carries that existing typed cell identity into the unified-exec process entry.
+Nested tool dispatch already identifies calls originating from code mode. This change reconstructs the existing cell identity as a `CellId` at the unified-exec boundary and carries it into the process entry.
 
 When the cell reaches an in-scope terminal response, response handling asks the existing manager for processes that:
 
@@ -67,7 +67,7 @@ Output:
 
 The simplest correct implementation reports the complete per-cell live list. It is normally around the manager's 64-process soft cap and consists of short numeric IDs, so the model-context cost is small.
 
-The exploratory prototype instead caps the visible list at 64. Because the manager can temporarily exceed its soft cap while an exited process is locked during terminal-event publication, the prototype's `(+N more)` path can omit a still-live handle. If a future implementation adds a display bound, it needs another model-visible path to enumerate omitted IDs; none exists today.
+The exploratory prototype instead caps the visible list at 64. The first overflow caused by a locked exited entry does not by itself produce more than 64 live IDs because the lookup filters that exited entry. However, additional insertions can continue while pruning returns `None`; matching live entries can then exceed 64, allowing the prototype's `(+N more)` path to omit handles. If a future implementation adds a display bound, it needs another model-visible path to enumerate omitted IDs; none exists today.
 
 ## Scope
 
