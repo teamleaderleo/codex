@@ -8,14 +8,14 @@ I used an exploratory implementation to trace the data flow, test the narrow fix
 
 Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The terminal response still identifies the cell, and the unified-exec manager still owns the processes, but manager-owned process entries don't retain the corresponding creator-cell provenance. The completion path therefore can't map that cell back to its live session IDs.
 
-The proposed approach carries the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, queries still-live entries for that exact cell when an in-scope terminal response is formatted, and adds their IDs to the existing status text. It doesn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
+The proposed approach carries the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, queries still-live entries for that exact cell when a selected terminal response is formatted, and adds their IDs to the existing status text. It doesn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
 
 ```text
 CodeMode CellId
   → UnifiedExecContext
   → ProcessEntry
   → exact-cell live-process lookup
-  → in-scope terminal response status
+  → selected terminal response status
 ```
 
 ## Failure
@@ -104,15 +104,15 @@ Reporting every live process in the session would let one completing cell claim 
 
 The narrow contract is:
 
-> Report only manager-owned processes attributed to the exact cell whose in-scope terminal response is being formatted.
+> Report only manager-owned processes attributed to the exact cell whose selected terminal response is being formatted.
 
 For remote code-mode hosts, public cell IDs are already namespaced by host generation: generation one uses the bare ID, later generations use `g{N}:<id>`, and stale-generation IDs are rejected when translated back to a remote ID. That makes `CellId` equality a stable attribution key across remote host restarts within one Codex session.
 
 ## Display contract
 
-The prototype formats IDs in numeric order and caps the model-visible list at 64. That equals `MAX_UNIFIED_EXEC_PROCESSES`, but the manager limit is a soft cap: the store can temporarily exceed it while an exited process is locked during terminal-event publication.
+The current unified-exec tool surface exposes `exec_command` and `write_stdin`, but no separate model-visible command enumerates live sessions. The manager nominally prunes at 64 entries, so a complete per-cell list of short numeric IDs is usually only a few hundred bytes. The simplest correct implementation therefore removes the display cap and reports the full matching list.
 
-During that overshoot window, the prototype's `(+N more)` suffix can omit still-live IDs, recreating the same accessibility problem for the omitted handles. A polished implementation must surface every matching live ID or provide another model-visible path that enumerates any omitted IDs. The over-limit formatter tests document the current output policy; they don't establish that every reachable live handle remains visible end to end.
+The exploratory prototype instead caps the visible list at 64. Because the manager limit is a soft cap, the store can temporarily exceed it while an exited process is locked during terminal-event publication. During that window, the prototype's `(+N more)` suffix can omit still-live IDs and recreate the same accessibility problem. If a future implementation reintroduces a display bound, it needs another model-visible path that enumerates omitted IDs.
 
 ## Upstream status
 
@@ -145,13 +145,13 @@ These checks establish prototype feasibility. They span closely related refs and
 
 ### Result matrix
 
-| Coverage | Ref or workspace | Result |
-|---|---|---|
-| Focused formatter and manager tests | `eb530466...` | 9 passed |
-| Formatting, scoped fixes, diff, and worktree checks | `eb530466...` | passed |
-| Local acceptance cases | Acceptance workspace containing the capped formatter and final remote-executor harness | 5 passed |
-| Docker/Linux remote acceptance | Same acceptance workspace using an `ubuntu:24.04` executor | 4 passed |
-| Existing compatibility tests | Same acceptance workspace | 2 passed |
+| Coverage | Ref or workspace | Result | Boundary |
+|---|---|---|---|
+| Focused formatter and manager tests | `eb530466` | 9 passed | Selected unit tests only |
+| Formatting, scoped fixes, diff, and worktree checks | `eb530466` | passed | Formatting, fix, diff, and worktree checks only |
+| Local acceptance cases | Final local acceptance workspace | 5 passed | Includes the local exited-process/survivor case |
+| Docker/Linux remote acceptance | Same acceptance workspace using an `ubuntu:24.04` executor | 4 passed | Remote-safe subset; excludes the exited-process/survivor case |
+| Existing compatibility tests | Same acceptance workspace | 2 passed | Selected existing code-mode tests |
 
 ### Focused validation
 
@@ -207,8 +207,9 @@ Results:
 - [Code-mode terminal response formatting](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275)
 - [`ToolInvocation` carries `ToolCallSource`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L46-L71)
 - [`ExecCommandHandler` constructs unified-exec context without creator-cell provenance](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L108-L133)
+- [Unified-exec exposes only `exec_command` and `write_stdin` handlers](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec.rs#L22-L27)
 - [Existing unified-exec context and process entries](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/unified_exec/mod.rs#L77-L181)
-- [Remote public cell-ID generation namespacing and stale-generation rejection](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/code-mode/src/remote_session/connection/driver/cell_ids.rs#L14-L45)
+- [Remote public cell-ID generation namespacing and stale-generation rejection](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/code-mode/src/remote_session/connection/driver/cell_ids.rs#L12-L42)
 
 ### Exploratory code
 
@@ -221,7 +222,7 @@ Results:
 - [Terminal-response lookup and `Yielded` exclusion](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L201-L269)
 - [Bounded status formatting](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L270-L305)
 - [`has_exited()` backend asymmetry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process.rs#L199-L210)
-- [Soft-cap pruning and temporary overshoot](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L1381-L1423)
+- [Soft-cap pruning and temporary overshoot](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L1379-L1423)
 
 ### Prototype tests
 
