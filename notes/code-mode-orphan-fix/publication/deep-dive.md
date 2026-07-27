@@ -96,15 +96,15 @@ Relevant refs:
 - latest implementation head: [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48);
 - base-to-head comparison: [`61a44880...77e7e314`](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48).
 
-`77e7e314` contains the same production implementation as `eb530466`; its additional commit only adds test-side Windows-target skips for POSIX acceptance commands.
+The implementation branch currently resolves to `77e7e314`. That commit contains the same production implementation as `eb530466`; its additional commit only adds test-side Windows-target skips for POSIX acceptance commands.
 
-### 1. Preserve creator identity
+### Preserve creator identity
 
 Nested dispatch already carries the public code-mode cell ID through `ToolCallSource::CodeMode`. The implementation carries that identity through `UnifiedExecContext` and stores it on the manager-owned `ProcessEntry`.
 
 Creator provenance remains crate-internal. It adds no JavaScript field, public result property, protocol event, or call-ID encoding.
 
-### 2. Query the existing liveness authority
+### Query the existing liveness authority
 
 A read-only manager query selects entries whose creator matches the exact `CellId`, filters them through existing `has_exited()` state, and returns their logical manager process IDs.
 
@@ -112,7 +112,7 @@ The same value is called `process_id` internally and exposed to the model as `se
 
 The lookup cannot determine whether JavaScript retained, printed, copied, or discarded an individual handle, so it reports the manager-observed exact-cell live set.
 
-### 3. Select terminal responses
+### Select terminal responses
 
 Ordinary `RuntimeResponse::Yielded` responses describe a code-mode cell that remains active and resumable. They keep their existing status.
 
@@ -122,7 +122,7 @@ The implementation reports live IDs for terminal responses:
 - failed `Result`;
 - `Terminated`.
 
-### 4. Keep the warning outside emitted-output truncation
+### Keep the warning outside emitted-output truncation
 
 Code-mode emitted payload is truncated before the status header is prepended. A large emitted value therefore cannot remove the background-session warning at that boundary. Later whole-conversation limits still apply to the complete tool result.
 
@@ -167,9 +167,45 @@ The lookup describes manager-observed state at one instant. A selected process c
 
 A recently exited remote process can therefore remain visible until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting. The exit-then-exclude survivor case ran locally because it embeds host `TempDir` paths not shared with Docker or Wine executors.
 
+## Windows and Wine-exec test boundary
+
+Wine-exec is not a native Windows-host run. The Rust integration-test process runs on an x86-64 Linux host while Bazel cross-builds the Windows exec server and launches that server under Wine. The test environment consequently reports a Windows **execution target** even though the test binary itself is Linux.
+
+That distinction explains the two skip mechanisms visible in `orphan_sessions.rs`:
+
+- `#[cfg_attr(windows, ignore = "no exec_command on Windows")]` applies only when the Rust test binary itself is compiled for Windows. It does not fire in Wine-exec because the test binary is Linux.
+- `skip_if_target_windows!` checks the selected remote execution target at runtime. It does fire in Wine-exec.
+- `skip_if_remote!` fires for both Docker and Wine when a case depends on local-host filesystem topology.
+
+For Patch 1 specifically:
+
+- `code_mode_completion_surfaces_discarded_live_exec_sessions` skips under Wine because its nested commands use POSIX shell syntax;
+- `large_emitted_output_does_not_truncate_live_session_warning` skips under Wine for the same reason;
+- `yielded_cell_response_does_not_include_completion_session_warning` skips under Wine for the same reason;
+- `code_mode_completion_reports_only_sessions_created_by_current_cell` skips under Wine for the same reason;
+- `code_mode_completion_reports_only_surviving_nested_session` skips in every remote environment because its PID/release handshake embeds host `TempDir` paths unavailable to the executor.
+
+Therefore, a successful Wine suite validates the Bazel/Wine harness and the broader shared `codex-core` suite on the latest implementation head. It does **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
+
+A prior attempt that failed during Bazel or Wine setup would not have printed those runtime skip messages because the Rust test process never started. That is a harness failure, not evidence that the skip conditions were absent or incorrect.
+
+The repository-native command is:
+
+```sh
+bazel test //codex-rs/core:core-all-wine-exec-test
+```
+
+The temporary latest-head workflow uses the same target with full output and cache disabled:
+
+```sh
+bazel test //codex-rs/core:core-all-wine-exec-test \
+  --nocache_test_results \
+  --test_output=all
+```
+
 ## Validation
 
-The complete evidence ledger is maintained separately so public CI receipts, repeated local history, harness failures, and ref boundaries are not collapsed together:
+The complete evidence ledger is maintained separately so public CI receipts, repeated local history, harness failures, ref boundaries, and target-specific skips are not collapsed together:
 
 - [validation history](validation-history.md)
 
@@ -184,19 +220,16 @@ Summary:
 | Docker/Ubuntu 24.04 remote acceptance | Same workspace | 4 passed; 1 explicit host-`TempDir` skip |
 | Existing compatibility tests | Same workspace | 2 passed |
 | Full `codex-core` library suite | Latest implementation head `77e7e314` | queued when this revision was published |
+| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | queued when this revision was published |
 
-Public receipts:
+Public receipts and launchers:
 
 - [focused final-head run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228);
 - [local and Docker acceptance run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056);
-- [latest-head full-suite workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml);
-- [full-suite launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954).
-
-The full-suite workflow checks out `77e7e3149df366236db2426596c23ebbe1d6bb48` and runs:
-
-```sh
-just test -p codex-core --lib --no-capture --no-tests=fail
-```
+- [latest-head full library workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml);
+- [full-library launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954);
+- [latest-head Wine workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml);
+- [Wine launcher commit `d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870).
 
 Two earlier Actions attempts failed in the validation harness before producing product-test results and are recorded separately in the ledger rather than counted as test failures.
 
@@ -219,6 +252,7 @@ Two earlier Actions attempts failed in the validation harness before producing p
 - [Terminal-response lookup and `Yielded` exclusion](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L201-L269)
 - [Bounded status formatting](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L270-L305)
 - [Acceptance module](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/suite/code_mode/orphan_sessions.rs)
+- [Test-environment target selection](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/common/test_environment.rs#L42-L66)
 
 ## Alternatives considered
 
