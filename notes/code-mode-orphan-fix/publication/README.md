@@ -1,15 +1,20 @@
 # Code-mode live session IDs
 
-This directory contains the sanitised Patch 1 publication package.
+This directory contains the unpublished Patch 1 publication package.
 
-## Read in this order
+## Human-facing drafts
 
 1. [Summary](summary.md)
 2. [Standalone issue](issue.md)
 3. [Pull-request draft](pull-request.md)
-4. [Technical deep dive](deep-dive.md)
-5. [Sources](sources.md)
-6. [Validation](validation.md)
+
+These are intentionally concise. The issue is reproduction-first, and the PR follows a compact Why / What changed / Testing / Notes structure.
+
+## Technical reference
+
+- [Deep dive](deep-dive.md): implementation reasoning and non-goals
+- [Sources](sources.md): code, tests, history, and related reports
+- [Validation](validation.md): exact refs, commands, passes, and limitations
 
 ## Code
 
@@ -20,4 +25,4 @@ This directory contains the sanitised Patch 1 publication package.
 
 ## Status
 
-Nothing in this package has been published upstream. The issue should be considered first. The pull request is an invitation-only draft and should be opened only if an upstream maintainer invites the contribution.
+Nothing in this package has been published upstream. The issue should be considered first. The pull request is invitation-only and should be opened only if an upstream maintainer invites the contribution.
