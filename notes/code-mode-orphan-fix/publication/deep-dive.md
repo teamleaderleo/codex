@@ -4,6 +4,20 @@ This is the full technical record behind the [standalone issue](issue.md), the [
 
 I used an exploratory implementation to trace the data flow, test the narrow fix, document its limitations, and separate the decisions that belong to maintainers from the parts already established by the current code.
 
+## Executive summary
+
+Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The unified-exec manager still owns those processes, but the terminal response doesn't retain creator-cell provenance it can use to recover their logical IDs.
+
+The proposed approach would carry the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, query still-live entries for that exact cell when its terminal response is formatted, and add their IDs to the existing status text. It wouldn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
+
+```text
+CodeMode CellId
+  → UnifiedExecContext
+  → ProcessEntry
+  → exact-cell live-process lookup
+  → terminal completion status
+```
+
 ## Failure
 
 A code-mode JavaScript cell can start nested commands and retain only each result's `.output`:
