@@ -112,7 +112,7 @@ For remote code-mode hosts, public cell IDs are already namespaced by host gener
 
 The current unified-exec tool surface exposes `exec_command` and `write_stdin`, but no separate model-visible command enumerates live sessions. The manager nominally prunes at 64 entries, so a complete per-cell list of short numeric IDs is usually only a few hundred bytes. The simplest correct implementation therefore removes the display cap and reports the full matching list.
 
-The exploratory prototype instead caps the visible list at 64. The first overflow caused by a locked exited entry does not by itself produce more than 64 live IDs because the lookup filters that exited entry. However, additional insertions can continue while pruning returns `None`; matching live entries can then exceed 64, allowing the prototype's `(+N more)` suffix to omit handles and recreate the accessibility problem. If a future implementation reintroduces a display bound, it needs another model-visible path that enumerates omitted IDs.
+The exploratory prototype instead caps the visible list at 64. The manager limit is a soft cap. If pruning encounters an exited process whose interaction lock is held during terminal-event publication, it can admit a new entry without removing one. The first such overflow does not by itself produce more than 64 live IDs because the lookup filters the exited entry. The exit watcher emits the terminal event but does not remove that manager entry, so the store can remain above the nominal limit after the lock is released; each later insertion prunes at most one entry before inserting another. Matching live entries can therefore exceed 64, allowing the prototype's `(+N more)` suffix to omit handles and recreate the accessibility problem. If a future implementation reintroduces a display bound, it needs another model-visible path that enumerates omitted IDs.
 
 ## Upstream status
 
@@ -184,7 +184,7 @@ Results:
 - diff checks passed;
 - the worktree was empty of changes.
 
-The direct manager test covers exact-cell filtering, exited-entry exclusion, and manager process ID ordering in the prototype. The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible during soft-cap overshoot.
+The direct manager test covers exact-cell filtering, exited-entry exclusion, and manager process ID ordering in the prototype. The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible while the store remains above the nominal cap.
 
 ### Acceptance validation
 
@@ -222,7 +222,8 @@ Results:
 - [Terminal-response lookup and `Yielded` exclusion](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L201-L269)
 - [Bounded status formatting](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L270-L305)
 - [`has_exited()` backend asymmetry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process.rs#L199-L210)
-- [Soft-cap pruning and temporary overshoot](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L1379-L1423)
+- [Soft-cap pruning and persistent overshoot](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L1379-L1423)
+- [Exit watcher emits the terminal event without removing the manager entry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/async_watcher.rs#L157-L221)
 
 ### Prototype tests
 
