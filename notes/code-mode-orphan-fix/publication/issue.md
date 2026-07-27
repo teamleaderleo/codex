@@ -1,10 +1,8 @@
-# `Script completed` can omit session IDs for live nested commands
+# Code-mode completion drops session IDs for still-live nested commands
 
-## What happened
+Related: [#34866](https://github.com/openai/codex/issues/34866) reports the broader mismatch between wrapper completion and nested-process state, including JavaScript forwarding only `output`. This report isolates one independently fixable case: the final cell response loses model-visible control handles even though the unified-exec manager still owns the live processes.
 
-A code-mode JavaScript cell can start nested terminal commands, keep only their `.output`, and discard the returned session IDs. The cell can then report `Script completed` while those commands are still running.
-
-Codex still tracks the processes internally, but the final result no longer shows the handles needed to inspect, continue, or terminate them.
+The proposed direction restores those handles from existing manager state. It does not redesign lifecycle semantics or add protocol fields.
 
 ## Reproduction
 
@@ -17,9 +15,11 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-An [executable negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) confirms that the manager still lists both live sessions while the model-visible completion result omits their IDs.
+The cell deliberately keeps only each command's `.output` and discards the returned `session_id`.
 
-## Actual behaviour
+An [executable negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) confirms both nested sessions remain listed by the unified-exec manager after the cell finishes, while the model-visible completion result omits their IDs.
+
+## Observed behaviour
 
 ```text
 Script completed
@@ -28,7 +28,11 @@ Output:
 orphan-a|orphan-b
 ```
 
-## Expected behaviour
+The nested commands remain live, but the response no longer contains the handles needed to inspect, continue, or terminate them.
+
+## Proposed behaviour
+
+A terminal cell response could include the matching live handles in its existing status text:
 
 ```text
 Script completed
@@ -38,26 +42,45 @@ Output:
 orphan-a|orphan-b
 ```
 
-The IDs above are illustrative. The processes may continue running; the result should preserve the information needed to manage them.
+The exact wording and display bound are implementation choices. The required property is that a completing cell preserves access to manager-owned nested commands whose JavaScript result objects were discarded.
+
+## Root cause
+
+Nested tool dispatch already carries the originating code-mode cell ID. Yielded commands remain owned by the session-level unified-exec manager, but the final code-mode response is formatted from `RuntimeResponse` alone.
+
+Once JavaScript discards a nested result object, the completion path has no source from which to recover its `session_id`, even though the manager still has both the process and its logical ID.
+
+[Current upstream `handle_runtime_response`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275) still formats terminal cell output without an equivalent manager lookup.
+
+## Proposed direction
+
+1. Retain the originating typed `CellId` on manager-owned process entries created through code mode.
+2. For a terminal cell response, query the existing manager for processes created by that exact cell whose manager-observed state remains live.
+3. Include their logical session IDs in deterministic order in the model-visible status.
+
+The query is read-only. It does not wait for, terminate, prune, or otherwise mutate any process.
+
+## Liveness boundary
+
+This would report manager-observed liveness at lookup time. Local process handles can expose exit directly; exec-server-backed entries rely on exit state already reflected in the manager. A recently exited remote process could therefore appear until that cached state advances.
+
+That asymmetry already exists in `UnifiedExecProcess::has_exited()` and should be considered when maintainers choose whether this narrow status fix is desirable or whether broader lifecycle reporting from #34866 should land first.
 
 ## Scope
 
-The proposed fix reports only still-live processes created by the exact completing cell. IDs are sorted numerically, and the line is bounded to 64 IDs with an exact omitted-count suffix when necessary.
+The focused fix leaves these unchanged:
 
-It does not change process ownership, lifetime, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
+- process ownership and lifetime;
+- cleanup, pruning, polling, and wake-up policy;
+- JavaScript result fields;
+- public protocol schemas and event types;
+- call-ID generation.
 
-## Evidence
+It reports only sessions created by the exact cell whose terminal response is being formatted, so one cell cannot claim another cell's live work.
 
-- [Current upstream status path](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275), which still formats completion without an equivalent manager lookup
-- [Current code and test comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48)
-- [Focused Actions run](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
-- [Local and Docker acceptance run](https://github.com/teamleaderleo/codex/actions/runs/30217686056)
-- [Detailed validation record](https://github.com/teamleaderleo/codex/blob/review/code-mode-final-draft/notes/code-mode-orphan-fix/publication/validation.md)
+## Design questions
 
-A targeted Wine-exec run was also attempted on the current guarded head, but an unrelated Bazel BUILD/macro mismatch stopped analysis before any Rust test ran.
+- Should the warning appear only for successful `Result` responses, or for every terminal outcome, including failed `Result` and `Terminated`?
+- Is manager-observed liveness acceptable for exec-server-backed processes, given that exit reflection may lag the underlying process?
 
-## Related reports
-
-[#34866](https://github.com/openai/codex/issues/34866) describes the broader contradiction between wrapper completion and nested-process state. Its discussion distinguishes that runtime/interface problem from the model-side duplicate-command behaviour in [#33816](https://github.com/openai/codex/issues/33816).
-
-This report isolates one narrower defect: when the copied JavaScript `session_id` is discarded, the completing-cell result should recover the still-live handles already retained by the process manager.
+I have a focused prototype with manager, formatter, and end-to-end regression coverage. If this direction matches the team's intended solution, I would be glad to rebase it onto current `main` and submit a smaller invited PR.
