@@ -1,0 +1,6 @@
+batch,review_date,issue_number,created_at,age_class,primary_type,quality_score,quality_band,engagement,outcome,research_value
+1,2026-07-27,35634,2026-07-27T15:13:11Z,same-day/new,reproducible bug,0.94,high,bot-only,open immature,strong current bug; duplicate-bot test case
+1,2026-07-27,35628,2026-07-27T15:05:35Z,same-day/new,feature request,0.94,high,author-only,open immature,detailed feature-request benchmark
+1,2026-07-27,35635,2026-07-27T15:19:03Z,same-day/new,reproducible bug,0.94,high,bot-only,open immature,evidence-rich crash report; broad duplicate suggestions
+1,2026-07-27,25939,2026-06-02T21:04:02Z,30-120 days,reproducible bug,0.89,high,bot then substantive human; authority unverified,completed,concise report resolved by broader architecture change
+1,2026-07-27,16377,2026-04-01T00:24:52Z,90+ days,reproducible bug,0.83,high,bot then substantive human; authority unverified,completed,less polished report resolved by same architecture change
