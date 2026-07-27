@@ -1,6 +1,6 @@
 # Prototype validation
 
-This record preserves the evidence that establishes feasibility while keeping final PR validation separate.
+This record preserves the evidence that establishes prototype feasibility.
 
 ## Relevant refs
 
@@ -23,7 +23,7 @@ The verified upstream snapshot is five commits ahead of the selected base, with 
 | Docker/Linux remote acceptance | same workspace; four selected remote-safe cases | 4 passed |
 | Existing compatibility tests | same workspace | 2 passed |
 
-These are prototype results. They come from more than one closely related ref or workspace and should stay out of the final PR's primary validation claim.
+These results come from more than one closely related ref or workspace and should be read as prototype evidence rather than a single-SHA validation claim.
 
 ## Focused validation
 
@@ -66,19 +66,3 @@ Results:
 - the exited-process/survivor case passed locally and was excluded from the Docker filter, so stale remote-exit exclusion remains untested;
 - two existing code-mode compatibility tests passed;
 - `git diff --check` passed.
-
-## Final invited-PR requirement
-
-Create the smaller submission branch directly from then-current upstream `main`. Apply the cleanup items from [review.md](review.md), then run and report every claimed check on one final SHA:
-
-- focused manager and formatter tests;
-- one primary discarded-handle end-to-end regression;
-- relevant existing compatibility tests;
-- any terminal-outcome cases agreed in the issue;
-- `just test -p codex-core`;
-- repository-wide `just test` when requested or approved for the invited contribution;
-- `just fix -p codex-core`;
-- `just fmt`;
-- `git diff --check`.
-
-The final PR should contain one compact validation section tied to that final SHA.
