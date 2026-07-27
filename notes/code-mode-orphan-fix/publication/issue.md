@@ -1,8 +1,8 @@
 # Code-mode completion can omit IDs for still-live nested exec sessions
 
-Related: [#34866](https://github.com/openai/codex/issues/34866) reports the broader mismatch between wrapper completion and nested-process state, including JavaScript forwarding only `output`. This report isolates one independently fixable case: the final cell response loses model-visible control handles even though the unified-exec manager still owns the live processes.
+Code-mode JavaScript can discard the `session_id` values returned by nested `exec_command` calls while the unified-exec manager continues to own the live processes. This proposal would carry the originating cell ID into the manager's process entries and report any still-live IDs in the cell's completion status; it wouldn't change process lifecycle behaviour or public protocol shapes.
 
-The proposed direction would restore those handles from existing manager state. It won't redesign lifecycle semantics or add protocol fields.
+Related: [#34866](https://github.com/openai/codex/issues/34866) reports the broader mismatch between wrapper completion and nested-process state, including JavaScript forwarding only `output`. This report isolates one independently fixable case: the final cell response loses model-visible control handles even though the unified-exec manager still owns the live processes.
 
 ## Reproduction
 
@@ -57,6 +57,19 @@ Once JavaScript discards a nested result object, the completion path has no cell
 1. Retain the originating typed `CellId` on manager-owned process entries created through code mode.
 2. For a terminal cell response, query the existing manager for processes created by that exact cell whose manager-observed state remains live.
 3. Include their logical session IDs in deterministic order in the model-visible status.
+
+Conceptually, with names and surrounding fields omitted:
+
+```rust
+struct ProcessEntry {
+    creator_cell_id: Option<CellId>,
+    // existing fields...
+}
+
+// When formatting a terminal response:
+let live_session_ids =
+    process_manager.live_process_ids_created_by_cell(&cell_id);
+```
 
 The query would be read-only. It wouldn't wait for, terminate, prune, or otherwise mutate any process.
 
