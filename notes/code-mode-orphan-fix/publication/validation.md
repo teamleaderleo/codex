@@ -1,29 +1,29 @@
 # Prototype validation
 
-This record preserves the evidence that establishes prototype feasibility.
+This records the checks I ran while testing the exploratory implementation. The results establish feasibility, but they span closely related refs and workspaces rather than one final SHA.
 
 ## Relevant refs
 
 | Role | Ref |
 |---|---|
 | Selected prototype base | [`61a44880a85d2fd0d8770908dea5733495e571c8`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8) |
-| Independent display-cap prototype | [`eb530466cafac0a5aee86342cd2b5ada9047d448`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448) |
-| Published prototype head | [`77e7e3149df366236db2426596c23ebbe1d6bb48`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48) |
+| Display-bound milestone | [`eb530466cafac0a5aee86342cd2b5ada9047d448`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448) |
+| Exploratory branch head | [`77e7e3149df366236db2426596c23ebbe1d6bb48`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48) |
 | Verified upstream snapshot | [`95637f7056835fea66bdd0044414af480fc0fd74`](https://github.com/openai/codex/commit/95637f7056835fea66bdd0044414af480fc0fd74) |
 
-The verified upstream snapshot is five commits ahead of the selected base, with no changes to the four production files touched by the prototype.
+The verified upstream snapshot is five commits ahead of the selected base and doesn't change any of the four production files touched by the prototype.
 
 ## Result matrix
 
-| Coverage | Ref/workspace | Result |
+| Coverage | Ref or workspace | Result |
 |---|---|---|
 | Focused formatter and manager tests | `eb530466...` | 9 passed |
 | Formatting, scoped fixes, diff, and cleanliness checks | `eb530466...` | passed |
 | Local acceptance | pre-decoupling capped workspace with final remote harness | 5 passed |
-| Docker/Linux remote acceptance | same workspace; four selected remote-safe cases | 4 passed |
+| Docker/Linux remote acceptance | same workspace; four remote-safe cases | 4 passed |
 | Existing compatibility tests | same workspace | 2 passed |
 
-These results come from more than one closely related ref or workspace and should be read as prototype evidence rather than a single-SHA validation claim.
+These are checkpoints from one exploratory line of work, not separate implementation or test branches that need to be reviewed together.
 
 ## Focused validation
 
@@ -51,7 +51,7 @@ Results:
 - diff checks passed;
 - the worktree was clean.
 
-The direct manager test provides deterministic evidence for exact-cell filtering, exited-entry exclusion, and numeric ordering in the prototype.
+The direct manager test gives deterministic coverage for exact-cell filtering, exited-entry exclusion, and logical ID ordering in the prototype.
 
 ## Acceptance validation
 
