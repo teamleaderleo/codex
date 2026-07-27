@@ -1,6 +1,6 @@
 # Surface live nested exec session IDs in code-mode completion
 
-Carries code-mode `CellId` provenance into manager-owned process entries and reports still-live session IDs when that cell reaches a terminal outcome. It won't change process lifecycle behaviour, JavaScript result fields, or public protocol shapes.
+Carries code-mode `CellId` provenance into manager-owned process entries and reports still-live session IDs when that cell reaches a terminal response. It won't change process lifecycle behaviour, JavaScript result fields, or public protocol shapes.
 
 ## Implementation synopsis
 
@@ -35,18 +35,20 @@ let live_session_ids =
 
 A code-mode cell can start nested `exec_command` calls, keep only their output, and discard the returned `session_id` values.
 
-Those commands can remain live after the cell finishes. The unified-exec manager still owns them, but the final code-mode result has no cell-scoped path to identify and recover their model-visible handles.
+Those commands can remain live after the cell finishes. The unified-exec manager still owns them, but its process entries don't preserve the creator-cell relationship needed to recover their model-visible handles when the terminal response is formatted.
 
 ## How it works
 
 Nested tool dispatch already identifies calls originating from code mode. This change carries that existing typed cell identity into the unified-exec process entry.
 
-When the cell reaches a terminal outcome, response handling asks the existing manager for processes that:
+When the cell reaches a terminal response, response handling asks the existing manager for processes that:
 
 - were created by that exact cell; and
 - remain live according to manager state at lookup time.
 
 The formatter presents those IDs deterministically in the existing status header. The lookup won't wait for, terminate, prune, or mutate any process.
+
+The exploratory prototype reports IDs for successful and failed `Result` responses and for `Terminated`, while leaving `Yielded` unchanged.
 
 ```text
 Script completed
@@ -72,7 +74,9 @@ This change leaves the following behaviour unchanged:
 
 Only sessions attributed to the exact completing cell are reported.
 
-## Prototype coverage
+## Exploratory validation history
+
+These checks span related prototype refs and workspaces rather than one final SHA. The deep dive records the exact validation boundaries.
 
 - focused manager tests for exact-cell attribution, exited-entry filtering, and logical ID handling;
 - formatter tests for terminal-response selection, deterministic ordering, bounded output, and empty-session behaviour;
