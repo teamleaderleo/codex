@@ -192,9 +192,9 @@ For Patch 1 specifically:
 - four acceptance cases skip under Wine because their nested commands use POSIX shell syntax;
 - `code_mode_completion_reports_only_surviving_nested_session` skips in every remote environment because its PID/release handshake embeds host `TempDir` paths unavailable to the executor.
 
-Therefore, a successful Wine suite validates the Bazel/Wine harness and the broader shared `codex-core` suite on the implementation head. It does **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
+Therefore, a successful Wine suite would validate the Bazel/Wine harness and the broader shared `codex-core` suite on the implementation head. It would **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
 
-A prior attempt that failed during Bazel or Wine setup would not print those runtime skip messages because the Rust test process never started. That is a harness failure, not evidence that the skip conditions were absent or incorrect.
+Two public Wine attempts, [30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612) and [30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567), both stopped during Bazel analysis before any test target was constructed. At `77e7e314`, `windows-sandbox-rs/BUILD.bazel` passes `binary_test_target_compatible_with` to `codex_rust_crate`, but the `defs.bzl` macro does not accept that argument. The resulting missing `codex-command-runner` target prevents `core-all-wine-exec-test` from analyzing. This is a reproducible repository build-graph incompatibility at the exact tested snapshot, not a Patch 1 assertion failure; no Rust test process or runtime skip guard ran.
 
 Repository-native command:
 
@@ -218,17 +218,16 @@ Established results include:
 | Local acceptance | Value-equivalent bounded implementation workspace | 5 passed |
 | Docker/Ubuntu 24.04 remote acceptance | Same workspace | 4 passed; 1 explicit host-`TempDir` skip |
 | Existing compatibility tests | Same workspace | 2 passed |
+| Full `codex-core --lib` suite | Latest implementation head `77e7e314` | 2,093 passed; 0 failed; 0 skipped |
+| Wine/Bazel suite | Latest implementation head `77e7e314` | no tests executed; Bazel analysis failed identically in two attempts |
 
 Public receipts and launchers:
 
 - [focused milestone run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228);
 - [local and Docker acceptance run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056);
-- [latest-head full library workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml);
-- [full-library launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954);
-- [latest-head Wine workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml);
-- [Wine launcher commit `d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870).
-
-Two earlier Actions attempts failed in the validation harness before producing product-test results and are recorded separately in the ledger rather than counted as test failures.
+- [full library run 30291034837](https://github.com/teamleaderleo/codex/actions/runs/30291034837);
+- [Wine attempt 30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612);
+- [Wine retrigger 30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567).
 
 ## Code and test references
 
