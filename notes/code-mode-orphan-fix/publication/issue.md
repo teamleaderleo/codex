@@ -50,10 +50,11 @@ It does not change process ownership, lifetime, cleanup, polling, wake-up behavi
 
 ## Evidence
 
+- [Current upstream status path](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275), which still formats completion without an equivalent manager lookup
 - [Current code and test comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48)
 - [Focused Actions run](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
 - [Local and Docker acceptance run](https://github.com/teamleaderleo/codex/actions/runs/30217686056)
-- [Detailed validation record](validation.md)
+- [Detailed validation record](https://github.com/teamleaderleo/codex/blob/617bc3a81ae9ddf0964bac9ee6c4096c57559b76/notes/code-mode-orphan-fix/publication/validation.md)
 
 A targeted Wine-exec run was also attempted on the current guarded head, but an unrelated Bazel BUILD/macro mismatch stopped analysis before any Rust test ran.
 
