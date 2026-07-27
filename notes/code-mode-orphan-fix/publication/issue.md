@@ -70,7 +70,7 @@ orphan-a|orphan-b
 
 This reports every still-live nested command attributed to the cell, including commands whose returned IDs the JavaScript retained; the completion path can't distinguish retained handles from discarded ones.
 
-The exact status wording remains an implementation choice. The prototype's 64-ID display limit matches the manager's current 64-process capacity, so it cannot omit a reachable manager-owned ID. Any final display bound should not fall below manager capacity unless another model-visible path can enumerate omitted IDs.
+The exact status wording remains an implementation choice, but the final behavior must not hide any matching live ID. A display bound is only safe if every omitted ID remains available through another model-visible enumeration path.
 
 ## Additional information
 
