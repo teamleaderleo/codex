@@ -187,6 +187,7 @@ def codex_rust_crate(
         proc_macro = False,
         build_script_enabled = True,
         build_script_data = [],
+        binary_test_target_compatible_with = [],
         compile_data = [],
         lib_data_extra = [],
         rustc_flags_extra = [],
@@ -224,6 +225,8 @@ def codex_rust_crate(
             You probably don't want this, it's only here for a single caller.
         proc_macro: Whether this crate builds a proc-macro library.
         build_script_data: Data files exposed to the build script at runtime.
+        binary_test_target_compatible_with: Compatibility constraints for only
+            the generated `<name>-unit-tests-bin` raw unit-test binary.
         compile_data: Non-Rust compile-time data for the library target.
         lib_data_extra: Extra runtime data for the library target.
         rustc_env: Extra rustc_env entries to merge with defaults.
@@ -345,6 +348,7 @@ def codex_rust_crate(
             ],
             rustc_env = rustc_env,
             data = test_data_extra,
+            target_compatible_with = binary_test_target_compatible_with,
             tags = test_tags + ["manual"],
         )
 
