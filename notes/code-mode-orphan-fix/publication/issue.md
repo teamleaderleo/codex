@@ -22,7 +22,7 @@ MacBook Air (15-inch), macOS
 
 Code-mode JavaScript can discard the `session_id` values returned by nested `exec_command` calls while the unified-exec manager continues to own the live processes.
 
-The cell can then report `Script completed` without showing the session IDs needed to inspect, continue, or terminate those commands.
+The cell can then report `Script completed` without showing the session IDs needed to inspect or continue those commands.
 
 This is the narrower lost-handle case within the broader wrapper/process mismatch reported in [#34866](https://github.com/openai/codex/issues/34866).
 
@@ -56,7 +56,7 @@ I can provide an affected app session ID or additional logs if they would help w
 
 ## What is the expected behavior?
 
-When a code-mode cell reaches a terminal response, its existing status text should include the manager process IDs exposed to the model as `session_id` for any still-live nested commands created by that exact cell.
+At minimum, when a code-mode cell completes successfully, its existing status text should include the manager process IDs exposed to the model as `session_id` for any still-live nested commands created by that exact cell.
 
 For example:
 
@@ -68,13 +68,13 @@ Output:
 orphan-a|orphan-b
 ```
 
-This would report every still-live nested command attributed to the cell, including commands whose returned IDs the JavaScript retained; the completion path can't distinguish retained handles from discarded ones.
+This reports every still-live nested command attributed to the cell, including commands whose returned IDs the JavaScript retained; the completion path can't distinguish retained handles from discarded ones.
 
-The exact wording and display bound are implementation choices. The required property is that the completing cell preserves model-visible access to its manager-owned nested commands.
+The exact status wording remains an implementation choice. The prototype's 64-ID display limit matches the manager's current 64-process capacity, so it cannot omit a reachable manager-owned ID. Any final display bound should not fall below manager capacity unless another model-visible path can enumerate omitted IDs.
 
 ## Additional information
 
-Nested tool dispatch already carries the originating code-mode cell ID, and the terminal response still identifies that cell. Yielded commands remain owned by the session-level unified-exec manager, but manager-owned process entries don't retain the corresponding creator-cell provenance, so the completion path can't map the cell back to its live session IDs.
+The terminal status is currently derived from `RuntimeResponse`. Although that response identifies the completing cell and the handler can reach the unified-exec manager through `ExecContext`, existing manager entries don't retain creator-cell provenance, so the handler cannot map that cell to its still-live process IDs.
 
 At the [verified upstream snapshot](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275), `handle_runtime_response` still formats terminal cell output without an equivalent manager lookup.
 
@@ -97,13 +97,13 @@ if let Some(cell_id) = terminal_cell_id(&response) {
 }
 ```
 
-The lookup would be read-only. It wouldn't wait for, terminate, prune, or otherwise mutate any process.
+The lookup is read-only. It doesn't wait for, terminate, prune, or otherwise mutate any process.
 
-The proposed fix would leave process ownership and lifetime, cleanup and polling policy, JavaScript result fields, public protocol shapes, and call-ID generation unchanged.
+The proposed fix leaves process ownership and lifetime, cleanup and polling policy, JavaScript result fields, public protocol shapes, and call-ID generation unchanged.
 
-It would report only sessions created by the exact cell whose terminal response is being formatted, so one cell couldn't claim another cell's live work.
+It reports only sessions created by the exact cell whose in-scope terminal response is being formatted, so one cell can't claim another cell's live work.
 
-Local process handles can expose process exit directly, while exec-server-backed entries rely on exit state already reflected in the manager. A recently exited remote process could therefore appear until the manager's cached state advances.
+Local process handles can expose process exit directly, while exec-server-backed entries rely on exit state already reflected in the manager. A recently exited remote process can therefore appear until the manager's cached state advances.
 
 The exploratory prototype currently reports IDs for successful and failed `Result` responses and for `Terminated`, while leaving `Yielded` unchanged. The remaining scope questions are:
 
