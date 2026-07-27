@@ -1,0 +1,54 @@
+name: Temporary Bazel Wine macro Windows validation
+
+on:
+  push:
+    branches:
+      - validation/bazel-wine-macro-contract-windows
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows sandbox unit tests on Windows
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: c48911c4fa750f2d134f0965dd0744690a6461b2
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Bazel CI
+        uses: ./.github/actions/setup-bazel-ci
+        with:
+          target: x86_64-pc-windows-gnullvm
+
+      - name: Run Windows sandbox unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "candidate_sha=c48911c4fa750f2d134f0965dd0744690a6461b2"
+            echo "checked_out_sha=$(git rev-parse HEAD)"
+            uname -a
+            bazel --version
+            bazel cquery \
+              //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests-bin \
+              --output=label_kind
+            bazel test \
+              //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests \
+              --nocache_test_results \
+              --test_output=all
+          } 2>&1 | tee "$RUNNER_TEMP/bazel-wine-macro-windows.log"
+
+      - name: Upload Windows log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bazel-wine-macro-windows-log
+          path: ${{ runner.temp }}/bazel-wine-macro-windows.log
+          if-no-files-found: error
+          retention-days: 30
