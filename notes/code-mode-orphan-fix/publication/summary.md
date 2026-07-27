@@ -23,6 +23,4 @@ Local handles can expose process exit directly. Exec-server-backed handles rely 
 
 ## Prototype
 
-A tested prototype demonstrates exact-cell attribution, exited-entry filtering, deterministic formatting, and the discarded-handle end-to-end case.
-
-Before an invited PR, rebuild the small version directly on then-current upstream `main`, retain one primary acceptance regression, apply the code cleanups listed in [review.md](review.md), and rerun every claimed check on one final SHA.
+A tested prototype demonstrates exact-cell attribution, exited-entry filtering, deterministic formatting, and the discarded-handle end-to-end case. The [technical deep dive](deep-dive.md) records the implementation reasoning, validation boundary, and alternatives considered.
