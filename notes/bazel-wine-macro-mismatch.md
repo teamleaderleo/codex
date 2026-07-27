@@ -59,19 +59,27 @@ The original Wine-exec integration commit `1fe89de576e2ee6dc341e6f97beca6160ef85
 
 The BUILD call and macro contract should agree, and `//codex-rs/core:core-all-wine-exec-test` should at least complete Bazel analysis and construct its test target.
 
-## Likely repair shape
+## Repair question
 
-Determine the intended semantics of `binary_test_target_compatible_with` and make the contract explicit. The likely narrow repair is to restore an optional macro parameter and apply it to the generated crate binary targets, but that should be checked against native Linux tests, Windows cross-builds, and Wine-exec runfile construction rather than blindly removing the call-site argument.
+The correct repair should be established from the intended target graph rather than guessed from the argument name.
 
-The name suggests the compatibility restriction exists to keep Windows-only helper binaries out of native test graphs while still allowing `foreign_platform_binary` to transition them to the Windows platform for Wine-exec.
+Two narrow possibilities need to be distinguished:
+
+1. `binary_test_target_compatible_with` was an intended macro input that was dropped or never completed, in which case it should be restored and applied to the specific generated **test-facing target** it was designed for.
+2. The call-site argument is stale after a macro/test-target refactor, in which case it should be removed and the Windows sandbox tests should express compatibility through the current target shape.
+
+Do **not** blindly apply `@platforms//os:windows` to the generated helper `rust_binary` targets. `codex-rs/core/BUILD.bazel` consumes `codex-command-runner` and `codex-windows-sandbox-setup` through `extra_binaries`; making those labels globally Windows-only could make native Linux core test targets incompatible instead of repairing Wine-exec.
+
+The argument name suggests test-target compatibility rather than a blanket platform restriction on the helper binaries, but the current macro no longer exposes any matching target or parameter. History and `cquery` should determine the intended layer.
 
 ## Validation plan
 
-1. `bazel query` or `bazel cquery` the Windows sandbox binary targets under native and Windows platforms.
-2. Run `bazel test //codex-rs/core:core-all-wine-exec-test --nocache_test_results --test_output=all` on x86-64 Linux.
-3. Confirm the suite reaches Rust test execution and emits the expected source-local Windows/remote skips.
-4. Run a representative native `codex-core` Bazel target to ensure Windows-only helper compatibility does not break Linux analysis.
-5. Keep this fix independent of the code-mode implementation branch so the Wine result is clearly a harness/build-graph result.
+1. Trace the commit that added the BUILD argument and identify the target it intended to constrain.
+2. `bazel query` or `bazel cquery` the Windows sandbox helper and test targets under native Linux and Windows-transitioned platforms.
+3. Run a representative native Linux `codex-core` Bazel target and confirm it remains runnable.
+4. Run `bazel test //codex-rs/core:core-all-wine-exec-test --nocache_test_results --test_output=all` on x86-64 Linux.
+5. Confirm the suite reaches Rust test execution and emits the expected source-local Windows/remote skips.
+6. Keep this fix independent of the code-mode implementation branch so the Wine result is clearly a harness/build-graph result.
 
 ## Boundary
 
