@@ -6,8 +6,8 @@ This page is a navigation and distribution summary for the chronological qualita
 
 | Band | Count |
 |---|---:|
-| S | 25 |
-| A | 48 |
+| S | 26 |
+| A | 47 |
 | B | 45 |
 | C | 48 |
 | D | 32 |
@@ -33,6 +33,6 @@ The first 120 scores are in [`issue-quality-score-ledger.md`](issue-quality-scor
 4. **Controlled comparisons dominate.** The best reports compare one surface, state, version or execution path against a closely matched control.
 5. **Small protocol and state invariants outperform broad redesigns.** Exact enum mismatches, missing environment values, stale pointers, lifecycle transitions and serialization failures produce the clearest next actions.
 6. **The process-lifecycle cluster keeps expanding without collapsing into one bug.** Live-process ownership, missing handles, lost UI state, deleted-open logs, process reaping and resource ceilings occur at different layers.
-7. **#35613 remains unusually well bounded.** It identifies one handle-visibility failure and does not claim to solve every orphan-process or lifecycle problem.
+7. **#35613 is a 30/30 exemplar.** It identifies one handle-visibility failure, proves the before-state, bounds the correction, and does not claim to solve every orphan-process or lifecycle problem.
 
 Next chronological boundary: immediately below #35400.
