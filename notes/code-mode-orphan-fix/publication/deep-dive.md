@@ -1,6 +1,6 @@
 # How code-mode completion can lose live session handles
 
-This document records the technical reasoning behind the concise [issue](issue.md) and [invited PR draft](pull-request.md).
+This document records the technical reasoning behind the concise [issue](issue.md).
 
 ## Failure
 
@@ -15,7 +15,7 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-The copied JavaScript values carry no process ownership. The session-level unified-exec manager retains the yielded processes, while the final code-mode result has no path to recover the discarded session IDs.
+The copied JavaScript values carry no process ownership. The session-level unified-exec manager retains the yielded processes, while the final code-mode result has no cell-scoped path to identify and recover the discarded session IDs.
 
 The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that before-state as an executable test.
 
@@ -29,13 +29,13 @@ This issue targets a smaller invariant: a completing cell should retain access t
 
 ### 1. Preserve existing creator identity
 
-Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. The invited implementation should copy the source string explicitly with `cell_id.as_str().to_string()` and reconstruct the typed `CellId` at the unified-exec boundary.
+Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. A clean implementation can copy the source string explicitly with `cell_id.as_str().to_string()` and reconstruct the typed `CellId` at the unified-exec boundary.
 
 Using `as_str()` documents that matching depends on the protocol value and avoids coupling ownership to a `Display` implementation intended for presentation.
 
 ### 2. Store provenance with the manager-owned process
 
-`UnifiedExecContext` carries the optional creator. `ProcessEntry` stores it beside the logical session ID and the manager-owned process. `store_process` copies the value into the entry.
+`UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the logical session ID and the manager-owned process. `store_process` copies the value into the entry.
 
 This remains crate-internal provenance. Public tool results, protocol events, and call-ID formats stay unchanged.
 
@@ -43,19 +43,17 @@ This remains crate-internal provenance. Public tool results, protocol events, an
 
 A read-only manager query selects entries whose creator matches the exact `CellId`, filters through existing `has_exited()` state, and returns logical session IDs.
 
-Ordering belongs to the formatter because numeric order is a display contract. The prototype currently sorts in both the manager and formatter; the invited branch should remove the manager sort.
+Ordering belongs to the formatter because numeric order is a display contract. The prototype currently sorts in both the manager and formatter; a cleaned implementation can remove the manager sort.
 
-### 4. Report only on agreed terminal outcomes
+### 4. Report only on selected terminal outcomes
 
 Ordinary `RuntimeResponse::Yielded` responses describe a cell that remains active and resumable, so they retain their existing status.
 
-The issue should settle whether live IDs appear on:
+The unresolved boundary is whether live IDs appear on:
 
 - successful `Result` only;
 - successful and failed `Result`; or
 - every terminal response, including `Terminated`.
-
-The PR should implement the exact boundary approved in that discussion.
 
 ### 5. Keep status outside emitted-output truncation
 
@@ -70,7 +68,7 @@ The query describes manager-observed state at one instant. A selected process ca
 - local processes consult cached state and the live local handle;
 - exec-server-backed processes consult cached manager state.
 
-A recently exited remote process may therefore appear until its exit is reflected in manager state. The public issue names this boundary so maintainers can decide whether it fits the narrow status fix.
+A recently exited remote process may therefore appear until its exit is reflected in manager state. The public issue names this boundary so it can be weighed against the broader lifecycle representation in #34866.
 
 ## Exact-cell contract
 
@@ -82,7 +80,7 @@ The contract is:
 
 ## Display contract
 
-The prototype formats IDs in numeric order and applies a model-visible bound. The issue intentionally leaves the exact wording and bound open for maintainer agreement.
+The prototype formats IDs in numeric order and applies a model-visible bound. The issue intentionally leaves the exact wording and bound open.
 
 Internal manager capacity and model-visible output policy serve different purposes and should remain independent values if a bound is retained.
 
@@ -92,23 +90,21 @@ The selected prototype base [`61a44880...`](https://github.com/openai/codex/comm
 
 Those five commits change none of the four production files touched by this fix. Upstream still carries the code-mode cell ID through `ToolCallSource::CodeMode` and still formats terminal responses without a unified-exec manager lookup.
 
-The invited implementation should therefore be rebuilt directly on then-current `main`; the verified snapshot requires a clean rebase with no design adaptation.
+The design therefore rebases cleanly onto that snapshot without adaptation.
 
 ## Review size
 
-The prototype comparison contains 903 changed lines, dominated by a 527-line acceptance module. The invited branch should carry:
+The prototype comparison contains 903 changed lines, dominated by a 527-line acceptance module. A reviewable implementation can be limited to:
 
 - the small production change;
 - focused manager and formatter tests;
 - one primary end-to-end discarded-handle regression.
 
-Additional acceptance cases can follow only when maintainers request them.
-
 ## Prototype validation boundary
 
 Historical focused tests and acceptance cases passed on the refs recorded in [validation.md](validation.md). Those runs establish prototype feasibility.
 
-They do not substitute for final validation. Every PR claim should come from one rebased final SHA.
+Because they span closely related refs and workspaces, they are prototype evidence rather than a single-SHA validation claim.
 
 ## Alternatives considered
 
