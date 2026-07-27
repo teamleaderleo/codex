@@ -22,7 +22,7 @@ MacBook Air (15-inch), macOS
 
 Code-mode JavaScript can discard the `session_id` values returned by nested `exec_command` calls while the unified-exec manager continues to own the live processes.
 
-The cell can then report `Script completed` without showing the session IDs needed to inspect or continue those commands.
+The cell can then report `Script completed` without showing the session IDs needed to inspect or continue those commands. The model sees completed work while the processes keep running, and the current unified-exec tool surface has no separate command that enumerates their IDs.
 
 This is the narrower lost-handle case within the broader wrapper/process mismatch reported in [#34866](https://github.com/openai/codex/issues/34866).
 
@@ -70,7 +70,7 @@ orphan-a|orphan-b
 
 This reports every still-live nested command attributed to the cell, including commands whose returned IDs the JavaScript retained; the completion path can't distinguish retained handles from discarded ones.
 
-The exact status wording remains an implementation choice, but the final behavior must not hide any matching live ID. A display bound is only safe if every omitted ID remains available through another model-visible enumeration path.
+The simplest correct implementation is to show the complete per-cell live list. It is normally around the manager's 64-process soft cap and consists of short numeric IDs, so the context cost is small. If a future implementation introduces a display bound, omitted IDs need another model-visible enumeration path; none exists today.
 
 ## Additional information
 
@@ -79,8 +79,6 @@ The terminal status is currently derived from `RuntimeResponse`. Although that r
 At the [verified upstream snapshot](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275), `handle_runtime_response` still formats terminal cell output without an equivalent manager lookup.
 
 ### Possible implementation direction
-
-Conceptually, with names and surrounding fields omitted:
 
 ```rust
 struct ProcessEntry {
@@ -97,13 +95,7 @@ if let Some(cell_id) = terminal_cell_id(&response) {
 }
 ```
 
-The lookup is read-only. It doesn't wait for, terminate, prune, or otherwise mutate any process.
-
-The proposed fix leaves process ownership and lifetime, cleanup and polling policy, JavaScript result fields, public protocol shapes, and call-ID generation unchanged.
-
-It reports only sessions created by the exact cell whose in-scope terminal response is being formatted, so one cell can't claim another cell's live work.
-
-Local process handles can expose process exit directly, while exec-server-backed entries rely on exit state already reflected in the manager. A recently exited remote process can therefore appear until the manager's cached state advances.
+The lookup is read-only and reports only sessions created by the exact completing cell. It doesn't wait for, terminate, prune, or otherwise mutate a process, and it leaves process ownership, cleanup policy, JavaScript result fields, public protocol shapes, and call-ID generation unchanged.
 
 The exploratory prototype currently reports IDs for successful and failed `Result` responses and for `Terminated`, while leaving `Yielded` unchanged. The remaining scope questions are:
 
