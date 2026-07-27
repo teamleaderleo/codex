@@ -1,6 +1,6 @@
 # How code-mode completion can lose live session handles
 
-This document records the technical reasoning behind the concise [issue](issue.md).
+This is the longer technical record behind the concise [issue](issue.md). I used an exploratory prototype to trace the data flow, test the narrow fix, and identify the decisions that still belong in the issue discussion.
 
 ## Failure
 
@@ -15,66 +15,76 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-The copied JavaScript values carry no process ownership. The session-level unified-exec manager retains the yielded processes, while the final code-mode result has no cell-scoped path to identify and recover the discarded session IDs.
+Those copied JavaScript values don't own the processes. The session-level unified-exec manager keeps the yielded processes alive, but the final code-mode result has no cell-scoped path to identify and recover the discarded session IDs.
 
 The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that before-state as an executable test.
 
-## Why a separate issue
+## Relationship to #34866
 
 [#34866](https://github.com/openai/codex/issues/34866) covers the broader mismatch between wrapper completion and nested-process state and proposes richer lifecycle representation.
 
-This issue targets a smaller invariant: a completing cell should retain access to its manager-owned nested commands after JavaScript discards their result objects. The focused approach adds no protocol field and chooses no new continuation or cleanup policy.
+This issue isolates a smaller invariant: a completing cell should retain access to its manager-owned nested commands after JavaScript discards their result objects. The focused approach wouldn't add a protocol field or choose a new continuation, cleanup, or wake-up policy.
+
+## Exploratory prototype
+
+The implementation and tests are together on one exploratory branch:
+
+- [exploratory implementation and tests](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-ids)
+- [base-to-head comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48)
+- [prototype head `77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48)
+
+There isn't a separate test branch that needs to be read alongside it. Historical validation commits and workflow runs are linked in [validation.md](validation.md) as evidence for specific checks, not as parallel proposed implementations.
 
 ## Production data flow
 
-### 1. Preserve existing creator identity
+### 1. Preserve the existing creator identity
 
-Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. A clean implementation can copy the source string explicitly with `cell_id.as_str().to_string()` and reconstruct the typed `CellId` at the unified-exec boundary.
+Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. A clean implementation can copy the protocol value with `cell_id.as_str().to_string()` and reconstruct the typed `CellId` at the unified-exec boundary.
 
-Using `as_str()` documents that matching depends on the protocol value and avoids coupling ownership to a `Display` implementation intended for presentation.
+Using `as_str()` makes the matching contract explicit and avoids coupling ownership to a `Display` implementation meant for presentation.
 
 ### 2. Store provenance with the manager-owned process
 
-`UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the logical session ID and the manager-owned process. `store_process` copies the value into the entry.
+`UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the logical session ID and manager-owned process, and `store_process` copies it into the entry.
 
-This remains crate-internal provenance. Public tool results, protocol events, and call-ID formats stay unchanged.
+That provenance stays crate-internal. Public tool results, protocol events, and call-ID formats wouldn't change.
 
 ### 3. Query the existing liveness authority
 
-A read-only manager query selects entries whose creator matches the exact `CellId`, filters through existing `has_exited()` state, and returns logical session IDs.
+A read-only manager query can select entries whose creator matches the exact `CellId`, filter them through existing `has_exited()` state, and return their logical session IDs.
 
-Ordering belongs to the formatter because numeric order is a display contract. The prototype currently sorts in both the manager and formatter; a cleaned implementation can remove the manager sort.
+Numeric ordering belongs in the formatter because it's a display contract. The exploratory prototype sorts in both the manager and formatter; a cleaned implementation only needs the formatter sort.
 
-### 4. Report only on selected terminal outcomes
+### 4. Choose the terminal outcomes in scope
 
-Ordinary `RuntimeResponse::Yielded` responses describe a cell that remains active and resumable, so they retain their existing status.
+Ordinary `RuntimeResponse::Yielded` responses describe a cell that remains active and resumable, so they should keep their existing status.
 
-The unresolved boundary is whether live IDs appear on:
+The remaining scope choice is whether live IDs appear on:
 
 - successful `Result` only;
 - successful and failed `Result`; or
 - every terminal response, including `Terminated`.
 
-### 5. Keep status outside emitted-output truncation
+### 5. Keep the status outside emitted-output truncation
 
-Code-mode emitted payload is truncated before the status header is prepended. A large emitted value therefore cannot remove the live-session line at that boundary. Later whole-conversation limits continue to apply to the complete tool result.
+Code-mode emitted payload is truncated before the status header is prepended. A large emitted value therefore can't remove the live-session line at that boundary. Later whole-conversation limits still apply to the complete tool result.
 
 ## Liveness semantics
 
-The query describes manager-observed state at one instant. A selected process can exit immediately after lookup.
+The query would describe manager-observed state at one instant. A selected process could exit immediately after lookup.
 
-`UnifiedExecProcess::has_exited()` has an important backend asymmetry:
+`UnifiedExecProcess::has_exited()` also has a backend asymmetry:
 
 - local processes consult cached state and the live local handle;
 - exec-server-backed processes consult cached manager state.
 
-A recently exited remote process may therefore appear until its exit is reflected in manager state. The public issue names this boundary so it can be weighed against the broader lifecycle representation in #34866.
+A recently exited remote process could therefore appear until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting, but the exit-then-exclude survivor case ran locally only. The issue leaves the first-version backend scope open rather than hiding that limitation.
 
 ## Exact-cell contract
 
 Reporting every live process in the session would let one completing cell claim another cell's unrelated work.
 
-The contract is:
+The narrow contract is:
 
 > Report only manager-owned processes attributed to the exact cell whose terminal result is being formatted.
 
@@ -82,29 +92,27 @@ The contract is:
 
 The prototype formats IDs in numeric order and applies a model-visible bound. The issue intentionally leaves the exact wording and bound open.
 
-Internal manager capacity and model-visible output policy serve different purposes and should remain independent values if a bound is retained.
+Manager capacity and model-visible output policy serve different purposes, so they should remain independent if a bound is retained.
 
 ## Verified upstream status
 
-The selected prototype base [`61a44880...`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8) is a direct ancestor of verified upstream snapshot [`95637f70...`](https://github.com/openai/codex/commit/95637f7056835fea66bdd0044414af480fc0fd74), five commits behind it.
+The selected prototype base [`61a44880...`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8) is a direct ancestor of the verified upstream snapshot [`95637f70...`](https://github.com/openai/codex/commit/95637f7056835fea66bdd0044414af480fc0fd74), five commits behind it.
 
-Those five commits change none of the four production files touched by this fix. Upstream still carries the code-mode cell ID through `ToolCallSource::CodeMode` and still formats terminal responses without a unified-exec manager lookup.
+Those five commits change none of the four production files touched by the prototype. Upstream still carries the code-mode cell ID through `ToolCallSource::CodeMode` and still formats terminal responses without a unified-exec manager lookup.
 
 The design therefore rebases cleanly onto that snapshot without adaptation.
 
 ## Review size
 
-The prototype comparison contains 903 changed lines, dominated by a 527-line acceptance module. A reviewable implementation can be limited to:
+The exploratory comparison contains 903 changed lines, dominated by a 527-line acceptance module. The core change can be reviewed with a much smaller set:
 
-- the small production change;
+- the production provenance and lookup change;
 - focused manager and formatter tests;
 - one primary end-to-end discarded-handle regression.
 
-## Prototype validation boundary
+## Validation boundary
 
-Historical focused tests and acceptance cases passed on the refs recorded in [validation.md](validation.md). Those runs establish prototype feasibility.
-
-Because they span closely related refs and workspaces, they are prototype evidence rather than a single-SHA validation claim.
+The focused tests and acceptance cases passed on the refs recorded in [validation.md](validation.md). Because those checks span closely related refs and workspaces, I treat them as prototype evidence rather than one final-SHA validation claim.
 
 ## Alternatives considered
 
