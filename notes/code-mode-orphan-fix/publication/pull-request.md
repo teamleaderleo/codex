@@ -56,3 +56,5 @@ Only sessions attributed to the exact completing cell are reported.
 - one primary end-to-end discarded-handle regression;
 - four Docker cases exercising exec-server live-process reporting;
 - a local-only exited-process/survivor case, leaving stale remote-exit exclusion untested.
+
+The [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md) contains the data-flow analysis, exploratory implementation links, validation record, source references, limitations, and alternatives considered.
