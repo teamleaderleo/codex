@@ -1,0 +1,55 @@
+name: Temporary code-mode full-suite validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/temp-code-mode-full-suite.yml
+
+permissions:
+  contents: read
+
+jobs:
+  codex-core-full-suite:
+    name: Full codex-core library suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+      RUST_MIN_STACK: 8388608
+    steps:
+      - name: Check out tested implementation
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: 77e7e3149df366236db2426596c23ebbe1d6bb48
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up CI dependencies
+        uses: ./.github/actions/setup-ci
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+
+      - name: Install nextest
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: nextest
+
+      - name: Run full codex-core library suite
+        working-directory: codex-rs
+        run: |
+          set -o pipefail
+          just test -p codex-core --lib --no-capture --no-tests=fail 2>&1 | tee "$RUNNER_TEMP/codex-core-full-suite.log"
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: code-mode-full-suite-log
+          path: ${{ runner.temp }}/codex-core-full-suite.log
+          if-no-files-found: warn
+          retention-days: 30
