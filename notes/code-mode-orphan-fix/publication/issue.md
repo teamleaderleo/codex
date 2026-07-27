@@ -2,7 +2,7 @@
 
 Related: [#34866](https://github.com/openai/codex/issues/34866) reports the broader mismatch between wrapper completion and nested-process state, including JavaScript forwarding only `output`. This report isolates one independently fixable case: the final cell response loses model-visible control handles even though the unified-exec manager still owns the live processes.
 
-The proposed direction restores those handles from existing manager state. It does not redesign lifecycle semantics or add protocol fields.
+The proposed direction would restore those handles from existing manager state. It won't redesign lifecycle semantics or add protocol fields.
 
 ## Reproduction
 
@@ -58,7 +58,7 @@ Once JavaScript discards a nested result object, the completion path has no cell
 2. For a terminal cell response, query the existing manager for processes created by that exact cell whose manager-observed state remains live.
 3. Include their logical session IDs in deterministic order in the model-visible status.
 
-The query is read-only. It does not wait for, terminate, prune, or otherwise mutate any process.
+The query would be read-only. It wouldn't wait for, terminate, prune, or otherwise mutate any process.
 
 ## Liveness boundary
 
@@ -68,7 +68,7 @@ That asymmetry already exists in `UnifiedExecProcess::has_exited()` and should b
 
 ## Scope
 
-The focused fix leaves these unchanged:
+The proposed fix would leave these unchanged:
 
 - process ownership and lifetime;
 - cleanup, pruning, polling, and wake-up policy;
@@ -76,13 +76,13 @@ The focused fix leaves these unchanged:
 - public protocol schemas and event types;
 - call-ID generation.
 
-It reports only sessions created by the exact cell whose terminal response is being formatted, so one cell cannot claim another cell's live work.
+It would report only sessions created by the exact cell whose terminal response is being formatted, so one cell couldn't claim another cell's live work.
 
-## Design questions
+## Scope questions
 
-- Should the warning appear only for successful `Result` responses, or for every terminal outcome, including failed `Result` and `Terminated`?
-- Is manager-observed liveness acceptable for exec-server-backed processes, given that exit reflection may lag the underlying process?
+- Should live session IDs be shown only when a cell completes successfully, or also when it fails or is terminated?
+- Should the first version include exec-server-backed sessions, accepting that their exit state can briefly lag, or should it be limited to local sessions?
 
 ## Technical notes
 
-A focused prototype covers manager, formatter, and end-to-end regression cases. Additional implementation detail, validation history, and known limitations are documented in the [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md).
+I did a deeper technical review of the prototype, including the data flow, validation history, limitations, and design tradeoffs. You can read my findings and reasoning in the [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md).
