@@ -1,20 +1,20 @@
-# Report live nested exec session IDs on code-mode completion
+# Surface live nested exec session IDs in code-mode completion
 
-## What
+## What changed
 
 - Retain the originating code-mode `CellId` on manager-owned unified-exec process entries.
 - Add a read-only lookup for live processes created by an exact cell.
 - Include the matching logical session IDs in terminal code-mode responses.
-- Keep ordinary `Yielded` responses unchanged.
+- Leave ordinary `Yielded` responses unchanged.
 - Add focused manager and formatter tests plus one end-to-end discarded-handle regression.
 
 ## Why
 
-A code-mode cell can start nested `exec_command` calls, retain only their output, and discard the returned `session_id` values.
+A code-mode cell can start nested `exec_command` calls, keep only their output, and discard the returned `session_id` values.
 
 Those commands can remain live after the cell finishes. The unified-exec manager still owns them, but the final code-mode result has no cell-scoped path to identify and recover their model-visible handles.
 
-## How
+## How it works
 
 Nested tool dispatch already identifies calls originating from code mode. This change carries that existing typed cell identity into the unified-exec process entry.
 
@@ -23,9 +23,7 @@ When the cell reaches a terminal outcome, response handling asks the existing ma
 - were created by that exact cell; and
 - remain live according to manager state at lookup time.
 
-The formatter presents the resulting IDs deterministically in the existing status header. The lookup does not wait for, terminate, prune, or mutate any process.
-
-## Example
+The formatter presents those IDs deterministically in the existing status header. The lookup won't wait for, terminate, prune, or mutate any process.
 
 ```text
 Script completed
