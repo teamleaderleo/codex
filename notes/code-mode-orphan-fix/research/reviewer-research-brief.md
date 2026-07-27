@@ -1,217 +1,171 @@
-# Reviewer brief: iterative Codex issue and triage research
+# Reviewer brief: chronological Codex issue-quality catalog
 
-Please conduct an iterative compare-and-contrast study of public `openai/codex` issues. This is a research task, not another wording review of [#35613](https://github.com/openai/codex/issues/35613).
+Review public `openai/codex` issues to build a cumulative catalogue of report quality, triage friction, recurring submission patterns, and useful counterexamples.
 
-The default workflow is **chat-native qualitative review in batches of five issues**. Do not turn this into a prerequisite 300-row data-collection project. Read a small batch, analyse it closely, save the notes, and repeat.
+This is an execution task. Do not stop for another methodology review unless the selected public issues cannot be read.
 
-Do not post comments to #35613 or any related public issue during this research.
+Do not post comments or reactions to public issues during this research.
 
-## Purpose
+## Default workflow
 
-Build a grounded understanding of:
+Review **20 issues per chat pass**.
 
-- how current Codex issues are written;
-- what makes reports easy or difficult to act on;
-- how bots, community members, and maintainers respond;
-- which strong-looking reports remain unanswered;
-- which weak or incomplete reports still receive attention;
-- how current issue and triage practice differs from older examples;
-- whether #35613 is appropriately scoped and presented for this repository.
+Use one contiguous chronological block of public issue numbers:
 
-Do not assume that an unanswered issue is poor. Maintainer capacity, priority, timing, duplication, roadmap fit, product surface, and issue type can all affect the outcome. Use “associated with engagement,” not “caused engagement,” unless the thread supplies direct evidence.
+1. start immediately below the most recently completed block;
+2. skip pull-request numbers but record that they were skipped;
+3. read the full issue body rather than grading from a search snippet;
+4. order the catalogue rows from oldest to newest inside the block;
+5. save the completed block into the cumulative catalogue before moving on.
 
-## Default unit of work: one chat batch
+Twenty is a working default, not a hard limit. Reduce the batch only when several reports are exceptionally long or contain attachments that require separate inspection. Increase it only when the issues are short and the analysis remains substantive.
 
-Review **five issues per batch**. A batch should usually contain:
+A user may instead paste a batch directly into chat. Analyse the supplied issues in the supplied order even when the pasted material contains extraneous metadata.
 
-- **three recent issues**, normally created within the last 30 days;
-- **two comparison issues**, normally 30–120 days old.
+## Recency
 
-This is an intentional recency weighting, not a probability sample. Current reports receive more weight because templates, product surfaces, models, labels, bots, and maintainer practice can change quickly. Older reports remain useful for observing mature outcomes and avoiding conclusions based only on threads that have had little time to develop.
+There is **no 30-day inclusion cutoff**.
 
-The 30-day boundary is **not an exclusion rule**. Issues newer than 30 days are valid and important research material. Record their age and avoid interpreting a lack of response as a mature outcome.
+Recent reports are important because templates, product surfaces, models, labels, and issue-writing practices change quickly. Older reports are important because their outcomes have had time to develop.
 
-A user may instead paste five issues directly into the chat. Analyse the supplied batch even when it contains extraneous text or does not match the preferred age mix. Preserve the supplied order unless another ordering materially helps comparison.
+For a chronological catalogue, record issue age and do not interpret same-day silence as evidence about report quality or maintainer interest.
 
-## Batch selection
+## What to judge
 
-When selecting issues rather than receiving them from the user:
+Judge the submitted report, not whether the requested feature should be implemented.
 
-1. Include both open and closed issues over successive batches.
-2. Rotate issue types and product surfaces rather than selecting five near-duplicates.
-3. Include ordinary, weak, ambiguous, and high-quality-looking reports—not only memorable successes.
-4. Prefer at least one apparent counterexample per batch when available, such as a strong unanswered report or a weak report that received useful attention.
-5. Exclude pull requests from issue batches. Review PRs in separate batches.
-6. Do not repeatedly sample the same prolific reporter or one narrow label unless the batch is explicitly thematic.
-7. Save the search date, query or browsing route, candidate issue numbers, selected issue numbers, and selection rationale.
+Keep two concepts separate:
 
-This is a transparent purposive sample for landscape mapping. Do not report repository-wide response rates or causal claims from it.
+- **writing/evidence quality:** how clearly and credibly the issue presents its case;
+- **repository actionability:** whether the Codex repository appears to be the right owner and whether the report creates an efficient next step.
 
-## Per-issue review
+A polished issue may still be low-value because it is a literal duplicate, asks for an existing feature, belongs to another product surface, or specifies a broad product programme without demonstrating a defect.
 
-For each issue, record:
+## Quality grades
 
-### Basic facts
+Assign one overall grade and a short written justification.
+
+- **A — strong/actionable:** the failure or request, affected surface, evidence, scope, and next investigative step are quickly identifiable.
+- **B — usable:** the core issue is understandable and potentially actionable, but important evidence, scope control, or product fit is missing.
+- **C — costly/mis-scoped:** there may be a real issue, but the submission creates substantial triage work through overbreadth, weak evidence, excessive solutioning, or poor repository fit.
+- **D — weak/noisy:** vague, hostile, bundled, unsupported, or lacking enough information to investigate efficiently.
+
+Add independent catalogue flags where applicable:
+
+- literal duplicate submission;
+- likely wrong repository or product owner;
+- already-supported behaviour;
+- multiple unrelated issues;
+- excessive forensic detail;
+- large prompt or proposed design burying the core issue;
+- unsupported causal certainty;
+- missing reproduction or environment;
+- semantic duplicate-bot mismatch;
+- unusually strong counterexample.
+
+Do not reward length, source inspection, code suggestions, or a prototype automatically.
+
+## Per-issue catalogue row
+
+For every issue, record:
 
 - issue number and canonical URL;
+- creation time;
 - title;
-- creation date and age at review;
-- open or closed state and stated closure reason;
-- labels;
-- product surface and execution backend where demonstrated, otherwise `unknown`;
-- issue author association where available;
-- comment count and visible reactions.
+- primary issue type;
+- open/closed state and explicit state reason when visible;
+- overall grade;
+- strongest useful feature;
+- main defect or triage cost;
+- one short catalogue tag.
 
-### Issue type
-
-Assign one primary type and optional secondary tags:
+Use these primary types:
 
 - reproducible bug;
 - intermittent bug;
 - model-behaviour report;
-- feature request;
 - performance or resource problem;
+- feature request;
 - documentation request;
 - support or usage question;
 - security or privacy concern;
 - meta or process issue;
 - unclear or mixed request.
 
-Duplicate or already-tracked status is an outcome, not an issue type.
+Duplicate status is an outcome or catalogue flag, not an issue type.
 
-### Report quality
+## Detailed notes
 
-Score each applicable dimension from 0 to 2. Use `N/A` where a dimension genuinely does not apply.
+Do not write a ten-dimension table for all twenty issues.
 
-1. **Title specificity** — names an observable behaviour or concrete request.
-2. **User impact** — explains what fails or why it matters.
-3. **Actual versus expected behaviour** — both are distinguishable.
-4. **Reproduction** — executable or otherwise credible.
-5. **Environment** — provides the relevant version, platform, configuration, model, or backend.
-6. **Evidence** — logs, outputs, screenshots, artifacts, or source references support the claim.
-7. **Scope** — presents one independently actionable problem.
-8. **Prior-art awareness** — distinguishes relevant reports instead of dumping links; use `N/A` when no relevant prior art is reasonably discoverable.
-9. **Diagnosis discipline** — separates observation, hypothesis, and proposed solution.
-10. **First-screen readability** — the core failure and requested invariant are quickly understandable.
+After completing the twenty concise rows, choose only the issues that materially teach something and add deeper notes. Normally this means three to six cases such as:
 
-Calculate a normalized score over applicable dimensions when useful, but do not let the aggregate number replace the written judgement. Note concrete strengths, weaknesses, and the smallest information improvement that would make the report more actionable.
+- the weakest submission;
+- a polished but low-actionability submission;
+- a strong concise report;
+- a strong but excessively long report;
+- a literal duplicate;
+- a counterexample that challenges the current catalogue categories.
 
-### Engagement and outcome
+For those cases, examine title, impact, actual/expected distinction, reproduction, environment, evidence, scope, prior art, diagnosis discipline, and first-screen readability.
 
-Identify bots before considering association. Treat `OWNER`, `MEMBER`, and `COLLABORATOR` as verified maintainer associations. Treat other humans as unverified human/community unless visible repository-authority evidence supports a maintainer classification. Do not infer authority from tone or apparent employment.
+## Comments and outcomes
 
-Record engagement separately from outcome.
+The main catalogue concerns issue-body quality. Do not fetch every comment thread by default.
 
-**Engagement:**
+Read comments when they are needed to determine:
 
-- author-only/no external human response;
-- bot-only activity;
-- unverified human/community response;
-- maintainer acknowledgement;
-- maintainer information request;
-- substantive maintainer response.
+- why an issue was closed;
+- whether it was a literal or semantic duplicate;
+- whether the requested behaviour already existed;
+- whether a maintainer asked for missing information;
+- whether the thread supplies a useful quality/outcome counterexample.
 
-Retain multiple event flags when a thread progresses through several stages. Record the highest human-engagement level reached and describe the sequence when it matters.
+Identify bots before classifying human engagement. Do not infer maintainer authority from tone, username, apparent employer, or technical confidence.
 
-**Outcome:**
+Keep engagement and outcome separate. A good report can remain unanswered; a weak report can be fixed for roadmap reasons.
 
-- open unresolved;
-- completed/fixed;
-- duplicate;
-- expected behaviour;
-- unsupported or support redirect;
-- not planned;
-- automated closure;
-- other closure.
+## Block synthesis
 
-For recent issues, explicitly state that the outcome is immature when the thread has had little observation time. Time to first maintainer response at 24 hours, 7 days, and 30 days may be recorded as descriptive context, but it is not a gate on inclusion.
+After each twenty-issue block, record:
 
-### Research value
+1. grade distribution;
+2. recurring forms of strong reporting;
+3. recurring forms of avoidable triage cost;
+4. literal duplicates or already-supported requests;
+5. examples where writing quality and repository actionability diverge;
+6. new catalogue categories or revisions to existing categories;
+7. whether the block changes any conclusion about #35613;
+8. the exact number interval for the next chronological block.
 
-State why the issue belongs in the landscape map. Examples:
+Separate factual observations from interpretation.
 
-- representative strong report;
-- representative low-signal report;
-- strong unanswered counterexample;
-- weak report with maintainer attention;
-- well-written duplicate;
-- semantic duplicate-bot error;
-- useful product-surface contrast;
-- useful old-versus-current practice contrast.
+Do not report repository-wide percentages as if this were a probability sample. Counts within a reviewed chronological block are acceptable when clearly labelled as block counts.
 
-## Batch synthesis
+## Storage
 
-After the five issue reviews, return:
+Maintain the primary output at:
 
-1. a compact comparison table;
-2. the main patterns visible in this batch;
-3. counterexamples and tensions;
-4. what this batch suggests about #35613, without recommending edits from one batch alone;
-5. what kinds of issues the next batch should include to test or challenge the emerging picture;
-6. confidence and important missing data.
+`notes/code-mode-orphan-fix/research/issue-quality-catalog.md`
 
-Separate factual observations, interpretation, and uncertainty.
+Append each chronological block to that file. Do not mirror full public issue bodies into the fork.
 
-## Saving the work
+Optionally maintain a compact CSV ledger with one row per issue when the catalogue becomes too large to scan manually.
 
-Store each completed batch in the fork under:
+Avoid creating a separate tiny file for every five issues unless a thematic deep dive genuinely needs its own document.
 
-`notes/code-mode-orphan-fix/research/batches/batch-NNN.md`
+## How far to continue
 
-Each file should contain:
+Begin with five chronological blocks: approximately **100 issues**.
 
-- review date;
-- selection method and candidate pool;
-- the five issue numbers;
-- per-issue coding and evidence notes;
-- batch synthesis;
-- new or revised hypotheses;
-- proposed composition of the next batch.
+After each block, ask whether new quality patterns or counterexamples are still appearing. Continue while the catalogue is changing materially. Stop when two consecutive diverse blocks add no important category and do not change the working conclusions.
 
-Maintain a compact ledger at:
+A larger probability-sampled survey is a separate optional phase. Do not make it a prerequisite for getting the lay of the land.
 
-`notes/code-mode-orphan-fix/research/batches/ledger.csv`
+## Relation to #35613
 
-The ledger should contain one row per issue with the batch number, issue number, dates, primary type, quality score or band, engagement, outcome, and a short research-value tag. Do not mirror full public threads into the repository; issue numbers and evidence references are sufficient.
+Use the catalogue to test whether #35613 is unusually strong, weak, overlong, mis-scoped, or likely to be confused with nearby reports.
 
-## How many issues
+Do not recommend broadening #35613 merely because other issues are broad. Its relevant comparison remains whether it states one demonstrated failure layer, separates observation from hypothesis, distinguishes related reports, and gives maintainers a bounded next step.
 
-There is no default requirement to exceed 300 issues.
-
-Start with **six batches / 30 issues**. After every second batch, review whether the coding categories or main conclusions are still changing. Continue in batches of five while new major patterns, counterexamples, product surfaces, or triage behaviours are appearing.
-
-A reasonable qualitative target is **40–80 issues**. Stop when two consecutive diverse batches add no major category or materially change the working conclusions. Record why saturation was judged sufficient.
-
-Run a larger probability-sampled quantitative study only if the qualitative pass produces a specific question that requires a rate estimate. Keep that as a separate phase with its own sampling protocol.
-
-## Related-process cluster
-
-As a focused thematic batch, compare these five reports by failure layer:
-
-- [#35613](https://github.com/openai/codex/issues/35613) — nested JavaScript can discard the result containing `session_id` before the handle becomes model-visible.
-- [#34866](https://github.com/openai/codex/issues/34866) — wrapper completion versus nested-process state mismatch.
-- [#33816](https://github.com/openai/codex/issues/33816) — a handle reaches the model and is later lost model-side.
-- [#35482](https://github.com/openai/codex/issues/35482) — possible process-group, cleanup, sandbox-observability, and resource-safety failure.
-- [#35035](https://github.com/openai/codex/issues/35035) — general task incompleteness and likely semantic duplicate-bot noise.
-
-For each, identify:
-
-1. the demonstrated failure point;
-2. whether the handle reached JavaScript, reached the model, was later lost, or never surfaced model-side;
-3. whether manager ownership is demonstrated, contradicted, or unknown;
-4. product surface and execution backend, using `unknown` rather than inference;
-5. what #35613 could address;
-6. what it definitely would not address;
-7. whether a public cross-link would add new evidence or only noise.
-
-The wake-up-after-exit layer remains adjacent context rather than a sixth focal report unless a later batch specifically studies scheduling and notification failures.
-
-## PR research
-
-Keep PRs separate from issue batches. Review PRs in batches of five using the same chat workflow, rotating among maintainer-authored, automated, coordinated external, and unknown external submissions. Do not infer that an external PR was unsolicited merely because public coordination is absent.
-
-## Execution discipline
-
-When asked to run the research, begin with a five-issue batch and save the completed notes. Do not stop at another methodology review unless a concrete data-access problem prevents reading the selected issues or comments.
-
-Do not post public comments as part of the research. Do not recommend changes to #35613 from one memorable comparison. Update conclusions cumulatively as batches accumulate.
+Do not post cross-links or edits to public issues as part of this research.
