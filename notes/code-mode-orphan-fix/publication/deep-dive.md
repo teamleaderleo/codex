@@ -6,7 +6,7 @@ I used an exploratory implementation to trace the data flow, test the narrow fix
 
 ## Executive summary
 
-Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The unified-exec manager still owns those processes, but the terminal response doesn't retain creator-cell provenance it can use to recover their logical IDs.
+Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The terminal response still identifies the cell, and the unified-exec manager still owns the processes, but manager-owned process entries don't retain the corresponding creator-cell provenance. The completion path therefore can't map that cell back to its live logical session IDs.
 
 The proposed approach would carry the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, query still-live entries for that exact cell when its terminal response is formatted, and add their IDs to the existing status text. It wouldn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
 
@@ -15,7 +15,7 @@ CodeMode CellId
   → UnifiedExecContext
   → ProcessEntry
   → exact-cell live-process lookup
-  → terminal completion status
+  → terminal response status
 ```
 
 ## Failure
@@ -31,7 +31,7 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-Those copied JavaScript values don't own the processes. The session-level unified-exec manager keeps the yielded processes alive, but the final code-mode result has no cell-scoped path to identify and recover the discarded session IDs.
+Those copied JavaScript values don't own the processes. The session-level unified-exec manager keeps the yielded processes alive, but its process entries don't preserve the creator-cell relationship needed to recover the discarded session IDs when the cell finishes.
 
 The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that before-state as an executable test.
 
@@ -71,7 +71,7 @@ A read-only manager query can select entries whose creator matches the exact `Ce
 
 Numeric ordering belongs in the formatter because it's a display contract. The exploratory prototype sorts in both the manager and formatter; the smaller implementation only needs the formatter sort.
 
-### 4. Choose the terminal outcomes in scope
+### 4. Choose the terminal responses in scope
 
 Ordinary `RuntimeResponse::Yielded` responses describe a cell that remains active and resumable, so they should keep their existing status.
 
@@ -80,6 +80,8 @@ The remaining scope choice is whether live IDs appear on:
 - successful `Result` only;
 - successful and failed `Result`; or
 - every terminal response, including `Terminated`.
+
+The exploratory prototype currently implements the third option: successful and failed `Result`, plus `Terminated`, with `Yielded` excluded.
 
 ### 5. Keep the status outside emitted-output truncation
 
@@ -94,7 +96,7 @@ The query would describe manager-observed state at one instant. A selected proce
 - local processes consult cached state and the live local handle;
 - exec-server-backed processes consult cached manager state.
 
-A recently exited remote process could therefore appear until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting, but the exit-then-exclude survivor case ran locally only. The issue leaves the first-version backend scope open rather than hiding that limitation.
+A recently exited remote process could therefore appear until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting, but the exit-then-exclude survivor case ran locally only. The relevant scope decision is whether manager-observed liveness is acceptable for exec-server-backed processes despite that brief lag.
 
 ## Exact-cell contract
 
@@ -102,7 +104,7 @@ Reporting every live process in the session would let one completing cell claim 
 
 The narrow contract is:
 
-> Report only manager-owned processes attributed to the exact cell whose terminal result is being formatted.
+> Report only manager-owned processes attributed to the exact cell whose terminal response is being formatted.
 
 ## Display contract
 
@@ -153,7 +155,8 @@ These checks establish prototype feasibility. They span closely related refs and
 - GitHub-hosted Ubuntu 24.04
 - validated head: `eb530466cafac0a5aee86342cd2b5ada9047d448`
 
-Commands:
+<details>
+<summary>Commands</summary>
 
 ```sh
 just fmt
@@ -165,6 +168,8 @@ just test -p codex-core --lib -E "$UNIT_FILTER" --no-capture --no-tests=fail
 git diff --check
 git status --porcelain=v1 --untracked-files=all
 ```
+
+</details>
 
 Results:
 
