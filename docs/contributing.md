@@ -54,7 +54,8 @@ When a change updates model catalogs or model metadata (`/models` payloads, pres
 
 - Fill in the PR template (or include similar information) - **What? Why? How?**
 - Include a link to a bug report or enhancement request in the issue tracker
-- Run **all** checks locally. Use the root `just` helpers so you stay consistent with the rest of the workspace: `just fmt`, `just fix -p <crate>` for the crate you touched, and the relevant tests (e.g., `just test -p codex-tui` or `just test` if you need a full sweep). CI failures that could have been caught locally slow down the process.
+- Install the [development prerequisites](install.md), including `uv`.
+- Run **all** checks locally. Use `just fmt` to rewrite files locally and `just fmt-check` to check formatting without modifying files; `just fmt-check` is appropriate for CI. Both commands require the complete formatter toolchain, including `uv`. Then run `just fix -p <crate>` for the crate you touched and the relevant tests (e.g., `just test -p codex-tui` or `just test` if you need a full sweep). CI failures that could have been caught locally slow down the process.
 - Make sure your branch is up-to-date with `main` and that you have resolved merge conflicts.
 - Mark the PR as **Ready for review** only when you believe it is in a merge-able state.
 

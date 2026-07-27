@@ -30,6 +30,8 @@ cargo install --locked just
 cargo install --locked dotslash
 # Install nextest for the `just test` helper.
 cargo install --locked cargo-nextest
+# Install uv for the Python formatters using the official installer.
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Build Codex.
 cargo build
@@ -38,7 +40,10 @@ cargo build
 cargo run --bin codex -- "explain this codebase to me"
 
 # After making changes, use the root justfile helpers (they default to codex-rs):
+# Rewrite files to apply repository formatting.
 just fmt
+# Check formatting without modifying files; use this for CI-style verification.
+just fmt-check
 just fix -p <crate-you-touched>
 
 # Run the relevant tests (project-specific is fastest), for example:
@@ -48,6 +53,8 @@ just test
 # Avoid `--all-features` for routine local runs because it increases build
 # time and `target/` disk usage by compiling additional feature combinations.
 ```
+
+Both formatting commands require the complete formatter toolchain, including `uv`.
 
 ## Tracing / verbose logging
 
