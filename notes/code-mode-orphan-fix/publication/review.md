@@ -41,6 +41,8 @@ The archive supports factual review. The upstream issue should stand on its own 
 
 The verified upstream snapshot is five commits ahead of the selected base. Those commits do not touch the four production files changed by the prototype, so the design requires a clean rebase rather than adaptation.
 
+Four acceptance cases exercised the Docker remote executor. The exited-process/survivor case ran locally only, so remote stale-exit behaviour remains untested.
+
 ## Before an invited PR
 
 Create a smaller branch directly from then-current upstream `main` and carry only:
@@ -52,9 +54,12 @@ Create a smaller branch directly from then-current upstream `main` and carry onl
 Apply these code cleanups during that rebase:
 
 - convert the code-mode source ID with `cell_id.as_str().to_string()` instead of relying on `Display`;
+- make `with_creator_cell_id` accept `CellId` instead of `Option<CellId>`;
 - keep numeric ordering in one layer, preferably the formatter, and remove the manager's duplicate sort;
-- omit the Wine-only routing commit and Wine validation narrative;
+- retain a hard model-visible output bound while leaving the exact number open for issue discussion;
 - record the accepted `Result` / failed `Result` / `Terminated` boundary from the issue discussion;
 - document that exec-server liveness reflects manager-cached exit state.
+
+The small PR should naturally omit the extra Windows-guard commit when its extra acceptance fixtures are left behind. If any POSIX-only fixtures remain, prefer target-aware commands where practical and retain an explicit target guard where needed.
 
 Run every claimed check on the same final rebased SHA and place only that final record in the PR.
