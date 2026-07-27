@@ -14,6 +14,7 @@ Detailed observations and roasts remain in [`issue-quality-catalog.md`](issue-qu
 
 | Issue | Score | Why it is exemplary |
 |---|---:|---|
+| [#35613](https://github.com/openai/codex/issues/35613) | 30/30 · S | States one exact lost-handle invariant, supplies an executable before-state reproduction, separates adjacent lifecycle problems, anchors the current source path, proposes a bounded correction, and makes every remaining policy choice explicit. |
 | [#35620](https://github.com/openai/codex/issues/35620) | 29/30 · S | Baseline/failure controls, clean-state tests, raw model-output boundary evidence, quantified transitions, and disciplined uncertainty. |
 | [#35629](https://github.com/openai/codex/issues/35629) | 29/30 · S | Carries the failure from visible symptom to persisted stale pointer, rules out obvious controls, and gives a narrowly successful recovery. |
 | [#35599](https://github.com/openai/codex/issues/35599) | 29/30 · S | A specialised terminal-input bug reduced to exact CSI-u packets, active/base layout characters, and a parser-level reproduction. |
@@ -32,7 +33,7 @@ Detailed observations and roasts remain in [`issue-quality-catalog.md`](issue-qu
 
 | Issue | Score | Why it is worth opening |
 |---|---:|---|
-| [#35613](https://github.com/openai/codex/issues/35613) | 28/30 · A | Distinguishes a handle that never becomes model-visible from adjacent process-lifecycle and model-memory failures. |
+| [#35613](https://github.com/openai/codex/issues/35613) | 30/30 · S | Distinguishes a handle that never becomes model-visible from adjacent process-lifecycle and model-memory failures. |
 | [#35619](https://github.com/openai/codex/issues/35619) | 23/30 · C | Possibly the strongest raw forensics in the sample, while also demonstrating how live corrections and massive detail can damage triage usability. |
 | [#35604](https://github.com/openai/codex/issues/35604) | 27/30 · A | An 82-second renderer block traced to synchronous Markdown parsing over roughly 49 million title characters. |
 | [#35553](https://github.com/openai/codex/issues/35553) | 18/30 · D | High-stakes macOS keybag incidents with substantial evidence, but a dangerous causal leap toward the Locked Use plugin. |
