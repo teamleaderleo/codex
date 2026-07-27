@@ -65,9 +65,9 @@ Output:
 
 ## Display bound
 
-The prototype's 64-ID display limit matches the manager's current 64-process capacity, so it cannot omit a reachable manager-owned ID.
+The exploratory prototype caps the visible list at 64 IDs. That equals the manager's nominal process limit, but the manager uses a soft cap and can temporarily exceed it while an exited process is locked during terminal-event publication.
 
-The display and manager constants can remain separate, but the display limit must not fall below manager capacity unless another model-visible path can enumerate omitted IDs.
+The final implementation must surface every matching live ID or provide another model-visible path that enumerates any omitted IDs. The prototype's `(+N more)` suffix and over-limit formatter tests document output policy, but they don't guarantee that every reachable handle remains visible during soft-cap overshoot.
 
 ## Scope
 
@@ -93,6 +93,6 @@ These checks span related prototype refs and workspaces rather than one final SH
 - four Docker cases exercising exec-server live-process reporting;
 - a local-only exited-process/survivor case, leaving stale remote-exit exclusion untested.
 
-The display-cap cases are formatter-level policy tests. The prototype's display bound and manager process cap currently both equal 64, so over-limit formatting isn't an ordinary steady-state manager path.
+The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible during soft-cap overshoot.
 
 The [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md) contains the data-flow analysis, exploratory implementation links, validation record, source references, limitations, and alternatives considered.
