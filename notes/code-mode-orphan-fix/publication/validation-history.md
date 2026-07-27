@@ -11,7 +11,7 @@ The implementation evolved through closely related commits. The production behav
 | Negative reproduction | [`7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) | Before-state test: live nested processes remain manager-owned while their handles are absent from model-visible completion output. |
 | Earlier consolidated candidate | [`76021678`](https://github.com/teamleaderleo/codex/commit/760216784efaee1ba6a3b1250349f31d5f91c7ca) | Head used for repeated candidate/base compatibility validation before the presentation cap was added. |
 | Final bounded implementation milestone | [`eb530466`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448) | Independent model-visible display limit of 64, numeric sort-before-truncation, and exact `(+N more)` suffix. |
-| Latest implementation head | [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48) | Same production implementation as `eb530466`, plus test-only Windows-target skip annotations for POSIX acceptance commands. |
+| Latest implementation head | [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48) | Same production implementation as `eb530466`, plus test-only Windows-target skip annotations for POSIX acceptance commands. The `fix/code-mode-live-session-ids` branch currently resolves to this exact commit. |
 
 ## Evidence summary
 
@@ -23,7 +23,8 @@ The implementation evolved through closely related commits. The production behav
 | Local acceptance | Value-equivalent bounded implementation workspace | 5 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
 | Docker/Linux remote acceptance | Same workspace with Ubuntu 24.04 exec server | 4 passed; 1 explicit host-`TempDir` skip | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
 | Existing compatibility tests | Same workspace | 2 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
-| Full `codex-core` library suite | Latest implementation head `77e7e314` | Queued; result pending when this ledger was created | [Workflow page](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml), [launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954) |
+| Full `codex-core` library suite | Latest implementation head `77e7e314` | Queued; result pending when this ledger was updated | [Workflow page](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml), [launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954) |
+| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | Queued; result pending when this ledger was updated | [Wine workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml), [launcher commit `d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870) |
 
 Additional local test runs were performed during development. This ledger avoids inventing URLs or collapsing unlike refs; it records the repeated local count that was preserved in the project handoff and links every available public CI receipt.
 
@@ -77,6 +78,30 @@ just test -p codex-core --lib --no-capture --no-tests=fail
 ```
 
 `77e7e314` contains the same production code as `eb530466`; its only additional change is test-only Windows-target skip handling for POSIX acceptance commands. The workflow result and uploaded full log should be added here once the run completes.
+
+## Wine/Bazel validation and the POSIX-command boundary
+
+Wine-exec tests require an x86-64 Linux host and Bazel because the harness cross-builds the Windows exec server and runs it under Wine while the Rust integration-test process remains on Linux.
+
+The latest-head Wine workflow is:
+
+- [workflow page](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml);
+- launcher commit [`d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870);
+- tested implementation head `77e7e3149df366236db2426596c23ebbe1d6bb48`;
+- command:
+
+```sh
+bazel test //codex-rs/core:core-all-wine-exec-test \
+  --nocache_test_results \
+  --test_output=all
+```
+
+The Patch 1 `orphan_sessions` acceptance cases have an important target boundary:
+
+- `code_mode_completion_surfaces_discarded_live_exec_sessions`, `large_emitted_output_does_not_truncate_live_session_warning`, `yielded_cell_response_does_not_include_completion_session_warning`, and `code_mode_completion_reports_only_sessions_created_by_current_cell` return early under Wine via `skip_if_target_windows!` because their commands use POSIX shell syntax that is not valid for the Windows exec target;
+- `code_mode_completion_reports_only_surviving_nested_session` returns early in every remote environment via `skip_if_remote!` because it embeds host `TempDir` PID/release paths that are not shared with Docker or Wine.
+
+Therefore, even a successful full Wine suite is evidence that the Bazel/Wine harness and the broader shared test suite work on the latest implementation head. It is **not** evidence that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows. A previous local inability to observe the skip messages is consistent with Bazel or Wine setup failing before the Rust test binary started; a runtime skip can only be emitted after the harness launches the test process.
 
 ## Harness attempts that are not test failures
 
