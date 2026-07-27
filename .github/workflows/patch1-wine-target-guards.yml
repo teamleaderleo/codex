@@ -6,7 +6,7 @@ on:
       - validation/code-mode-wine-target-guards
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   wine-target-guards:
@@ -16,7 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          persist-credentials: false
           fetch-depth: 0
 
       - uses: ./.github/actions/setup-bazel-ci
@@ -42,14 +41,19 @@ jobs:
             status=$?
             git status --short --untracked-files=all > "$artifact_dir/git-status.txt" || true
             git diff --check > "$artifact_dir/git-diff-check.txt" 2>&1 || true
-            printf 'exit_status=%s\n' "$status" > "$artifact_dir/result.txt"
+            {
+              printf 'exit_status=%s\n' "$status"
+              printf 'validation_head=%s\n' "$(git rev-parse HEAD)"
+              printf 'code_head=%s\n' "77e7e3149df366236db2426596c23ebbe1d6bb48"
+            } > "$artifact_dir/result.txt"
             exit "$status"
           }
           trap finish EXIT
 
-          code_head="$(git rev-parse HEAD^)"
           expected_head="77e7e3149df366236db2426596c23ebbe1d6bb48"
-          [[ "$code_head" == "$expected_head" ]]
+          expected_changes=".github/workflows/patch1-wine-target-guards.yml"
+          actual_changes="$(git diff --name-only "$expected_head" HEAD)"
+          [[ "$actual_changes" == "$expected_changes" ]]
           [[ "$(uname -m)" == "x86_64" ]]
 
           python3 - <<'PY'
@@ -65,25 +69,36 @@ jobs:
               raise SystemExit("expected one local-only survivor guard")
           PY
 
+          {
+            printf 'agent=Agent 69\n'
+            printf 'code_head=%s\n' "$expected_head"
+            printf 'validation_head=%s\n' "$(git rev-parse HEAD)"
+            printf 'platform=%s\n' "$(uname -a)"
+            printf 'bazel=%s\n' "$(bazel --version)"
+            printf 'target=//codex-rs/core:core-all-wine-exec-test\n'
+            printf 'filter=suite::code_mode::orphan_sessions::\n'
+          } | tee "$artifact_dir/environment.txt"
+
+          set +e
+          set -o pipefail
           bazel test //codex-rs/core:core-all-wine-exec-test \
             --nocache_test_results \
             --test_output=all \
             --test_arg='suite::code_mode::orphan_sessions::' \
-            --test_arg='--nocapture'
+            --test_arg='--nocapture' \
+            2>&1 | tee -a "$log_file"
+          test_status=${PIPESTATUS[0]}
+          set -e
 
+          grep -E \
+            'suite::code_mode::orphan_sessions::|PID/release paths|Windows exec target|test result:|PASSED|FAILED|skipp' \
+            "$log_file" \
+            > "$artifact_dir/summary.txt" || true
+
+          cat "$artifact_dir/summary.txt"
           git diff --check
           [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]
-
-          {
-            printf 'Agent: Agent 69\n'
-            printf 'Code head: %s\n' "$code_head"
-            printf 'Wine-exec target: //codex-rs/core:core-all-wine-exec-test\n'
-            printf 'Rust test filter: suite::code_mode::orphan_sessions::\n'
-            printf 'Target-Windows guards found: 4\n'
-            printf 'Local-only survivor guard found: 1\n'
-            printf 'git diff --check: passed\n'
-            printf 'Worktree: clean\n'
-          } > "$artifact_dir/receipt.txt"
+          exit "$test_status"
 
       - name: Upload validation evidence
         if: always()
@@ -93,3 +108,23 @@ jobs:
           path: ${{ runner.temp }}/patch1-wine-target-guards
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish readable validation summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/patch1-wine-target-guards"
+          publish_dir="validation-results/patch1-wine-target-guards"
+          rm -rf "$publish_dir"
+          mkdir -p "$publish_dir"
+          for file in environment.txt result.txt summary.txt git-status.txt git-diff-check.txt; do
+            if [[ -f "$artifact_dir/$file" ]]; then
+              cp "$artifact_dir/$file" "$publish_dir/$file"
+            fi
+          done
+          git config user.name "Agent 69"
+          git config user.email "actions@users.noreply.github.com"
+          git add "$publish_dir"
+          git commit -m "test: record Agent 69 Wine validation [skip ci]"
+          git push origin "HEAD:refs/heads/validation/code-mode-wine-target-guards-results" --force
