@@ -1,0 +1,7 @@
+agent=Agent 69
+code_head=77e7e3149df366236db2426596c23ebbe1d6bb48
+validation_head=d8d194c0c2822bce0c1a0b7647c1fabc993fd9a6
+platform=Linux runnervmvrwv9 6.17.0-1020-azure #20~24.04.1-Ubuntu SMP Fri Jun 19 20:09:14 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+bazel=bazel 9.0.0
+target=//codex-rs/core:core-all-wine-exec-test
+filter=suite::code_mode::orphan_sessions::

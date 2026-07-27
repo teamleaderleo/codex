@@ -1,0 +1,28 @@
+2026/07/27 00:14:40 Downloading https://releases.bazel.build/9.0.0/release/bazel-9.0.0-linux-x86_64...
+bazel=bazel 9.0.0
+target=//codex-rs/core:core-all-wine-exec-test
+filter=suite::code_mode::orphan_sessions::
+Extracting Bazel installation...
+Starting local Bazel server (9.0.0) and connecting to it...
+WARNING: For repository 'platforms', the root module requires module version platforms@1.0.0, but got platforms@1.1.0 in the resolved dependency graph. Please update the version in your MODULE.bazel or set --check_direct_dependencies=off
+WARNING: For repository 'rules_cc', the root module requires module version rules_cc@0.2.18, but got rules_cc@0.2.20 in the resolved dependency graph. Please update the version in your MODULE.bazel or set --check_direct_dependencies=off
+WARNING: A well-known crate annotation exists for libgit2-sys! Apply the following to your MODULE.bazel:
+bazel_dep(name = "libgit2", version = "1.9.1")
+You can disable this warning by configuring your MODULE.bazel like so:
+WARNING: A well-known crate annotation exists for libssh2-sys! Apply the following to your MODULE.bazel:
+bazel_dep(name = "libssh2", version = "1.11.1.bcr.1")
+You can disable this warning by configuring your MODULE.bazel like so:
+Analyzing: target //codex-rs/core:core-all-wine-exec-test (4 packages loaded)
+Analyzing: target //codex-rs/core:core-all-wine-exec-test (9 packages loaded, 8 targets configured)
+Analyzing: target //codex-rs/core:core-all-wine-exec-test (9 packages loaded, 8 targets configured)
+Analyzing: target //codex-rs/core:core-all-wine-exec-test (73 packages loaded, 9 targets configured)
+Analyzing: target //codex-rs/core:core-all-wine-exec-test (104 packages loaded, 857 targets configured)
+ERROR: Traceback (most recent call last):
+	File "/home/runner/work/codex/codex/codex-rs/windows-sandbox-rs/BUILD.bazel", line 3, column 17, in <toplevel>
+Error: codex_rust_crate() got unexpected keyword argument: binary_test_target_compatible_with
+ERROR: /home/runner/work/codex/codex/codex-rs/windows-sandbox-rs/BUILD.bazel: no such target '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup': target 'codex-windows-sandbox-setup' not declared in package 'codex-rs/windows-sandbox-rs' defined by /home/runner/work/codex/codex/codex-rs/windows-sandbox-rs/BUILD.bazel
+ERROR: /home/runner/work/codex/codex/codex-rs/core/BUILD.bazel:3:17: no such target '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup': target 'codex-windows-sandbox-setup' not declared in package 'codex-rs/windows-sandbox-rs' defined by /home/runner/work/codex/codex/codex-rs/windows-sandbox-rs/BUILD.bazel and referenced by '//codex-rs/core:core-all-wine-exec-test'
+ERROR: Analysis of target '//codex-rs/core:core-all-wine-exec-test' failed; build aborted: Analysis failed
+ERROR: Build did NOT complete successfully
+FAILED: 
+ERROR: No test targets were found, yet testing was requested
