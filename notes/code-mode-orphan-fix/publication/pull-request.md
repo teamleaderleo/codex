@@ -1,21 +1,35 @@
-# Report live nested session IDs when code-mode cells finish
+# Report live nested exec session IDs on code-mode completion
 
-> Final review draft. Open only after an upstream maintainer invites the contribution.
+> Open only after a Codex maintainer invites the contribution and the issue agrees the terminal-response boundary.
+
+Implements the behaviour agreed in #<issue-number>.
+
+## What
+
+- Retain the originating code-mode `CellId` on manager-owned unified-exec process entries.
+- Add a read-only lookup for live processes created by an exact cell.
+- Include the matching logical session IDs in the agreed terminal code-mode responses.
+- Keep ordinary `Yielded` responses unchanged.
+- Add focused manager and formatter tests plus one end-to-end discarded-handle regression.
 
 ## Why
 
-A code-mode cell can start nested `exec_command` calls, keep only their output, and discard the returned session IDs. The cell can then finish while those commands remain live, leaving the completion result without the handles needed to manage them.
+A code-mode cell can start nested `exec_command` calls, retain only their output, and discard the returned `session_id` values.
 
-The session-level unified-exec manager still owns the processes. This change restores their model-visible handles without changing process lifetime or ownership.
+Those commands can remain live after the cell finishes. The unified-exec manager still owns them, but the final code-mode result previously had no path to recover their model-visible handles.
 
-## What changed
+## How
 
-- Preserve the existing code-mode cell ID on manager-owned process entries.
-- Add a read-only manager query for still-live processes created by an exact cell.
-- Include the matching session IDs in final `Result` and `Terminated` status text, but not ordinary `Yielded` responses.
-- Sort IDs numerically and display at most 64, with an exact suffix such as `(+7 more)` when the list is longer.
+Nested tool dispatch already identifies calls originating from code mode. This change carries that existing typed cell identity into the unified-exec process entry.
 
-Example:
+When the cell reaches an agreed terminal outcome, response handling asks the existing manager for processes that:
+
+- were created by that exact cell; and
+- remain live according to manager state at lookup time.
+
+The formatter presents the resulting IDs deterministically in the existing status header. The lookup does not wait for, terminate, prune, or mutate any process.
+
+## Example
 
 ```text
 Script completed
@@ -25,21 +39,33 @@ Output:
 ...
 ```
 
+## Liveness semantics
+
+The lookup uses existing manager-observed state. Local handles can expose process exit directly. Exec-server-backed handles rely on exit already reflected in manager state, so reporting can briefly lag an underlying remote exit.
+
+## Scope
+
+This change leaves the following behaviour unchanged:
+
+- process ownership and lifetime;
+- cleanup, pruning, polling, and wake-up policy;
+- JavaScript result fields;
+- public protocol schemas and event types;
+- call-ID generation.
+
+Only sessions attributed to the exact completing cell are reported.
+
 ## Testing
 
-- Nine focused formatter and manager tests passed on capped head `eb530466...`.
-- Five acceptance cases passed locally on the behaviourally equivalent pre-decoupling capped workspace.
-- Four remote-safe acceptance cases passed through the Docker executor. The host-`TempDir` survivor case was excluded from that Docker filter and passed locally.
-- Two existing code-mode compatibility tests passed once on the same pre-decoupling capped workspace.
-- Current head `77e7e314...` adds only target-Windows routing guards to four POSIX-command acceptance cases.
-- A targeted Wine-exec run was attempted on the current code head, but Bazel analysis failed on an unrelated `windows-sandbox-rs` BUILD/macro mismatch before any Rust test was discovered or executed.
+Run and record every check on the same final rebased SHA:
 
-The [validation record](https://github.com/teamleaderleo/codex/blob/review/code-mode-final-draft/notes/code-mode-orphan-fix/publication/validation.md) lists the exact refs, commands, and limitations.
+- `just fmt`
+- `just fix -p codex-core`
+- focused manager and formatter tests
+- the primary discarded-handle end-to-end regression
+- relevant existing code-mode compatibility tests
+- `git diff --check`
 
-## Notes
+Final head: `<final-sha>`
 
-- Current upstream `main` snapshot `95637f70...` still formats completion directly from `RuntimeResponse` and contains no equivalent manager lookup.
-- Process lifetime, automatic cleanup, wake-up behaviour, JavaScript result fields, and public protocol shapes are unchanged.
-- The 64-ID output bound is intentionally independent of the manager's soft process-store capacity.
-- The current base-to-head diff is 903 changed lines because the acceptance module is large. If a smaller review is requested, the production change, focused tests, and primary acceptance reproduction can land first, with the remaining acceptance coverage in a follow-up.
-- This is narrower than [#34866](https://github.com/openai/codex/issues/34866): it restores discarded live-session handles but does not redesign background-process continuation or wake-up semantics.
+Issue: #<issue-number>
