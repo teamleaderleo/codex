@@ -1,0 +1,92 @@
+# Validation history for code-mode live-session handle recovery
+
+This ledger centralises the validation evidence behind [openai/codex#35613](https://github.com/openai/codex/issues/35613) and the code-mode live-session-ID implementation.
+
+The implementation evolved through closely related commits. The production behaviour under review is the same narrow data flow throughout the later checkpoints: preserve exact creator-cell provenance, query manager-observed live processes for that cell, sort the logical session IDs numerically, and add them to terminal code-mode status without changing lifecycle or protocol behaviour.
+
+## Relevant refs
+
+| Role | Ref | Notes |
+|---|---|---|
+| Negative reproduction | [`7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) | Before-state test: live nested processes remain manager-owned while their handles are absent from model-visible completion output. |
+| Earlier consolidated candidate | [`76021678`](https://github.com/teamleaderleo/codex/commit/760216784efaee1ba6a3b1250349f31d5f91c7ca) | Head used for repeated candidate/base compatibility validation before the presentation cap was added. |
+| Final bounded implementation milestone | [`eb530466`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448) | Independent model-visible display limit of 64, numeric sort-before-truncation, and exact `(+N more)` suffix. |
+| Latest implementation head | [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48) | Same production implementation as `eb530466`, plus test-only Windows-target skip annotations for POSIX acceptance commands. |
+
+## Evidence summary
+
+| Coverage | Ref or tested tree | Result | Evidence |
+|---|---|---|---|
+| Repeated candidate/base compatibility validation | Earlier `76021678` candidate/base work | 20/20 candidate repetitions and 20/20 base repetitions passed locally | Historical local record; these repetitions predate the bounded final head and are not represented as repetitions of `eb530466` or `77e7e314`. |
+| Focused formatter and manager tests | Exact validated tree committed as `eb530466` | 9 passed | [Actions run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228) |
+| Formatting, scoped fixes, diff and worktree checks | Exact validated tree committed as `eb530466` | Passed; worktree clean | [Actions run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228) |
+| Local acceptance | Value-equivalent bounded implementation workspace | 5 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
+| Docker/Linux remote acceptance | Same workspace with Ubuntu 24.04 exec server | 4 passed; 1 explicit host-`TempDir` skip | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
+| Existing compatibility tests | Same workspace | 2 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
+| Full `codex-core` library suite | Latest implementation head `77e7e314` | Queued; result pending when this ledger was created | [Workflow page](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml), [launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954) |
+
+Additional local test runs were performed during development. This ledger avoids inventing URLs or collapsing unlike refs; it records the repeated local count that was preserved in the project handoff and links every available public CI receipt.
+
+## Exact final-head focused validation
+
+[GitHub Actions run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228) ran on GitHub-hosted Ubuntu 24.04. The workflow applied the final architecture correction, validated the resulting tree, and then committed that tested tree as `eb530466cafac0a5aee86342cd2b5ada9047d448`.
+
+Commands:
+
+```sh
+just fmt
+just fix -p codex-core
+
+UNIT_FILTER='test(/(live_process_ids_created_by_cell_filters_exited_and_sorts|terminal_cell_id_excludes_yielded_responses|terminal_script_status_surfaces_sorted_live_background_sessions|terminal_script_status_preserves_sessions_at_display_limit|terminal_script_status_caps_sessions_above_display_limit|terminal_script_status_sorts_before_truncation|terminal_script_status_formats_exact_omitted_count|terminal_script_status_omits_warning_for_empty_sessions|yielded_script_status_does_not_surface_background_sessions)$/)'
+
+just test -p codex-core --lib -E "$UNIT_FILTER" --no-capture --no-tests=fail
+git diff --check
+git status --porcelain=v1 --untracked-files=all
+```
+
+Results:
+
+- `just fmt`: passed;
+- `just fix -p codex-core`: passed;
+- nine focused tests: passed;
+- `git diff --check`: passed;
+- final worktree: clean.
+
+## Local and Docker acceptance validation
+
+[GitHub Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) ran on GitHub-hosted Ubuntu 24.04 and used an Ubuntu 24.04 Docker exec server for the remote-safe cases.
+
+Results:
+
+- five local acceptance cases passed;
+- four Docker remote-safe acceptance cases passed;
+- `code_mode_completion_reports_only_surviving_nested_session` was explicitly excluded from remote execution because its PID/release paths use a host `TempDir` not shared with the executor; the case passed locally;
+- two selected existing compatibility tests passed;
+- formatting, scoped fix and diff checks passed.
+
+The later change from a manager-cap alias to an independent literal `64` preserved the formatter value and did not change the acceptance setup or behaviour, so this acceptance run was not repeated solely for that decoupling.
+
+## Latest-head full library suite
+
+The temporary workflow at [`.github/workflows/temp-code-mode-full-suite.yml`](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml) was launched by [`f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954).
+
+It checks out latest implementation head `77e7e3149df366236db2426596c23ebbe1d6bb48` and runs:
+
+```sh
+just test -p codex-core --lib --no-capture --no-tests=fail
+```
+
+`77e7e314` contains the same production code as `eb530466`; its only additional change is test-only Windows-target skip handling for POSIX acceptance commands. The workflow result and uploaded full log should be added here once the run completes.
+
+## Harness attempts that are not test failures
+
+Two earlier GitHub Actions attempts failed before producing a valid validation result and are not counted as product-test failures:
+
+- [run 30217238334](https://github.com/teamleaderleo/codex/actions/runs/30217238334): validation harness failed during linker-swap setup;
+- [run 30217425523](https://github.com/teamleaderleo/codex/actions/runs/30217425523): validation harness reached the main step but failed because `uv` was unavailable.
+
+The corrected acceptance run was [30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056), and the corrected exact final-head focused run was [30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228).
+
+## Scope boundary
+
+The implementation and the validation above do not claim changes to process ownership, automatic termination, pruning, recovery, JavaScript schemas, protocol schemas or events, call-ID generation, or lifecycle semantics. The change restores model-visible handles for manager-owned nested work attributed to the exact terminal code-mode cell and bounds that status fragment independently at 64 visible IDs.
