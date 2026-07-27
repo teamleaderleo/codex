@@ -1,0 +1,48 @@
+name: Temporary code-mode Wine exec suite
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/temp-code-mode-wine-suite.yml
+
+permissions:
+  contents: read
+
+jobs:
+  codex-core-wine-exec:
+    name: Full codex-core Wine exec suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Check out latest implementation head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: 77e7e3149df366236db2426596c23ebbe1d6bb48
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Bazel CI
+        uses: ./.github/actions/setup-bazel-ci
+        with:
+          target: Linux
+
+      - name: Run full codex-core suite against the Windows exec server under Wine
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          bazel test //codex-rs/core:core-all-wine-exec-test \
+            --nocache_test_results \
+            --test_output=all \
+            2>&1 | tee "$RUNNER_TEMP/codex-core-wine-exec.log"
+
+      - name: Upload Wine exec test log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: code-mode-wine-exec-log
+          path: ${{ runner.temp }}/codex-core-wine-exec.log
+          if-no-files-found: warn
+          retention-days: 30
