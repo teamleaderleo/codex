@@ -1,7 +1,12 @@
-I opened #<new-issue> to isolate one independently fixable case within this report: code-mode JavaScript can discard nested `session_id` values while the unified-exec manager continues to own the live processes.
+I opened #<new-issue> to isolate one independently fixable case within this report: code-mode JavaScript can retain only nested command output and discard the returned `session_id` values while the unified-exec manager continues to own the live processes.
 
-The narrower proposal recovers only the still-live IDs created by the exact completing cell and includes them in the existing model-visible status. It changes no lifecycle policy, JavaScript result fields, or protocol shapes.
+The narrower proposal adds no lifecycle or protocol representation. It retains the originating code-mode `CellId` on manager-owned process entries, queries the existing manager when that exact cell reaches a terminal response, and includes the matching live logical session IDs in the existing model-visible status. This restores the discarded control handles without changing process ownership, lifetime, cleanup, polling, wake-up policy, JavaScript result fields, or public protocol shapes.
 
-I separated it because #34866 proposes a broader wrapper/process lifecycle representation, while this fix can be evaluated as a small compatibility-preserving change. The new issue includes the executable reproduction, root cause, exec-server liveness limitation, and proposed manager lookup.
+One boundary is worth deciding explicitly. Local process handles can expose exit directly, while exec-server-backed entries rely on exit state already reflected in the manager. Four prototype acceptance cases exercised the exec-server path for live-process reporting; the exit-then-exclude survivor case ran locally only. A recently exited remote process could therefore be reported until manager-cached state advances.
 
-I have a working prototype with tests and would be glad to prepare a smaller PR if maintainers prefer this narrow direction.
+The focused issue asks two design questions:
+
+1. Should the warning appear only for successful `Result` responses, or for every terminal outcome, including failed `Result` and `Terminated`?
+2. Is manager-observed liveness acceptable for exec-server-backed processes, or should the broader lifecycle representation proposed here land first?
+
+I have a working prototype with focused manager and formatter tests plus end-to-end regression coverage. If maintainers prefer this narrow compatibility-preserving direction, I would be glad to rebuild it as a smaller invited PR on current `main`.
