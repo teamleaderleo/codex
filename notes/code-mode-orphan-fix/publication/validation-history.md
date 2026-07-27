@@ -24,7 +24,7 @@ The implementation evolved through closely related commits. The production behav
 | Docker/Linux remote acceptance | Same workspace with Ubuntu 24.04 exec server | 4 passed; 1 explicit host-`TempDir` skip | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
 | Existing compatibility tests | Same workspace | 2 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
 | Full `codex-core` library suite | Latest implementation head `77e7e314` | 2,093 passed; 0 failed; 0 skipped | [Actions run 30291034837](https://github.com/teamleaderleo/codex/actions/runs/30291034837), artifact `code-mode-full-suite-log` |
-| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | Launcher recorded; run result not yet attached to this ledger | [Wine workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml), [launcher commit `d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870) |
+| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | No tests executed; two identical Bazel analysis failures before target construction | [Run 30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612), [retrigger 30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567) |
 
 Additional local test runs were performed during development. This ledger avoids inventing URLs or collapsing unlike refs; it records the repeated local count that was preserved in the project handoff and links every available public CI receipt.
 
@@ -96,7 +96,7 @@ Wine-exec tests require an x86-64 Linux host and Bazel because the harness cross
 The latest-head Wine workflow is:
 
 - [workflow page](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml);
-- launcher commit [`d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870);
+- launcher commit [`d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870), later retriggered by [`2b7b930`](https://github.com/teamleaderleo/codex/commit/2b7b93081361b77f8ddaceaf362a09765b4153bf);
 - tested implementation head `77e7e3149df366236db2426596c23ebbe1d6bb48`;
 - command:
 
@@ -106,23 +106,38 @@ bazel test //codex-rs/core:core-all-wine-exec-test \
   --test_output=all
 ```
 
-The Patch 1 `orphan_sessions` acceptance cases have an important target boundary:
+Two public attempts produced the same result:
+
+- [run 30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612);
+- [retriggered run 30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567).
+
+In both runs, checkout and Bazel setup succeeded, but Bazel stopped during analysis before constructing or launching any test target. The root error was:
+
+```text
+codex_rust_crate() got unexpected keyword argument: binary_test_target_compatible_with
+```
+
+At `77e7e314`, `codex-rs/windows-sandbox-rs/BUILD.bazel` passes that argument while the `codex_rust_crate` definition in `defs.bzl` does not accept it. That prevents `//codex-rs/windows-sandbox-rs:codex-command-runner` from being declared, cascades into a missing-target error for `core-all-wine-exec-test`, and ends with `No test targets were found`.
+
+This is a reproducible Bazel build-graph incompatibility in the exact checked-out repository snapshot, not a Patch 1 assertion failure and not evidence about the runtime skip guards. No Rust test process started, so no Patch 1 acceptance test or runtime skip message could execute. Re-running the unchanged target a third time would not add evidence unless the Bazel macro/BUILD mismatch is first corrected or the patch is tested on a repository snapshot where that target analyzes successfully.
+
+The Patch 1 `orphan_sessions` acceptance cases also have an important target boundary even after the Bazel target becomes runnable:
 
 - `code_mode_completion_surfaces_discarded_live_exec_sessions`, `large_emitted_output_does_not_truncate_live_session_warning`, `yielded_cell_response_does_not_include_completion_session_warning`, and `code_mode_completion_reports_only_sessions_created_by_current_cell` return early under Wine via `skip_if_target_windows!` because their commands use POSIX shell syntax that is not valid for the Windows exec target;
 - `code_mode_completion_reports_only_surviving_nested_session` returns early in every remote environment via `skip_if_remote!` because it embeds host `TempDir` PID/release paths that are not shared with Docker or Wine.
 
-Therefore, even a successful full Wine suite is evidence that the Bazel/Wine harness and the broader shared test suite work on the latest implementation head. It is **not** evidence that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows. A previous local inability to observe the skip messages is consistent with Bazel or Wine setup failing before the Rust test binary started; a runtime skip can only be emitted after the harness launches the test process.
+Therefore, even a successful full Wine suite would validate the Bazel/Wine harness and broader shared test suite on the implementation head. It would **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
 
-The Wine launcher is recorded, but the exact run URL and result still need to be attached to this ledger before making a pass, failure, or cancellation claim.
+## Harness attempts that are not Patch 1 test failures
 
-## Harness attempts that are not test failures
-
-Two earlier GitHub Actions attempts failed before producing a valid validation result and are not counted as product-test failures:
+Four GitHub Actions attempts failed before producing a Patch 1 product-test result and are not counted as assertion failures:
 
 - [run 30217238334](https://github.com/teamleaderleo/codex/actions/runs/30217238334): validation harness failed during linker-swap setup;
-- [run 30217425523](https://github.com/teamleaderleo/codex/actions/runs/30217425523): validation harness reached the main step but failed because `uv` was unavailable.
+- [run 30217425523](https://github.com/teamleaderleo/codex/actions/runs/30217425523): validation harness reached the main step but failed because `uv` was unavailable;
+- [run 30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612): Wine target failed during Bazel analysis before any test target was constructed;
+- [run 30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567): identical retrigger confirmed the same repository build-graph incompatibility.
 
-The corrected acceptance run was [30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056), and the corrected exact final-head focused run was [30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228).
+The corrected acceptance run was [30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056), the corrected exact final-head focused run was [30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228), and the full `codex-core --lib` suite passed in [30291034837](https://github.com/teamleaderleo/codex/actions/runs/30291034837).
 
 ## Scope boundary
 
