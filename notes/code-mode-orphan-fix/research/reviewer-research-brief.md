@@ -2,79 +2,82 @@
 
 Review public `openai/codex` issues to build a cumulative catalogue of report quality, triage friction, recurring submission patterns, and useful counterexamples.
 
-This is an execution task. Do not stop for another methodology review unless the selected public issues cannot be read.
-
-Do not post comments or reactions to public issues during this research.
+This is an execution task. Do not stop for another methodology review unless the selected public issues cannot be read. Do not post comments or reactions to public issues.
 
 ## Default workflow
 
-Review **20 issues per chat pass**.
+Review **100 unique issues per chat pass**, internally checkpointed as five groups of 20 so grading remains careful.
 
-Use one contiguous chronological block of public issue numbers:
+Use a contiguous chronological range of public issue numbers:
 
-1. start immediately below the most recently completed block;
-2. skip pull-request numbers but record that they were skipped;
-3. read the full issue body rather than grading from a search snippet;
-4. order the catalogue rows from oldest to newest inside the block;
-5. save the completed block into the cumulative catalogue before moving on.
+1. start immediately below the most recently completed boundary;
+2. skip pull-request numbers and record them as skipped;
+3. exclude repeated records returned at connector/search boundaries;
+4. read the full issue body before grading;
+5. preserve chronological order within each 20-issue checkpoint;
+6. save the completed pass before continuing.
 
-Twenty is a working default, not a hard limit. Reduce the batch only when several reports are exceptionally long or contain attachments that require separate inspection. Increase it only when the issues are short and the analysis remains substantive.
+A user may instead paste a batch directly into chat. Analyse supplied issues in the supplied order even when the material includes extraneous metadata.
 
-A user may instead paste a batch directly into chat. Analyse the supplied issues in the supplied order even when the pasted material contains extraneous metadata.
+There is no 30-day inclusion cutoff. Recent issues are valuable for current writing practice; older issues are valuable for mature outcomes. Do not treat same-day silence as evidence about issue quality or maintainer interest.
 
-## Recency
+## What is being judged
 
-There is **no 30-day inclusion cutoff**.
+Judge the **submitted report**, not whether the requested feature should ultimately be implemented.
 
-Recent reports are important because templates, product surfaces, models, labels, and issue-writing practices change quickly. Older reports are important because their outcomes have had time to develop.
+Keep separate:
 
-For a chronological catalogue, record issue age and do not interpret same-day silence as evidence about report quality or maintainer interest.
+- **writing/evidence quality** — how clearly and credibly the issue establishes its case;
+- **repository actionability** — whether `openai/codex` appears to be the right owner and whether the report creates an efficient next step.
 
-## What to judge
+A polished issue can still score poorly when it is a literal duplicate, asks for existing behaviour, belongs to another product or support channel, or replaces a bounded issue with a broad architecture programme.
 
-Judge the submitted report, not whether the requested feature should be implemented.
+## 30-point scoring rubric
 
-Keep two concepts separate:
+Score six dimensions from **0 to 5**. The total out of 30 is the primary result.
 
-- **writing/evidence quality:** how clearly and credibly the issue presents its case;
-- **repository actionability:** whether the Codex repository appears to be the right owner and whether the report creates an efficient next step.
+1. **Clarity** — the title and opening identify the observable failure or concrete request.
+2. **Scope discipline** — one independently actionable problem; no avoidable bundling or umbrella design.
+3. **Reproduction or current-state verification** — a bug has a credible trigger/control; a feature request establishes current versus desired behaviour and a real use case.
+4. **Evidence** — logs, outputs, screenshots, measurements, source anchors, controls, or other support proportional to the claim.
+5. **Context** — relevant version, platform, model/backend, configuration, prior art, and privacy-safe identifiers.
+6. **Actionability and diagnosis discipline** — observations, hypotheses, and proposed solutions are separated; the likely repository owner and next step are reasonably clear.
 
-A polished issue may still be low-value because it is a literal duplicate, asks for an existing feature, belongs to another product surface, or specifies a broad product programme without demonstrating a defect.
+Do not reward length, source inspection, code suggestions, a prototype, or polished formatting automatically.
 
-## Quality grades
+### Grade bands
 
-Assign one overall grade and a short written justification.
+| Band | Score | Meaning |
+|---|---:|---|
+| **S** | 29–30 | Exceptional exemplar; essentially no material triage defect |
+| **A** | 27–28 | Excellent; immediately actionable with only minor defects |
+| **B** | 24–26 | Strong; actionable but meaningfully improvable |
+| **C** | 20–23 | Usable or mixed; notable missing evidence, scope cost, or owner uncertainty |
+| **D** | 15–19 | Weak/costly; substantial reconstruction or narrowing required |
+| **E** | 10–14 | Severely deficient, duplicate, or badly mis-scoped |
+| **F** | 0–9 | Non-report, near-content-free complaint, or unusable submission |
 
-- **A — strong/actionable:** the failure or request, affected surface, evidence, scope, and next investigative step are quickly identifiable.
-- **B — usable:** the core issue is understandable and potentially actionable, but important evidence, scope control, or product fit is missing.
-- **C — costly/mis-scoped:** there may be a real issue, but the submission creates substantial triage work through overbreadth, weak evidence, excessive solutioning, or poor repository fit.
-- **D — weak/noisy:** vague, hostile, bundled, unsupported, or lacking enough information to investigate efficiently.
+Do not force a curve. **S must remain rare**, and A is not the default label for every actionable report.
 
-Add independent catalogue flags where applicable:
+Record catalogue rows as, for example, `26/30 · B`. The number is primary; the letter is only a summary. Show component scores only for close calls, disputed grades, or deep-dive examples.
 
-- literal duplicate submission;
-- likely wrong repository or product owner;
-- already-supported behaviour;
-- multiple unrelated issues;
-- excessive forensic detail;
-- large prompt or proposed design burying the core issue;
-- unsupported causal certainty;
-- missing reproduction or environment;
-- semantic duplicate-bot mismatch;
-- unusually strong counterexample.
+### Calibration rules
 
-Do not reward length, source inspection, code suggestions, or a prototype automatically.
+- A literal duplicate that adds no material evidence normally cannot exceed **E**.
+- A support-only or clearly wrong-owner request normally cannot exceed **D** unless it identifies a concrete repository change.
+- A report with no bounded symptom/request and no usable reproduction/current-state verification normally cannot exceed **E**.
+- Hostile language is not an automatic cap when the technical report remains strong, but hostility that replaces facts lowers clarity and actionability.
+- Excessive detail lowers the score only when it materially impedes scope, first-screen comprehension, or next-step identification.
 
-## Per-issue catalogue row
+## Per-issue catalogue entry
 
-For every issue, record:
+Record:
 
 - issue number and canonical URL;
 - creation time;
-- title;
-- primary issue type;
-- open/closed state and explicit state reason when visible;
-- overall grade;
+- title and primary type;
+- open/closed state and explicit reason when visible;
+- score out of 30 and band;
 - strongest useful feature;
 - main defect or triage cost;
 - one short catalogue tag.
@@ -94,73 +97,41 @@ Use these primary types:
 
 Duplicate status is an outcome or catalogue flag, not an issue type.
 
-## Detailed notes
-
-Do not write a ten-dimension table for all twenty issues.
-
-After completing the twenty concise rows, choose only the issues that materially teach something and add deeper notes. Normally this means three to six cases such as:
-
-- the weakest submission;
-- a polished but low-actionability submission;
-- a strong concise report;
-- a strong but excessively long report;
-- a literal duplicate;
-- a counterexample that challenges the current catalogue categories.
-
-For those cases, examine title, impact, actual/expected distinction, reproduction, environment, evidence, scope, prior art, diagnosis discipline, and first-screen readability.
-
 ## Comments and outcomes
 
 The main catalogue concerns issue-body quality. Do not fetch every comment thread by default.
 
-Read comments when they are needed to determine:
+Read comments when needed to determine closure reason, literal or semantic duplication, existing functionality, a maintainer information request, or a useful quality/outcome counterexample.
 
-- why an issue was closed;
-- whether it was a literal or semantic duplicate;
-- whether the requested behaviour already existed;
-- whether a maintainer asked for missing information;
-- whether the thread supplies a useful quality/outcome counterexample.
+Identify bots before classifying human engagement. Do not infer maintainer authority from tone, username, apparent employer, or technical confidence. Keep engagement and outcome separate.
 
-Identify bots before classifying human engagement. Do not infer maintainer authority from tone, username, apparent employer, or technical confidence.
+## Pass synthesis
 
-Keep engagement and outcome separate. A good report can remain unanswered; a weak report can be fixed for roadmap reasons.
+After each 100-issue pass, record:
 
-## Block synthesis
+1. score and band distribution;
+2. median and notable score clusters;
+3. recurring forms of strong reporting;
+4. recurring forms of avoidable triage cost;
+5. literal duplicates, wrong-owner requests, and already-supported behaviour;
+6. cases where writing quality and repository actionability diverge;
+7. new catalogue categories or revisions;
+8. whether the pass changes any conclusion about #35613;
+9. the exact next chronological boundary.
 
-After each twenty-issue block, record:
-
-1. grade distribution;
-2. recurring forms of strong reporting;
-3. recurring forms of avoidable triage cost;
-4. literal duplicates or already-supported requests;
-5. examples where writing quality and repository actionability diverge;
-6. new catalogue categories or revisions to existing categories;
-7. whether the block changes any conclusion about #35613;
-8. the exact number interval for the next chronological block.
-
-Separate factual observations from interpretation.
-
-Do not report repository-wide percentages as if this were a probability sample. Counts within a reviewed chronological block are acceptable when clearly labelled as block counts.
+Do not present chronological-pass counts as repository-wide population estimates.
 
 ## Storage
 
-Maintain the primary output at:
+Primary qualitative observations:
 
-`notes/code-mode-orphan-fix/research/issue-quality-catalog.md`
+`notes/code-mode-orphan-fix/research/issue-quality-catalog*.md`
 
-Append each chronological block to that file. Do not mirror full public issue bodies into the fork.
+Primary calibrated scores:
 
-Optionally maintain a compact CSV ledger with one row per issue when the catalogue becomes too large to scan manually.
+`notes/code-mode-orphan-fix/research/issue-quality-score-ledger.md`
 
-Avoid creating a separate tiny file for every five issues unless a thematic deep dive genuinely needs its own document.
-
-## How far to continue
-
-Begin with five chronological blocks: approximately **100 issues**.
-
-After each block, ask whether new quality patterns or counterexamples are still appearing. Continue while the catalogue is changing materially. Stop when two consecutive diverse blocks add no important category and do not change the working conclusions.
-
-A larger probability-sampled survey is a separate optional phase. Do not make it a prerequisite for getting the lay of the land.
+Do not mirror full public issue bodies into the fork.
 
 ## Relation to #35613
 
