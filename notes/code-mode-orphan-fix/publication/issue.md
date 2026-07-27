@@ -48,7 +48,7 @@ Output:
 orphan-a|orphan-b
 ```
 
-Both nested commands can still be live and listed by the unified-exec manager, but their logical session IDs are absent from the model-visible response because the JavaScript code discarded the original result objects.
+Both nested commands can still be live and listed by the unified-exec manager, but their session IDs are absent from the model-visible response because the JavaScript code discarded the original result objects.
 
 An [executable negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves this before-state as a test.
 
@@ -56,7 +56,7 @@ I can provide an affected app session ID or additional logs if they would help w
 
 ## What is the expected behavior?
 
-When a code-mode cell reaches a terminal response, its existing status text should include the logical IDs of any still-live nested commands created by that exact cell.
+When a code-mode cell reaches a terminal response, its existing status text should include the manager process IDs exposed to the model as `session_id` for any still-live nested commands created by that exact cell.
 
 For example:
 
@@ -68,13 +68,15 @@ Output:
 orphan-a|orphan-b
 ```
 
-The exact wording and display bound are implementation choices. The required property is that the completing cell preserves model-visible access to manager-owned nested commands whose JavaScript result objects were discarded.
+This would report every still-live nested command attributed to the cell, including commands whose returned IDs the JavaScript retained; the completion path can't distinguish retained handles from discarded ones.
+
+The exact wording and display bound are implementation choices. The required property is that the completing cell preserves model-visible access to its manager-owned nested commands.
 
 ## Additional information
 
-Nested tool dispatch already carries the originating code-mode cell ID, and the terminal response still identifies that cell. Yielded commands remain owned by the session-level unified-exec manager, but manager-owned process entries don't retain the corresponding creator-cell provenance, so the completion path can't map the cell back to its live logical session IDs.
+Nested tool dispatch already carries the originating code-mode cell ID, and the terminal response still identifies that cell. Yielded commands remain owned by the session-level unified-exec manager, but manager-owned process entries don't retain the corresponding creator-cell provenance, so the completion path can't map the cell back to its live session IDs.
 
-At the [verified upstream snapshot](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275), `handle_runtime_response` still formats terminal cell output without an equivalent manager lookup.
+At the [verified upstream snapshot](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275), `handle_runtime_response` still formats terminal cell output without an equivalent manager lookup.
 
 ### Possible implementation direction
 
@@ -86,20 +88,18 @@ struct ProcessEntry {
     // existing fields...
 }
 
-// When formatting a terminal response:
-let live_session_ids =
-    process_manager.live_process_ids_created_by_cell(&cell_id);
+if let Some(cell_id) = terminal_cell_id(&response) {
+    let live_session_ids = process_manager
+        .live_process_ids_created_by_cell(cell_id)
+        .await;
+
+    // Include live_session_ids in the existing terminal status.
+}
 ```
 
 The lookup would be read-only. It wouldn't wait for, terminate, prune, or otherwise mutate any process.
 
-The proposed fix would leave these unchanged:
-
-- process ownership and lifetime;
-- cleanup, pruning, polling, and wake-up policy;
-- JavaScript result fields;
-- public protocol schemas and event types;
-- call-ID generation.
+The proposed fix would leave process ownership and lifetime, cleanup and polling policy, JavaScript result fields, public protocol shapes, and call-ID generation unchanged.
 
 It would report only sessions created by the exact cell whose terminal response is being formatted, so one cell couldn't claim another cell's live work.
 
