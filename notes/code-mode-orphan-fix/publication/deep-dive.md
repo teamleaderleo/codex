@@ -1,26 +1,26 @@
 # How code-mode completion can lose live session handles
 
-This is the full technical record behind the [standalone issue](issue.md), the [#34866 cross-link comment](related-34866-comment.md), and the [implementation draft](pull-request.md).
-
-I used an exploratory implementation to trace the data flow, test the narrow fix, document its limitations, and separate the decisions that belong to maintainers from the parts already established by the current code.
+This is the technical record behind [openai/codex#35613](https://github.com/openai/codex/issues/35613), the tested implementation, and the associated validation history.
 
 ## Executive summary
 
-Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The terminal response still identifies the cell, and the unified-exec manager still owns the processes, but manager-owned process entries don't retain the corresponding creator-cell provenance. The completion path therefore can't map that cell back to its live session IDs.
+A code-mode JavaScript cell can start nested `exec_command` calls, keep only each result's `.output`, and discard every returned `session_id`. The nested commands may remain live in the session-level unified-exec manager after the JavaScript cell reports `Script completed`.
 
-The proposed approach carries the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, queries still-live entries for that exact cell when a selected terminal response is formatted, and adds their IDs to the existing status text. It doesn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
+The resulting defect is not merely missing status text. The manager still owns the work, but the model has lost every control handle exposed by the current tool surface for inspecting, continuing, or terminating it.
+
+The tested implementation preserves the existing code-mode `CellId` through unified exec, stores it on the manager-owned process entry, queries still-live entries for the exact terminal cell, and adds their logical session IDs to the existing status text.
 
 ```text
 CodeMode CellId
   → UnifiedExecContext
   → ProcessEntry
   → exact-cell live-process lookup
-  → selected terminal response status
+  → terminal response status
 ```
 
-## Failure
+The implementation does not change process ownership, lifetime, cleanup, polling, wake-up behaviour, JavaScript result fields, public protocol shapes, or call-ID generation.
 
-A code-mode JavaScript cell can start nested commands and retain only each result's `.output`:
+## Minimal failure
 
 ```js
 const outputs = (await Promise.all([
@@ -31,224 +31,215 @@ const outputs = (await Promise.all([
 text(outputs.join("|"));
 ```
 
-Those copied JavaScript values don't own the processes. The session-level unified-exec manager keeps the yielded processes alive, but its process entries don't preserve the creator-cell relationship needed to recover the session IDs when the cell finishes.
+The JavaScript values copied into `outputs` do not own the nested processes. Unified exec keeps the yielded processes alive, while the copied `session_id` values disappear with the discarded result objects.
 
-The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that before-state as an executable test. It checks both halves of the failure: two background terminals remain manager-owned, and the model-visible completion header contains no session handle.
+Before the fix, the terminal response can therefore look like:
+
+```text
+Script completed
+Wall time ...
+Output:
+orphan-a|orphan-b
+```
+
+The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5) preserves that state as an executable test: two background terminals remain manager-owned while the model-visible completion header contains no handle for either one.
+
+## Observed incident and impact
+
+The isolated reproduction came from a real Codex Desktop session on bundle version `26.715.12143`.
+
+A code-mode cell launched two Playwright screenshot commands and a `curl` command concurrently. Each nested command used a 30-second yield timeout, and the JavaScript forwarded only `.output`. The cell then reported `Script completed` without the logical session IDs for the two yielded Playwright commands.
+
+Codex launched replacement screenshot commands while the original process groups remained alive. The original groups survived for more than four days and had been reparented to PID 1 (`launchd`). macOS process metadata attributed them to Codex Desktop:
+
+```text
+CODEX_INTERNAL_ORIGINATOR_OVERRIDE=Codex Desktop
+__CFBundleIdentifier=com.openai.codex
+responsible path=/Applications/ChatGPT.app/Contents/MacOS/ChatGPT
+```
+
+The persisted process registry retained the original commands and logical session IDs, while both records had `"osPid": null`.
+
+At inspection time, Activity Monitor showed the two surviving `node` processes at 3.62 GB each in the Memory column:
+
+<img width="829" height="86" alt="macOS Activity Monitor showing two surviving node processes at 3.62 GB each" src="https://github.com/user-attachments/assets/4f6c1a5a-3620-44ad-ad39-038a9f6e6a51" />
+
+*Activity Monitor at inspection time, showing the two surviving `node` processes at 3.62 GB each—approximately 7.24 GB combined.*
+
+Separate process inspection measured approximately:
+
+- 1.38 GB resident memory;
+- 6.4 GB swapped memory.
+
+The processes required manual process-group termination outside Codex.
+
+The visibility gap did not itself create the broader cross-runtime orphaning policy. It removed the model's available opportunity to notice and clean up the work before owner loss occurred.
 
 ## Relationship to #34866
 
-[#34866](https://github.com/openai/codex/issues/34866) covers the broader mismatch between wrapper completion and nested-process state and proposes richer lifecycle representation.
+[#34866](https://github.com/openai/codex/issues/34866) covers the broader contradiction between wrapper completion and nested-process state, including richer lifecycle representation and which continuation operation should be authoritative.
 
-This issue isolates a smaller invariant: a completing cell should retain access to its manager-owned nested commands after JavaScript discards their result objects. The proposed approach doesn't add a protocol field or choose a new continuation, cleanup, polling, or wake-up policy.
+Issue #35613 isolates a smaller invariant:
 
-## Exploratory implementation
+> A terminal code-mode cell should preserve model-visible access to still-live manager-owned nested commands attributed to that exact cell, even when JavaScript discards every returned result object.
 
-The implementation and its main test coverage are together on one branch:
+The proposed implementation does not redefine wrapper completion, process lifetime, cleanup, polling, wake-up behaviour, or recovery policy.
 
-- [exploratory implementation and tests](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-ids)
-- [base-to-head comparison](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48)
-- [prototype head `77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48)
+## Tested implementation
 
-The negative reproduction is a separate, earlier before-state artifact at [`7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5), cut from `20dafe2` before the fix existed. The other commits and workflow runs below are checkpoints from the exploratory implementation work, not parallel implementations.
+The implementation and test coverage are on [`fix/code-mode-live-session-ids`](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-ids).
 
-## Production data flow
+Relevant refs:
 
-### 1. Preserve the existing creator identity
+- selected upstream base: [`61a44880`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8);
+- bounded implementation milestone: [`eb530466`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448);
+- latest implementation head: [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48);
+- base-to-head comparison: [`61a44880...77e7e314`](https://github.com/teamleaderleo/codex/compare/61a44880a85d2fd0d8770908dea5733495e571c8...77e7e3149df366236db2426596c23ebbe1d6bb48).
 
-Nested dispatch already carries the public code-mode cell ID in `ToolCallSource::CodeMode`. The exploratory prototype serialises that value with `to_string()`, reconstructs a typed `CellId` at the unified-exec boundary, and retains it on the manager-owned process entry.
+`77e7e314` contains the same production implementation as `eb530466`; its additional commit only adds test-side Windows-target skips for POSIX acceptance commands.
 
-### 2. Store provenance with the manager-owned process
+### 1. Preserve creator identity
 
-`UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the manager process ID and manager-owned process, and `store_process` copies it into the entry.
+Nested dispatch already carries the public code-mode cell ID through `ToolCallSource::CodeMode`. The implementation carries that identity through `UnifiedExecContext` and stores it on the manager-owned `ProcessEntry`.
 
-The manager tracks this value internally as `process_id`; the tool surface exposes the same control handle to the model as `session_id`. Creator provenance stays crate-internal. It adds no result field or protocol event and changes no call-ID format; only the existing code-mode status text changes.
+Creator provenance remains crate-internal. It adds no JavaScript field, public result property, protocol event, or call-ID encoding.
 
-### 3. Query the existing liveness authority
+### 2. Query the existing liveness authority
 
-A read-only manager query selects entries whose creator matches the exact `CellId`, filters them through existing `has_exited()` state, and returns their manager process IDs.
+A read-only manager query selects entries whose creator matches the exact `CellId`, filters them through existing `has_exited()` state, and returns their logical manager process IDs.
 
-Numeric ordering belongs in the formatter because it's a display contract. The exploratory prototype sorts in both the manager and formatter; the smaller implementation only needs the formatter sort.
+The same value is called `process_id` internally and exposed to the model as `session_id`.
 
-The lookup reports every still-live process attributed to the cell. It can't know whether JavaScript discarded, retained, printed, or otherwise used the returned session handle.
+The lookup cannot determine whether JavaScript retained, printed, copied, or discarded an individual handle, so it reports the manager-observed exact-cell live set.
 
-### 4. Choose the terminal responses in scope
+### 3. Select terminal responses
 
-Ordinary `RuntimeResponse::Yielded` responses describe a cell that remains active and resumable, so they should keep their existing status.
+Ordinary `RuntimeResponse::Yielded` responses describe a code-mode cell that remains active and resumable. They keep their existing status.
 
-The remaining scope choice is whether live IDs appear on:
+The implementation reports live IDs for terminal responses:
 
-- successful `Result` only;
-- successful and failed `Result`; or
-- every terminal response, including `Terminated`.
+- successful `Result`;
+- failed `Result`;
+- `Terminated`.
 
-The exploratory prototype implements the third option: successful and failed `Result`, plus `Terminated`, with `Yielded` excluded.
+### 4. Keep the warning outside emitted-output truncation
 
-### 5. Keep the status outside emitted-output truncation
+Code-mode emitted payload is truncated before the status header is prepended. A large emitted value therefore cannot remove the background-session warning at that boundary. Later whole-conversation limits still apply to the complete tool result.
 
-Code-mode emitted payload is truncated before the status header is prepended. A large emitted value therefore can't remove the live-session line at that boundary. Later whole-conversation limits still apply to the complete tool result.
+## Exact-cell attribution contract
+
+Reporting every live process in the session would let one completing cell claim another cell's unrelated work.
+
+The contract is:
+
+> Report only manager-owned processes attributed to the exact cell whose selected terminal response is being formatted.
+
+Remote public cell IDs are namespaced by host generation. Later generations use `g{N}:<id>`, and stale-generation IDs are rejected when translated back to a remote ID. Typed `CellId` equality therefore remains the attribution key across remote host restarts within one Codex session.
+
+## Model-visible display contract
+
+The final reviewed formatter policy is:
+
+- sort matching logical session IDs numerically;
+- display at most 64 IDs;
+- select the deterministic sorted prefix;
+- append the exact omitted count when overflow occurs, for example `(+7 more)`.
+
+The limit is intentionally independent of the unified-exec manager's soft process-store cap:
+
+```rust
+// Bound independently because this fragment enters model-visible context.
+const MAX_INLINE_BACKGROUND_SESSION_IDS: usize = 64;
+```
+
+A future process-store capacity change should not silently change the model-visible output budget. Under normal manager capacity, all exact-cell live IDs remain visible.
+
+Because the current tool surface has no separate session-enumeration operation, IDs beyond the rare over-limit prefix are not directly recoverable from the suffix. A future model-visible enumeration path would close that remaining edge case without requiring an unbounded terminal fragment.
 
 ## Liveness semantics
 
-The query describes manager-observed state at one instant. A selected process can exit immediately after lookup.
+The lookup describes manager-observed state at one instant. A selected process can exit immediately after lookup.
 
 `UnifiedExecProcess::has_exited()` also has a backend asymmetry:
 
 - local processes consult cached state and the live local handle;
 - exec-server-backed processes consult cached manager state.
 
-A recently exited remote process can therefore appear until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting, but the exit-then-exclude survivor case ran locally only. The relevant scope decision is whether manager-observed liveness is acceptable for exec-server-backed processes despite that brief lag.
-
-## Exact-cell contract
-
-Reporting every live process in the session would let one completing cell claim another cell's unrelated work.
-
-The narrow contract is:
-
-> Report only manager-owned processes attributed to the exact cell whose selected terminal response is being formatted.
-
-For remote code-mode hosts, public cell IDs are already namespaced by host generation: generation one uses the bare ID, later generations use `g{N}:<id>`, and stale-generation IDs are rejected when translated back to a remote ID. That makes `CellId` equality a stable attribution key across remote host restarts within one Codex session.
-
-## Display contract
-
-The current unified-exec tool surface exposes `exec_command` and `write_stdin`, but no separate model-visible command enumerates live sessions. The manager nominally prunes at 64 entries, so a complete per-cell list of short numeric IDs is usually only a few hundred bytes. The simplest correct implementation therefore removes the display cap and reports the full matching list.
-
-The exploratory prototype instead caps the visible list at 64. The manager limit is a soft cap. If pruning encounters an exited process whose interaction lock is held during terminal-event publication, it can admit a new entry without removing one. The first such overflow does not by itself produce more than 64 live IDs because the lookup filters the exited entry. The exit watcher emits the terminal event but does not remove that manager entry, so the store can remain above the nominal limit after the lock is released; each later insertion prunes at most one entry before inserting another. Matching live entries can therefore exceed 64, allowing the prototype's `(+N more)` suffix to omit handles and recreate the accessibility problem. If a future implementation reintroduces a display bound, it needs another model-visible path that enumerates omitted IDs.
-
-## Upstream status
-
-The selected prototype base [`61a44880`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8) is a direct ancestor of the verified upstream snapshot [`95637f70`](https://github.com/openai/codex/commit/95637f7056835fea66bdd0044414af480fc0fd74), five commits behind it.
-
-Those five commits change none of the four production files touched by the prototype. At that snapshot, upstream still carries the code-mode cell ID through `ToolCallSource::CodeMode` and still formats terminal responses without a unified-exec manager lookup.
-
-## Review size
-
-The exploratory comparison contains 903 changed lines, dominated by a 527-line acceptance module. The core change can be reviewed with a much smaller set:
-
-- the production provenance and lookup change;
-- a focused manager test and formatter tests;
-- one primary end-to-end discarded-handle regression.
-
-The exploratory prototype contains five acceptance cases because it was also used to probe truncation, cross-cell attribution, yielded responses, and local-versus-remote liveness boundaries.
+A recently exited remote process can therefore remain visible until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting. The exit-then-exclude survivor case ran locally because it embeds host `TempDir` paths not shared with Docker or Wine executors.
 
 ## Validation
 
-These checks establish prototype feasibility. They span closely related refs and workspaces rather than one final SHA. A broad project or workspace suite wasn't completed; the recorded evidence is limited to the focused, acceptance, compatibility, formatting, and diff checks below.
+The complete evidence ledger is maintained separately so public CI receipts, repeated local history, harness failures, and ref boundaries are not collapsed together:
 
-### Relevant refs
+- [validation history](validation-history.md)
 
-| Role | Ref |
-|---|---|
-| Selected prototype base | [`61a44880`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8) |
-| Display-bound milestone | [`eb530466`](https://github.com/teamleaderleo/codex/commit/eb530466cafac0a5aee86342cd2b5ada9047d448) |
-| Exploratory branch head | [`77e7e314`](https://github.com/teamleaderleo/codex/commit/77e7e3149df366236db2426596c23ebbe1d6bb48) |
-| Verified upstream snapshot | [`95637f70`](https://github.com/openai/codex/commit/95637f7056835fea66bdd0044414af480fc0fd74) |
+Summary:
 
-### Result matrix
+| Coverage | Ref or tested tree | Result |
+|---|---|---|
+| Repeated candidate/base local validation | Earlier `76021678` work | 20/20 candidate repetitions and 20/20 base repetitions passed |
+| Focused formatter and manager tests | Exact tested tree committed as `eb530466` | 9 passed |
+| Formatting, scoped fix, diff and worktree checks | `eb530466` | passed; worktree clean |
+| Local acceptance | Value-equivalent bounded implementation workspace | 5 passed |
+| Docker/Ubuntu 24.04 remote acceptance | Same workspace | 4 passed; 1 explicit host-`TempDir` skip |
+| Existing compatibility tests | Same workspace | 2 passed |
+| Full `codex-core` library suite | Latest implementation head `77e7e314` | queued when this revision was published |
 
-| Coverage | Ref or workspace | Result | Boundary |
-|---|---|---|---|
-| Focused formatter and manager tests | `eb530466` | 9 passed | Selected unit tests only |
-| Formatting, scoped fixes, diff, and worktree checks | `eb530466` | passed | Formatting, fix, diff, and worktree checks only |
-| Local acceptance cases | Final local acceptance workspace | 5 passed | Includes the local exited-process/survivor case |
-| Docker/Linux remote acceptance | Same acceptance workspace using an `ubuntu:24.04` executor | 4 passed | Remote-safe subset; excludes the exited-process/survivor case |
-| Existing compatibility tests | Same acceptance workspace | 2 passed | Selected existing code-mode tests |
+Public receipts:
 
-### Focused validation
+- [focused final-head run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228);
+- [local and Docker acceptance run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056);
+- [latest-head full-suite workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml);
+- [full-suite launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954).
 
-- [GitHub Actions run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
-- GitHub-hosted Ubuntu 24.04
-- tested tree, committed by the workflow after validation as `eb530466cafac0a5aee86342cd2b5ada9047d448`
-
-The run page shows the workflow commit that triggered the job. The workflow applied the display-bound decoupling edit, tested the resulting working tree, and committed that validated tree as `eb530466`, which is why the run's visible head SHA differs from the commit recorded here.
-
-<details>
-<summary>Commands</summary>
+The full-suite workflow checks out `77e7e3149df366236db2426596c23ebbe1d6bb48` and runs:
 
 ```sh
-just fmt
-just fix -p codex-core
-
-UNIT_FILTER='test(/(live_process_ids_created_by_cell_filters_exited_and_sorts|terminal_cell_id_excludes_yielded_responses|terminal_script_status_surfaces_sorted_live_background_sessions|terminal_script_status_preserves_sessions_at_display_limit|terminal_script_status_caps_sessions_above_display_limit|terminal_script_status_sorts_before_truncation|terminal_script_status_formats_exact_omitted_count|terminal_script_status_omits_warning_for_empty_sessions|yielded_script_status_does_not_surface_background_sessions)$/)'
-
-just test -p codex-core --lib -E "$UNIT_FILTER" --no-capture --no-tests=fail
-git diff --check
-git status --porcelain=v1 --untracked-files=all
+just test -p codex-core --lib --no-capture --no-tests=fail
 ```
 
-</details>
-
-Results:
-
-- formatting and scoped fixes passed;
-- nine focused tests passed;
-- diff checks passed;
-- the worktree was empty of changes.
-
-The direct manager test covers exact-cell filtering, exited-entry exclusion, and manager process ID ordering in the prototype. The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible while the store remains above the nominal cap.
-
-### Acceptance validation
-
-- [GitHub Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056)
-- GitHub-hosted Ubuntu 24.04
-- Docker remote executor: `ubuntu:24.04`
-
-Results:
-
-- five local acceptance cases passed;
-- four remote-safe Docker cases exercised the exec-server path and passed;
-- the exited-process/survivor case passed locally and was excluded from the Docker filter, so stale remote-exit exclusion remains untested;
-- two existing code-mode compatibility tests passed;
-- `git diff --check` passed.
+Two earlier Actions attempts failed in the validation harness before producing product-test results and are recorded separately in the ledger rather than counted as test failures.
 
 ## Code and test references
 
-### Upstream code
+### Upstream baseline
 
 - [Code-mode terminal response formatting](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L199-L275)
 - [`ToolInvocation` carries `ToolCallSource`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L46-L71)
-- [`ExecCommandHandler` constructs unified-exec context without creator-cell provenance](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L108-L133)
-- [Unified-exec exposes only `exec_command` and `write_stdin` handlers](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec.rs#L22-L27)
-- [Existing unified-exec context and process entries](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/unified_exec/mod.rs#L77-L181)
-- [Remote public cell-ID generation namespacing and stale-generation rejection](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/code-mode/src/remote_session/connection/driver/cell_ids.rs#L12-L42)
+- [`ExecCommandHandler` baseline context construction](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L108-L133)
+- [Unified-exec tool surface](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec.rs#L22-L27)
 
-### Exploratory code
+### Tested implementation
 
-- [Nested dispatch serialises the source cell](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L362-L374)
+- [Nested dispatch preserves source-cell identity](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L362-L374)
 - [`ExecCommandHandler` reconstructs the typed source cell](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138)
 - [`UnifiedExecContext` carries creator metadata](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L76-L99)
-- [`ProcessEntry` retains creator-cell attribution](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L189-L200)
-- [`store_process` copies creator metadata into the entry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L944-L976)
+- [`ProcessEntry` stores creator-cell attribution](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L189-L200)
 - [`live_process_ids_created_by_cell`](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L168-L180)
 - [Terminal-response lookup and `Yielded` exclusion](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L201-L269)
 - [Bounded status formatting](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L270-L305)
-- [`has_exited()` backend asymmetry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process.rs#L199-L210)
-- [Soft-cap pruning and persistent overshoot](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/process_manager.rs#L1379-L1423)
-- [Exit watcher emits the terminal event without removing the manager entry](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/async_watcher.rs#L157-L221)
-
-### Prototype tests
-
-- [Focused formatter tests](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L444-L612)
-- [Direct manager lookup test](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod_tests.rs#L333-L395)
 - [Acceptance module](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/suite/code_mode/orphan_sessions.rs)
-
-## Related reports
-
-| Issue | Relationship |
-|---|---|
-| [#34866](https://github.com/openai/codex/issues/34866) | Broader wrapper/process completion contradiction and lifecycle representation. |
-| [#33816](https://github.com/openai/codex/issues/33816) | Model-side loss of a yielded session can produce false completion and duplicate commands. |
-| [#14731](https://github.com/openai/codex/issues/14731) | Proposes keeping a turn active while unified-exec work remains live. |
-| [#15723](https://github.com/openai/codex/issues/15723) and [#32188](https://github.com/openai/codex/issues/32188) | Background completion wake-up proposals. |
-| [#13733](https://github.com/openai/codex/issues/13733) | Cost of repeated model-driven polling. |
-
-The standalone issue is limited to discarded handle visibility.
 
 ## Alternatives considered
 
-- Recover IDs from JavaScript output: unavailable after JavaScript discards the object.
-- Append IDs to command output: mixes control metadata with program output and remains discardable.
+- Recover IDs from JavaScript output: impossible after JavaScript discards the object.
+- Append IDs to nested command output: mixes control metadata with program output and remains discardable.
 - Encode creator identity in call IDs: turns an opaque identifier into an ownership API.
-- Add another per-cell registry: duplicates existing manager bookkeeping.
+- Add another per-cell registry: duplicates manager bookkeeping.
 - Report every session process: violates exact-cell attribution.
 - Wait for or terminate matching processes: changes lifecycle policy.
 - Add a JavaScript field or protocol event: expands compatibility scope and can still be discarded.
+
+## Scope boundary
+
+The change is intentionally limited to preserving creator-cell provenance, querying existing manager-observed liveness, and restoring model-visible logical session handles in terminal code-mode status.
+
+It does not change:
+
+- process ownership;
+- command lifetime or automatic termination;
+- pruning or recovery policy;
+- JavaScript schemas;
+- protocol schemas or events;
+- call-ID generation;
+- polling, wake-up, or continuation semantics.
