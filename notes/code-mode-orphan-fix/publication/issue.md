@@ -70,7 +70,7 @@ orphan-a|orphan-b
 
 This reports every still-live nested command attributed to the cell, including commands whose returned IDs the JavaScript retained; the completion path can't distinguish retained handles from discarded ones.
 
-The simplest correct implementation is to show the complete per-cell live list. It is normally around the manager's 64-process soft cap and consists of short numeric IDs, so the context cost is small. If a future implementation introduces a display bound, omitted IDs need another model-visible enumeration path; none exists today.
+The simplest correct implementation is to show the complete per-cell live list. It is bounded in normal operation by the manager's 64-process soft cap and consists of short numeric IDs, so the context cost is small. If a future implementation introduces a display bound, omitted IDs need another model-visible enumeration path; none exists today.
 
 ## Additional information
 
