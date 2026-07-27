@@ -14,6 +14,7 @@ The patch retains the existing creator-cell identity on stored process entries a
 
 ## Evidence
 
+- Current upstream `main` snapshot `95637f70...` still formats completion status from the runtime response alone and contains no equivalent manager lookup.
 - Nine focused formatter and manager tests passed on capped head `eb530466...`.
 - Five acceptance cases passed locally, and four remote-safe cases passed through the Docker executor, on the behaviourally equivalent pre-decoupling capped workspace.
 - Current code head `77e7e314...` adds only target-Windows routing guards for POSIX-command acceptance cases.
