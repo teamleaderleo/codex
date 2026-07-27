@@ -61,7 +61,7 @@ Nested dispatch already carries the public code-mode cell ID in `ToolCallSource:
 
 `UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the manager process ID and manager-owned process, and `store_process` copies it into the entry.
 
-The manager tracks this value internally as `process_id`; the tool surface exposes the same control handle to the model as `session_id`. Creator provenance stays crate-internal, so public tool results, protocol events, and call-ID formats don't change.
+The manager tracks this value internally as `process_id`; the tool surface exposes the same control handle to the model as `session_id`. Creator provenance stays crate-internal. It adds no result field or protocol event and changes no call-ID format; only the existing code-mode status text changes.
 
 ### 3. Query the existing liveness authority
 
@@ -112,7 +112,7 @@ For remote code-mode hosts, public cell IDs are already namespaced by host gener
 
 The current unified-exec tool surface exposes `exec_command` and `write_stdin`, but no separate model-visible command enumerates live sessions. The manager nominally prunes at 64 entries, so a complete per-cell list of short numeric IDs is usually only a few hundred bytes. The simplest correct implementation therefore removes the display cap and reports the full matching list.
 
-The exploratory prototype instead caps the visible list at 64. Because the manager limit is a soft cap, the store can temporarily exceed it while an exited process is locked during terminal-event publication. During that window, the prototype's `(+N more)` suffix can omit still-live IDs and recreate the same accessibility problem. If a future implementation reintroduces a display bound, it needs another model-visible path that enumerates omitted IDs.
+The exploratory prototype instead caps the visible list at 64. The first overflow caused by a locked exited entry does not by itself produce more than 64 live IDs because the lookup filters that exited entry. However, additional insertions can continue while pruning returns `None`; matching live entries can then exceed 64, allowing the prototype's `(+N more)` suffix to omit handles and recreate the accessibility problem. If a future implementation reintroduces a display bound, it needs another model-visible path that enumerates omitted IDs.
 
 ## Upstream status
 
