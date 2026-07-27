@@ -1,6 +1,6 @@
 # Reviewer brief: chronological Codex issue-quality catalog
 
-Review public `openai/codex` issues to build a cumulative catalogue of report quality, triage friction, recurring submission patterns, and useful counterexamples.
+Review public `openai/codex` issues to build a cumulative catalogue of report quality, triage friction, implementation value, recurring submission patterns, and useful counterexamples.
 
 This is an execution task. Do not stop for another methodology review unless the selected public issues cannot be read. Do not post comments or reactions to public issues.
 
@@ -28,13 +28,16 @@ Judge the **submitted report**, not whether the requested feature should ultimat
 Keep separate:
 
 - **writing/evidence quality** — how clearly and credibly the issue establishes its case;
-- **repository actionability** — whether `openai/codex` appears to be the right owner and whether the report creates an efficient next step.
+- **repository actionability** — whether `openai/codex` appears to be the right owner and whether the report creates an efficient next step;
+- **implementation value** — whether linked code, artefacts, source analysis or a fix proposal genuinely reduces the remaining engineering work.
 
 A polished issue can still score poorly when it is a literal duplicate, asks for existing behaviour, belongs to another product or support channel, or replaces a bounded issue with a broad architecture programme.
 
+Implementation value is independent of issue quality. A weakly framed issue may carry excellent tested code; a strong issue may include a misleading or incomplete proposed fix.
+
 ## 30-point scoring rubric
 
-Score six dimensions from **0 to 5**. The total out of 30 is the primary result.
+Score six dimensions from **0 to 5**. The total out of 30 is the primary issue-quality result.
 
 1. **Clarity** — the title and opening identify the observable failure or concrete request.
 2. **Scope discipline** — one independently actionable problem; no avoidable bundling or umbrella design.
@@ -69,6 +72,55 @@ Record catalogue rows as, for example, `26/30 · B`. The number is primary; the 
 - Hostile language is not an automatic cap when the technical report remains strong, but hostility that replaces facts lowers clarity and actionability.
 - Excessive detail lowers the score only when it materially impedes scope, first-screen comprehension, or next-step identification.
 
+## Implementation-value lens
+
+Apply this lens only when an issue contains linked code or artefacts, an explicit implementation proposal, source-level fix analysis, or an exact prior implementation. Do not add `0/5` noise to routine issues.
+
+| Value | Meaning |
+|---:|---|
+| **5/5** | Inspectable tested implementation, or an exact previously merged fix that can be reapplied; substantial maintainer time plausibly saved. |
+| **4/5** | Patch-ready proposal or claimed validated branch with exact source locations, invariants and tests; integration review remains. |
+| **3/5** | Useful diagnosis and credible fix direction, but meaningful design, assembly or validation work remains. |
+| **2/5** | Partial or speculative implementation idea; may save search time but not coding time. |
+| **1/5** | Solution-shaped prose or technically questionable suggestion that may distract more than help. |
+
+Record an implementation type:
+
+- **WORKING** — linked code, commit, branch or completed artefact;
+- **KNOWN-GOOD** — exact prior merged implementation for the same regression;
+- **PATCH-READY** — change points, semantics and tests are bounded even though code is not supplied;
+- **DIAGNOSTIC** — source analysis locates the work, but the correction remains incomplete;
+- **SOLUTIONEERING** — implementation language outruns the evidence or leaves the core design unresolved.
+
+Judge implementation usefulness by what remains for a maintainer, not by how much code-looking material appears in the issue.
+
+Strong positive evidence includes:
+
+- an inspectable focused diff;
+- tests that fail before and pass after;
+- compatibility/default behaviour made explicit;
+- failure, retry, cleanup and concurrency semantics;
+- a narrow set of touched files;
+- a known-good prior merged change;
+- validation commands and results.
+
+Lower the value when:
+
+- the reproducer is hypothetical;
+- constants or limits are arbitrary;
+- the proposed code does not satisfy the stated expected behaviour;
+- the patch returns partial success without defining semantics;
+- a broad architecture is substituted for one mergeable change;
+- source anchors are used to project confidence rather than establish a real invariant.
+
+Keep the implementation value separate from the 30-point issue score. Record it inline only when applicable, for example:
+
+`18/30 · D · implementation 5/5 WORKING`
+
+Maintain the detailed backfill and calibration examples at:
+
+`notes/code-mode-orphan-fix/research/issue-implementation-value.md`
+
 ## Per-issue catalogue entry
 
 Record:
@@ -80,7 +132,8 @@ Record:
 - score out of 30 and band;
 - strongest useful feature;
 - main defect or triage cost;
-- one short catalogue tag.
+- one short catalogue tag;
+- implementation type and value only when the issue materially contains one.
 
 Use these primary types:
 
@@ -101,7 +154,7 @@ Duplicate status is an outcome or catalogue flag, not an issue type.
 
 The main catalogue concerns issue-body quality. Do not fetch every comment thread by default.
 
-Read comments when needed to determine closure reason, literal or semantic duplication, existing functionality, a maintainer information request, or a useful quality/outcome counterexample.
+Read comments when needed to determine closure reason, literal or semantic duplication, existing functionality, a maintainer information request, implementation acceptance/rejection, or a useful quality/outcome counterexample.
 
 Identify bots before classifying human engagement. Do not infer maintainer authority from tone, username, apparent employer, or technical confidence. Keep engagement and outcome separate.
 
@@ -115,9 +168,12 @@ After each 100-issue pass, record:
 4. recurring forms of avoidable triage cost;
 5. literal duplicates, wrong-owner requests, and already-supported behaviour;
 6. cases where writing quality and repository actionability diverge;
-7. new catalogue categories or revisions;
-8. whether the pass changes any conclusion about #35613;
-9. the exact next chronological boundary.
+7. tested implementations and high-value patch-ready proposals;
+8. cases where implementation value diverges sharply from issue quality;
+9. code-shaped suggestions that are incomplete or misleading;
+10. new catalogue categories or revisions;
+11. whether the pass changes any conclusion about #35613;
+12. the exact next chronological boundary.
 
 Do not present chronological-pass counts as repository-wide population estimates.
 
@@ -131,12 +187,16 @@ Primary calibrated scores:
 
 `notes/code-mode-orphan-fix/research/issue-quality-score-ledger.md`
 
+Implementation-value calibration and ranked contributions:
+
+`notes/code-mode-orphan-fix/research/issue-implementation-value.md`
+
 Do not mirror full public issue bodies into the fork.
 
 ## Relation to #35613
 
-Use the catalogue to test whether #35613 is unusually strong, weak, overlong, mis-scoped, or likely to be confused with nearby reports.
+Use the catalogue to test whether #35613 is unusually strong, weak, overlong, mis-scoped, likely to be confused with nearby reports, or unusually valuable as an implementation contribution.
 
-Do not recommend broadening #35613 merely because other issues are broad. Its relevant comparison remains whether it states one demonstrated failure layer, separates observation from hypothesis, distinguishes related reports, and gives maintainers a bounded next step.
+Do not recommend broadening #35613 merely because other issues are broad. Its relevant comparison remains whether it states one demonstrated failure layer, separates observation from hypothesis, distinguishes related reports, gives maintainers a bounded next step, and reduces implementation uncertainty without pretending the exploratory prototype is already production-ready.
 
 Do not post cross-links or edits to public issues as part of this research.
