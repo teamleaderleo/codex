@@ -15,11 +15,13 @@ This is not part of the publication package and should not be linked from the pu
 
 ## Failure-layer map
 
+This six-layer map provides context. The planned qualitative study keeps the five named focal reports in layers 2–6 and treats layer 1 as adjacent scheduling context rather than adding a sixth focal report.
+
 ### 1. No wake-up after process exit
 
 A process exits while the model is idle, but the thread is not resumed. This is a scheduling or notification problem. It does not by itself imply that a handle was never exposed or later discarded.
 
-Representative reports include the wake-up issues referenced by #33816 and #34866.
+Representative reports include the wake-up issues referenced by #33816 and #34866. Record this layer as a possible contributor when relevant, but do not treat it as demonstrated in another report without thread evidence.
 
 ### 2. Model loses an exposed session handle
 
@@ -49,7 +51,7 @@ A wrapper or tracked process exits or is lost while descendants continue. This c
 
 [#35482](https://github.com/openai/codex/issues/35482) has strong symptom overlap: an outer exec result appeared complete while `zsh -> zip` remained active and continued writing to an unlinked log. However, that report also covers sandbox inspection, process-group termination, interactive EOF handling, disk quotas, and warnings.
 
-Relationship to #35613: potentially relevant only if the incident used nested code-mode dispatch and lost the handle through the same result-discard path. #35613 would not solve the wider safety failures.
+Relationship to #35613: potentially relevant only if the incident used nested code-mode dispatch and lost the handle through the same result-discard path. The product surface and execution backend should be recorded as demonstrated or unknown rather than inferred. #35613 would not solve the wider safety failures.
 
 Default action: hold off on commenting. A future conditional cross-link should explicitly state what #35613 might explain and what it would not fix.
 
