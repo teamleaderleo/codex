@@ -132,7 +132,7 @@ The exploratory prototype contains five acceptance cases because it was also use
 
 ## Validation
 
-These checks establish prototype feasibility. They span closely related refs and workspaces rather than one final SHA. A broad project or workspace suite wasn't completed; the recorded evidence is limited to the focused, acceptance, compatibility, formatting, and diff checks below.
+The implementation was exercised more broadly than the two linked Actions runs alone show. The full roughly 3,000-test suite passed multiple times during implementation. The focused and acceptance runs below preserve inspectable subset evidence across closely related refs and workspaces; they are not the complete validation history, and the evidence is not consolidated onto one final SHA.
 
 ### Relevant refs
 
@@ -147,6 +147,7 @@ These checks establish prototype feasibility. They span closely related refs and
 
 | Coverage | Ref or workspace | Result | Boundary |
 |---|---|---|---|
+| Full roughly 3,000-test suite | Implementation workspaces | passed multiple times | Broad validation runs are not all represented by the linked Actions subset records |
 | Focused formatter and manager tests | `eb530466` | 9 passed | Selected unit tests only |
 | Formatting, scoped fixes, diff, and worktree checks | `eb530466` | passed | Formatting, fix, diff, and worktree checks only |
 | Local acceptance cases | Final local acceptance workspace | 5 passed | Includes the local exited-process/survivor case |
