@@ -67,7 +67,7 @@ Output:
 
 The simplest correct implementation reports the complete per-cell live list. It is normally around the manager's 64-process soft cap and consists of short numeric IDs, so the model-context cost is small.
 
-The exploratory prototype instead caps the visible list at 64. The first overflow caused by a locked exited entry does not by itself produce more than 64 live IDs because the lookup filters that exited entry. However, additional insertions can continue while pruning returns `None`; matching live entries can then exceed 64, allowing the prototype's `(+N more)` path to omit handles. If a future implementation adds a display bound, it needs another model-visible path to enumerate omitted IDs; none exists today.
+The exploratory prototype instead caps the visible list at 64. The manager limit is a soft cap. If pruning encounters an exited process whose interaction lock is held during terminal-event publication, it can admit a new entry without removing one. The first such overflow does not by itself produce more than 64 live IDs because the lookup filters the exited entry. The exit watcher emits the terminal event but does not remove that manager entry, so the store can remain above the nominal limit after the lock is released; each later insertion prunes at most one entry before inserting another. Matching live entries can therefore exceed 64, allowing the prototype's `(+N more)` path to omit handles. If a future implementation adds a display bound, it needs another model-visible path to enumerate omitted IDs; none exists today.
 
 ## Scope
 
@@ -93,6 +93,6 @@ These checks span related prototype refs and workspaces rather than one final SH
 - four Docker cases exercising exec-server live-process reporting;
 - a local-only exited-process/survivor case, leaving stale remote-exit exclusion untested.
 
-The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible during soft-cap overshoot.
+The display-cap cases are formatter-level policy tests, not an end-to-end guarantee that every live handle remains model-visible while the store remains above the nominal cap.
 
 The [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md) contains the data-flow analysis, exploratory implementation links, validation record, source references, limitations, and alternatives considered.
