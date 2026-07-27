@@ -55,9 +55,7 @@ The negative reproduction is a separate, earlier before-state artifact at [`7298
 
 ### 1. Preserve the existing creator identity
 
-Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. In the exploratory prototype, the dispatch site serialises the typed protocol value with `cell_id.to_string()`, and the unified-exec boundary reconstructs a typed `CellId` from that string.
-
-`CellId`'s current `Display` implementation writes `as_str()` verbatim, so that round trip is lossless today. Using `cell_id.as_str().to_string()` at the dispatch site would make the ownership key an explicit data contract rather than relying on a presentation trait continuing to remain verbatim.
+Nested dispatch already carries the public code-mode cell ID in `ToolCallSource::CodeMode`. The exploratory prototype serialises that value with `to_string()`, reconstructs a typed `CellId` at the unified-exec boundary, and retains it on the manager-owned process entry.
 
 ### 2. Store provenance with the manager-owned process
 
@@ -214,8 +212,7 @@ Results:
 
 ### Exploratory code
 
-- [Nested dispatch serialises the source cell through `Display`](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L362-L374)
-- [`CellId::Display` currently writes `as_str()` verbatim](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/code-mode-protocol/src/session.rs#L28-L51)
+- [Nested dispatch serialises the source cell](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/code_mode/mod.rs#L362-L374)
 - [`ExecCommandHandler` reconstructs the typed source cell](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L132-L138)
 - [`UnifiedExecContext` carries creator metadata](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L76-L99)
 - [`ProcessEntry` retains creator-cell attribution](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/src/unified_exec/mod.rs#L189-L200)
