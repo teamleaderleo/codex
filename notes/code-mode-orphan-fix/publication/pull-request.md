@@ -1,5 +1,28 @@
 # Surface live nested exec session IDs in code-mode completion
 
+Carries code-mode `CellId` provenance into manager-owned process entries and reports still-live session IDs when that cell reaches a terminal outcome. It won't change process lifecycle behaviour, JavaScript result fields, or public protocol shapes.
+
+## Implementation synopsis
+
+Conceptually, with names and surrounding fields omitted:
+
+```rust
+struct UnifiedExecContext {
+    creator_cell_id: Option<CellId>,
+    // existing fields...
+}
+
+struct ProcessEntry {
+    creator_cell_id: Option<CellId>,
+    // existing fields...
+}
+
+let live_session_ids =
+    process_manager.live_process_ids_created_by_cell(&cell_id);
+
+// Include live_session_ids in the existing terminal status.
+```
+
 ## What changed
 
 - Retain the originating code-mode `CellId` on manager-owned unified-exec process entries.
