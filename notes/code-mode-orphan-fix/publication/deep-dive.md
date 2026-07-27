@@ -121,6 +121,19 @@ The current code head adds `skip_if_target_windows!` to the four cases whose com
 
 A targeted Wine-exec run was attempted on current code head `77e7e314...`. It reached the correct x86-64 Linux runner and Bazel target, but Bazel analysis stopped before Rust test discovery because `windows-sandbox-rs/BUILD.bazel` supplied `binary_test_target_compatible_with` to a `codex_rust_crate` macro version that did not accept it. No Patch 1 test executed, so the result is a blocked validation path rather than a behavioural failure.
 
+## Current upstream drift
+
+Current upstream snapshot [`95637f70...`](https://github.com/openai/codex/commit/95637f7056835fea66bdd0044414af480fc0fd74) still has the defect: [`handle_runtime_response`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/code_mode/mod.rs#L201-L275) formats status directly from `RuntimeResponse` and performs no manager lookup.
+
+The surrounding implementation has moved since the selected base, so the branch will need a rebase rather than a mechanical cherry-pick. The design still maps directly:
+
+- [`ToolInvocation`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/context.rs#L47-L71) still carries `source: ToolCallSource`.
+- `ToolCallSource::CodeMode` still contains the runtime `cell_id`.
+- The current [`ExecCommandHandler`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs#L108-L133) currently ignores that source when constructing `UnifiedExecContext`.
+- Current [`UnifiedExecContext` and `ProcessEntry`](https://github.com/openai/codex/blob/95637f7056835fea66bdd0044414af480fc0fd74/codex-rs/core/src/unified_exec/mod.rs#L77-L181) still have no creator-cell field.
+
+That means the bug remains relevant and the provenance approach remains suitable, but final upstream-ready code should be adapted and rerun on the then-current base.
+
 ## Validation boundaries
 
 - Focused run `30220464228` validated the independent-cap head `eb530466...`: nine focused tests, formatting, scoped fixes, diff checks, and a clean worktree passed.
