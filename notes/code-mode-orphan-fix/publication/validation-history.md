@@ -23,8 +23,8 @@ The implementation evolved through closely related commits. The production behav
 | Local acceptance | Value-equivalent bounded implementation workspace | 5 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
 | Docker/Linux remote acceptance | Same workspace with Ubuntu 24.04 exec server | 4 passed; 1 explicit host-`TempDir` skip | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
 | Existing compatibility tests | Same workspace | 2 passed | [Actions run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056) |
-| Full `codex-core` library suite | Latest implementation head `77e7e314` | Queued; result pending when this ledger was updated | [Workflow page](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml), [launcher commit `f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954) |
-| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | Queued; result pending when this ledger was updated | [Wine workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml), [launcher commit `d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870) |
+| Full `codex-core` library suite | Latest implementation head `77e7e314` | 2,093 passed; 0 failed; 0 skipped | [Actions run 30291034837](https://github.com/teamleaderleo/codex/actions/runs/30291034837), artifact `code-mode-full-suite-log` |
+| Full shared core suite against Windows exec under Wine | Latest implementation head `77e7e314` | Launcher recorded; run result not yet attached to this ledger | [Wine workflow](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-wine-suite.yml), [launcher commit `d7ebb964`](https://github.com/teamleaderleo/codex/commit/d7ebb96477a384b73c1bf59fb29e7179fc755870) |
 
 Additional local test runs were performed during development. This ledger avoids inventing URLs or collapsing unlike refs; it records the repeated local count that was preserved in the project handoff and links every available public CI receipt.
 
@@ -69,15 +69,25 @@ The later change from a manager-cap alias to an independent literal `64` preserv
 
 ## Latest-head full library suite
 
-The temporary workflow at [`.github/workflows/temp-code-mode-full-suite.yml`](https://github.com/teamleaderleo/codex/actions/workflows/temp-code-mode-full-suite.yml) was launched by [`f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954).
+[GitHub Actions run 30291034837](https://github.com/teamleaderleo/codex/actions/runs/30291034837) was launched by [`f980d5a3`](https://github.com/teamleaderleo/codex/commit/f980d5a3e3e2bfe6c9058aaa90dbf1a0aae96954) and ran on GitHub-hosted Ubuntu 24.04.
 
-It checks out latest implementation head `77e7e3149df366236db2426596c23ebbe1d6bb48` and runs:
+The workflow checked out exact implementation head `77e7e3149df366236db2426596c23ebbe1d6bb48` and ran:
 
 ```sh
 just test -p codex-core --lib --no-capture --no-tests=fail
 ```
 
-`77e7e314` contains the same production code as `eb530466`; its only additional change is test-only Windows-target skip handling for POSIX acceptance commands. The workflow result and uploaded full log should be added here once the run completes.
+Results:
+
+- 2,093 tests passed;
+- 0 failed;
+- 0 skipped;
+- nextest summary duration: 239.445 seconds;
+- the job and every workflow step completed successfully.
+
+The uploaded artifact is `code-mode-full-suite-log` (artifact ID `8663148873`, digest `sha256:22e23ceede26120e2646150ef42e654cfca898d26fff4b3ee6494a0f1734fc7f`).
+
+`77e7e314` contains the same production code as `eb530466`; its only additional change is test-only Windows-target skip handling for POSIX acceptance commands.
 
 ## Wine/Bazel validation and the POSIX-command boundary
 
@@ -102,6 +112,8 @@ The Patch 1 `orphan_sessions` acceptance cases have an important target boundary
 - `code_mode_completion_reports_only_surviving_nested_session` returns early in every remote environment via `skip_if_remote!` because it embeds host `TempDir` PID/release paths that are not shared with Docker or Wine.
 
 Therefore, even a successful full Wine suite is evidence that the Bazel/Wine harness and the broader shared test suite work on the latest implementation head. It is **not** evidence that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows. A previous local inability to observe the skip messages is consistent with Bazel or Wine setup failing before the Rust test binary started; a runtime skip can only be emitted after the harness launches the test process.
+
+The Wine launcher is recorded, but the exact run URL and result still need to be attached to this ledger before making a pass, failure, or cancellation claim.
 
 ## Harness attempts that are not test failures
 
