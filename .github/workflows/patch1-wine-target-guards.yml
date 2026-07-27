@@ -90,10 +90,11 @@ jobs:
           test_status=${PIPESTATUS[0]}
           set -e
 
-          grep -E \
-            'suite::code_mode::orphan_sessions::|PID/release paths|Windows exec target|test result:|PASSED|FAILED|skipp' \
+          grep -Ei \
+            'suite::code_mode::orphan_sessions::|PID/release paths|Windows exec target|test result:|PASSED|FAILED|skipp|error:|fatal:|no such|not found|wine|bazel' \
             "$log_file" \
             > "$artifact_dir/summary.txt" || true
+          tail -n 250 "$log_file" > "$artifact_dir/failure-tail.txt" || true
 
           cat "$artifact_dir/summary.txt"
           git diff --check
@@ -118,7 +119,7 @@ jobs:
           publish_dir="validation-results/patch1-wine-target-guards"
           rm -rf "$publish_dir"
           mkdir -p "$publish_dir"
-          for file in environment.txt result.txt summary.txt git-status.txt git-diff-check.txt; do
+          for file in environment.txt result.txt summary.txt failure-tail.txt git-status.txt git-diff-check.txt; do
             if [[ -f "$artifact_dir/$file" ]]; then
               cp "$artifact_dir/$file" "$publish_dir/$file"
             fi
