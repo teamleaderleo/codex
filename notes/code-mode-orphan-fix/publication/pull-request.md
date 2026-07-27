@@ -59,11 +59,13 @@ Only sessions attributed to the exact completing cell are reported.
 
 Run and record every check on the same final rebased SHA:
 
-- `just fmt`
-- `just fix -p codex-core`
 - focused manager and formatter tests
 - the primary discarded-handle end-to-end regression
 - relevant existing code-mode compatibility tests
+- any terminal-outcome cases agreed in #<issue-number>
+- `just test -p codex-core`
+- `just fix -p codex-core`
+- `just fmt`
 - `git diff --check`
 
 Final head: `<final-sha>`
