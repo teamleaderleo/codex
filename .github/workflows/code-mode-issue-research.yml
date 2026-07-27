@@ -1,0 +1,50 @@
+name: Code mode issue research
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - review/code-mode-issue-ready
+    paths:
+      - .github/workflows/code-mode-issue-research.yml
+      - notes/code-mode-orphan-fix/research/scripts/**
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    name: Collect issue study data
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate collector syntax
+        run: python -m py_compile notes/code-mode-orphan-fix/research/scripts/collect_github_study.py
+
+      - name: Collect frames, samples, comments, and timeline data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python notes/code-mode-orphan-fix/research/scripts/collect_github_study.py \
+            --snapshot 2026-07-27T14:45:22Z \
+            --mature-size 300 \
+            --freshness-size 50 \
+            --mature-seed 3561301 \
+            --freshness-seed 3561302 \
+            --output-dir research-output
+
+      - name: Upload research dataset
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-issue-research-2026-07-27
+          path: research-output
+          if-no-files-found: error
+          retention-days: 30
