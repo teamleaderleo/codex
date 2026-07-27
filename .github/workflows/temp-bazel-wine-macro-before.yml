@@ -1,0 +1,48 @@
+name: Temporary Bazel Wine macro before-repair receipt
+
+on:
+  push:
+    branches:
+      - validation/bazel-wine-macro-contract-before
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Reproduce package-analysis failure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact upstream base
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: c21c8a5e215bc7b9215fc727cfe17f60ab170333
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Bazel CI
+        uses: ./.github/actions/setup-bazel-ci
+        with:
+          target: Linux
+
+      - name: Record environment and reproduce package analysis
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo "requested_base=c21c8a5e215bc7b9215fc727cfe17f60ab170333"
+            echo "checked_out_sha=$(git rev-parse HEAD)"
+            uname -a
+            bazel --version
+            bazel query //codex-rs/windows-sandbox-rs:all
+          } 2>&1 | tee "$RUNNER_TEMP/bazel-wine-macro-before.log"
+
+      - name: Upload reproduction log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bazel-wine-macro-before-log
+          path: ${{ runner.temp }}/bazel-wine-macro-before.log
+          if-no-files-found: error
+          retention-days: 30
