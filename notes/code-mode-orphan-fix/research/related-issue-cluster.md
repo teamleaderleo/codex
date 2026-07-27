@@ -25,7 +25,7 @@ Representative reports include the wake-up issues referenced by #33816 and #3486
 
 [#33816](https://github.com/openai/codex/issues/33816) reports that the model received and initially acknowledged a live `session_id`, later asserted completion without observing an exit, and attempted another `exec_command` while the first process remained live.
 
-Relationship to #35613: adjacent consequence, different failure point. In #33816 the handle reached the model and was then lost model-side. In #35613 nested code-mode JavaScript can discard the result object before the outer completion response exposes the handle.
+Relationship to #35613: adjacent consequence, different failure point. In #33816 the handle reached the model and was then lost model-side. In #35613 nested code-mode JavaScript can discard the result object before the outer completion response exposes the handle to the model.
 
 Default action: do not comment unless evidence shows that the affected turn used the same nested code-mode discarded-result path.
 
@@ -37,9 +37,9 @@ Relationship to #35613: closest umbrella issue. #35613 isolates one independentl
 
 Default action: the existing cross-link is sufficient. Do not add another comment unless a maintainer asks for clarification or new evidence changes the scope boundary.
 
-### 4. Handle never becomes visible after nested code-mode dispatch
+### 4. Handle never becomes model-visible after nested code-mode dispatch
 
-[#35613](https://github.com/openai/codex/issues/35613) is the focused case. JavaScript can keep only `.output`, discard nested `session_id` values, and finish while the unified-exec manager still owns the processes. Manager entries lack the creator-cell provenance needed to recover those handles for the outer status.
+[#35613](https://github.com/openai/codex/issues/35613) is the focused case. The nested result contains `session_id` and reaches JavaScript, but JavaScript can keep only `.output`, discard that result object, and finish before the outer completion response exposes the handle to the model. The unified-exec manager still owns the processes, while manager entries lack the creator-cell provenance needed to recover those handles for the outer status.
 
 Proposed narrow invariant: report every manager-observed live process attributed to the exact completing code-mode cell.
 
