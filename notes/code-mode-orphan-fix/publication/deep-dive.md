@@ -8,14 +8,14 @@ I used an exploratory implementation to trace the data flow, test the narrow fix
 
 Nested `exec_command` calls can remain live after code-mode JavaScript discards their returned `session_id` values. The terminal response still identifies the cell, and the unified-exec manager still owns the processes, but manager-owned process entries don't retain the corresponding creator-cell provenance. The completion path therefore can't map that cell back to its live session IDs.
 
-The proposed approach would carry the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, query still-live entries for that exact cell when its terminal response is formatted, and add their IDs to the existing status text. It wouldn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
+The proposed approach carries the existing `CellId` through `UnifiedExecContext` into `ProcessEntry`, queries still-live entries for that exact cell when an in-scope terminal response is formatted, and adds their IDs to the existing status text. It doesn't change process ownership, cleanup, polling, wake-up behaviour, JavaScript result fields, or public protocol shapes.
 
 ```text
 CodeMode CellId
   → UnifiedExecContext
   → ProcessEntry
   → exact-cell live-process lookup
-  → terminal response status
+  → in-scope terminal response status
 ```
 
 ## Failure
@@ -39,7 +39,7 @@ The [negative reproduction](https://github.com/teamleaderleo/codex/commit/7298dc
 
 [#34866](https://github.com/openai/codex/issues/34866) covers the broader mismatch between wrapper completion and nested-process state and proposes richer lifecycle representation.
 
-This issue isolates a smaller invariant: a completing cell should retain access to its manager-owned nested commands after JavaScript discards their result objects. The proposed approach wouldn't add a protocol field or choose a new continuation, cleanup, polling, or wake-up policy.
+This issue isolates a smaller invariant: a completing cell should retain access to its manager-owned nested commands after JavaScript discards their result objects. The proposed approach doesn't add a protocol field or choose a new continuation, cleanup, polling, or wake-up policy.
 
 ## Exploratory implementation
 
@@ -63,11 +63,11 @@ Nested dispatch already carries `ToolCallSource::CodeMode { cell_id, ... }`. In 
 
 `UnifiedExecContext` carries the creator identity. `ProcessEntry` stores it beside the manager process ID and manager-owned process, and `store_process` copies it into the entry.
 
-The manager tracks this value internally as `process_id`; the tool surface exposes the same control handle to the model as `session_id`. Creator provenance stays crate-internal, so public tool results, protocol events, and call-ID formats wouldn't change.
+The manager tracks this value internally as `process_id`; the tool surface exposes the same control handle to the model as `session_id`. Creator provenance stays crate-internal, so public tool results, protocol events, and call-ID formats don't change.
 
 ### 3. Query the existing liveness authority
 
-A read-only manager query can select entries whose creator matches the exact `CellId`, filter them through existing `has_exited()` state, and return their manager process IDs.
+A read-only manager query selects entries whose creator matches the exact `CellId`, filters them through existing `has_exited()` state, and returns their manager process IDs.
 
 Numeric ordering belongs in the formatter because it's a display contract. The exploratory prototype sorts in both the manager and formatter; the smaller implementation only needs the formatter sort.
 
@@ -83,7 +83,7 @@ The remaining scope choice is whether live IDs appear on:
 - successful and failed `Result`; or
 - every terminal response, including `Terminated`.
 
-The exploratory prototype currently implements the third option: successful and failed `Result`, plus `Terminated`, with `Yielded` excluded.
+The exploratory prototype implements the third option: successful and failed `Result`, plus `Terminated`, with `Yielded` excluded.
 
 ### 5. Keep the status outside emitted-output truncation
 
@@ -91,14 +91,14 @@ Code-mode emitted payload is truncated before the status header is prepended. A 
 
 ## Liveness semantics
 
-The query would describe manager-observed state at one instant. A selected process could exit immediately after lookup.
+The query describes manager-observed state at one instant. A selected process can exit immediately after lookup.
 
 `UnifiedExecProcess::has_exited()` also has a backend asymmetry:
 
 - local processes consult cached state and the live local handle;
 - exec-server-backed processes consult cached manager state.
 
-A recently exited remote process could therefore appear until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting, but the exit-then-exclude survivor case ran locally only. The relevant scope decision is whether manager-observed liveness is acceptable for exec-server-backed processes despite that brief lag.
+A recently exited remote process can therefore appear until its exit is reflected in manager state. Four Docker acceptance cases exercised exec-server live-process reporting, but the exit-then-exclude survivor case ran locally only. The relevant scope decision is whether manager-observed liveness is acceptable for exec-server-backed processes despite that brief lag.
 
 ## Exact-cell contract
 
@@ -106,15 +106,15 @@ Reporting every live process in the session would let one completing cell claim 
 
 The narrow contract is:
 
-> Report only manager-owned processes attributed to the exact cell whose terminal response is being formatted.
+> Report only manager-owned processes attributed to the exact cell whose in-scope terminal response is being formatted.
 
 For remote code-mode hosts, public cell IDs are already namespaced by host generation: generation one uses the bare ID, later generations use `g{N}:<id>`, and stale-generation IDs are rejected when translated back to a remote ID. That makes `CellId` equality a stable attribution key across remote host restarts within one Codex session.
 
 ## Display contract
 
-The prototype formats IDs in numeric order and applies a model-visible bound. The issue intentionally leaves the exact wording and bound open.
+The prototype formats IDs in numeric order and applies a model-visible bound. Its 64-ID display limit matches the manager's current 64-process capacity, so it cannot omit a reachable manager-owned ID.
 
-The prototype's display bound and manager process cap currently both equal 64, although they are separate constants with different responsibilities. The over-limit formatter tests therefore verify the output policy directly rather than demonstrating an ordinary steady-state manager path. Keeping the bounds independent would still allow the model-visible policy to remain stable if manager capacity changes later.
+The constants can remain conceptually separate because they serve different responsibilities, but the implementation must ensure that the display limit cannot fall below manager capacity unless another model-visible path can enumerate omitted IDs. The over-limit formatter tests verify that policy directly rather than demonstrating an ordinary steady-state manager path.
 
 ## Upstream status
 
@@ -127,7 +127,7 @@ Those five commits change none of the four production files touched by the proto
 The exploratory comparison contains 903 changed lines, dominated by a 527-line acceptance module. The core change can be reviewed with a much smaller set:
 
 - the production provenance and lookup change;
-- focused manager and formatter tests;
+- a focused manager test and formatter tests;
 - one primary end-to-end discarded-handle regression.
 
 The exploratory prototype contains five acceptance cases because it was also used to probe truncation, cross-cell attribution, yielded responses, and local-versus-remote liveness boundaries.
@@ -159,9 +159,9 @@ These checks establish prototype feasibility. They span closely related refs and
 
 - [GitHub Actions run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
 - GitHub-hosted Ubuntu 24.04
-- validated commit: `eb530466cafac0a5aee86342cd2b5ada9047d448`
+- tested tree, committed by the workflow after validation as `eb530466cafac0a5aee86342cd2b5ada9047d448`
 
-The run page shows the workflow commit that triggered the job. The workflow applied the display-bound decoupling edit and amended the validated result to `eb530466`, which is why the run's visible head SHA differs from the commit recorded here.
+The run page shows the workflow commit that triggered the job. The workflow applied the display-bound decoupling edit, tested the resulting working tree, and committed that validated tree as `eb530466`, which is why the run's visible head SHA differs from the commit recorded here.
 
 <details>
 <summary>Commands</summary>
