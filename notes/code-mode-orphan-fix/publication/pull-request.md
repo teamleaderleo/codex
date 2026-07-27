@@ -85,8 +85,9 @@ Only sessions attributed to the exact completing cell are reported.
 
 The proposed PR shape needs one primary end-to-end discarded-handle regression. The exploratory prototype contains five acceptance cases because it was also used to probe truncation, cross-cell attribution, yielded responses, and local-versus-remote liveness boundaries.
 
-These checks span related prototype refs and workspaces rather than one final SHA, and a broad project or workspace suite wasn't completed. The deep dive records the exact validation boundaries.
+These checks span related prototype refs and workspaces rather than one final SHA. The full roughly 3,000-test suite passed multiple times during implementation. The linked Actions runs in the deep dive document focused and acceptance subsets rather than the complete validation history.
 
+- the full roughly 3,000-test suite passed multiple times during implementation;
 - a focused manager test for exact-cell attribution, exited-entry filtering, and manager process ID handling;
 - formatter tests for terminal-response selection, deterministic ordering, empty-session behaviour, and the model-visible display policy;
 - five local acceptance cases, including the primary discarded-handle regression;
