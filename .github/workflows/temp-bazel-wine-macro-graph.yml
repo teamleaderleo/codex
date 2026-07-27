@@ -1,0 +1,108 @@
+name: Temporary Bazel Wine macro graph validation
+
+on:
+  push:
+    branches:
+      - validation/bazel-wine-macro-contract-graph
+
+permissions:
+  contents: read
+
+jobs:
+  graph:
+    name: Query and cquery compatibility contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: c48911c4fa750f2d134f0965dd0744690a6461b2
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Bazel CI
+        uses: ./.github/actions/setup-bazel-ci
+        with:
+          target: Linux
+
+      - name: Set up uv for repository formatter
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+
+      - name: Record graph and formatting receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "candidate_sha=c48911c4fa750f2d134f0965dd0744690a6461b2"
+            echo "checked_out_sha=$(git rev-parse HEAD)"
+            uname -a
+            bazel --version
+
+            echo "=== just fmt ==="
+            (
+              cd codex-rs
+              just fmt
+            )
+            git diff --exit-code
+
+            echo "=== expanded raw unit-test binary ==="
+            bazel query \
+              --output=build \
+              //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests-bin
+
+            echo "=== expanded public unit-test wrapper ==="
+            bazel query \
+              --output=build \
+              //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests
+
+            echo "=== raw unit-test binary and wrapper on Linux ==="
+            bazel cquery \
+              '//codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests-bin + //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests' \
+              --output=label_kind \
+              --skip_incompatible_explicit_targets
+
+            echo "=== helper binaries on Linux ==="
+            bazel cquery \
+              '//codex-rs/windows-sandbox-rs:codex-command-runner + //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup' \
+              --output=label_kind
+
+            echo "=== native core path to command runner ==="
+            bazel cquery \
+              'somepath(//codex-rs/core:core-all-test, //codex-rs/windows-sandbox-rs:codex-command-runner)' \
+              --output=transitions \
+              --transitions=lite
+
+            echo "=== native core path to setup helper ==="
+            bazel cquery \
+              'somepath(//codex-rs/core:core-all-test, //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup)' \
+              --output=transitions \
+              --transitions=lite
+
+            echo "=== Wine core path to command runner ==="
+            bazel cquery \
+              'somepath(//codex-rs/core:core-all-wine-exec-test, //codex-rs/windows-sandbox-rs:codex-command-runner)' \
+              --output=transitions \
+              --transitions=lite
+
+            echo "=== Wine core path to setup helper ==="
+            bazel cquery \
+              'somepath(//codex-rs/core:core-all-wine-exec-test, //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup)' \
+              --output=transitions \
+              --transitions=lite
+
+            echo "=== raw unit-test binary on Windows gnullvm ==="
+            bazel cquery \
+              //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests-bin \
+              --output=label_kind \
+              --platforms=//:windows_x86_64_gnullvm
+          } 2>&1 | tee "$RUNNER_TEMP/bazel-wine-macro-graph.log"
+
+      - name: Upload graph log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bazel-wine-macro-graph-log
+          path: ${{ runner.temp }}/bazel-wine-macro-graph.log
+          if-no-files-found: error
+          retention-days: 30
