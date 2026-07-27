@@ -83,4 +83,6 @@ It reports only sessions created by the exact cell whose terminal response is be
 - Should the warning appear only for successful `Result` responses, or for every terminal outcome, including failed `Result` and `Terminated`?
 - Is manager-observed liveness acceptable for exec-server-backed processes, given that exit reflection may lag the underlying process?
 
-I have a focused prototype with manager, formatter, and end-to-end regression coverage. If this direction matches the team's intended solution, I would be glad to rebase it onto current `main` and submit a smaller invited PR.
+## Technical notes
+
+A focused prototype covers manager, formatter, and end-to-end regression cases. Additional implementation detail, validation history, and known limitations are documented in the [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md).
