@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 import os
 import random
 import re
@@ -103,18 +102,18 @@ class GitHubClient:
                     elif reset:
                         sleep_for = max(1, int(reset) - int(time.time()) + 2)
                     else:
-                        sleep_for = min(60, 2 ** attempt)
+                        sleep_for = min(60, 2**attempt)
                     print(f"rate limited; sleeping {sleep_for}s", file=sys.stderr, flush=True)
                     time.sleep(sleep_for)
                     continue
                 if exc.code >= 500 and attempt < 7:
-                    time.sleep(min(30, 2 ** attempt))
+                    time.sleep(min(30, 2**attempt))
                     continue
                 raise RuntimeError(f"GitHub API {exc.code} for {url}: {body[:500]}") from exc
             except (urllib.error.URLError, TimeoutError) as exc:
                 if attempt == 7:
                     raise
-                time.sleep(min(30, 2 ** attempt))
+                time.sleep(min(30, 2**attempt))
         raise RuntimeError(f"request retries exhausted: {url}")
 
     def get_paginated(self, path: str, params: dict[str, Any], *, search: bool = False) -> list[Any]:
@@ -157,7 +156,6 @@ class GitHubClient:
         return self.get_paginated(f"/repos/{SOURCE_REPO}/issues/{number}/comments", {})
 
     def timeline(self, number: int) -> list[dict[str, Any]]:
-        # Timeline preview is supported by the standard GitHub API media type.
         return self.get_paginated(f"/repos/{SOURCE_REPO}/issues/{number}/timeline", {})
 
 
@@ -177,17 +175,17 @@ def partitioned_search(client: GitHubClient, start: datetime, end: datetime) -> 
                 )
             frames.extend(rows)
             return
-        if depth > 20 or (hi - lo) <= timedelta(minutes=1):
+        span_seconds = int((hi - lo).total_seconds())
+        if depth > 20 or span_seconds < 2:
             raise RuntimeError(f"cannot safely partition dense interval {lo}..{hi}")
-        midpoint = lo + (hi - lo) / 2
+        midpoint = lo + timedelta(seconds=span_seconds // 2)
         collect(lo, midpoint, depth + 1)
-        # Avoid overlap at the exact midpoint because GitHub ranges are inclusive.
-        collect(midpoint + timedelta(microseconds=1), hi, depth + 1)
+        # GitHub issue timestamps have second precision; start one second later to avoid overlap.
+        collect(midpoint + timedelta(seconds=1), hi, depth + 1)
 
     collect(start, end)
     deduped = {int(row["number"]): row for row in frames if "pull_request" not in row}
-    result = [deduped[number] for number in sorted(deduped)]
-    return result
+    return [deduped[number] for number in sorted(deduped)]
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -351,9 +349,9 @@ def linked_pr_numbers(timeline: list[dict[str, Any]]) -> list[int]:
     numbers: set[int] = set()
     for event in timeline:
         source = event.get("source") or {}
-        issue = source.get("issue") or {}
-        if issue.get("pull_request") and issue.get("number"):
-            numbers.add(int(issue["number"]))
+        source_issue = source.get("issue") or {}
+        if source_issue.get("pull_request") and source_issue.get("number"):
+            numbers.add(int(source_issue["number"]))
         subject = event.get("subject") or {}
         if subject.get("type") == "pull_request" and subject.get("url"):
             match = re.search(r"/pull/(\d+)", subject["url"])
@@ -431,8 +429,12 @@ def objective_features(issue: dict[str, Any]) -> dict[str, Any]:
         "code_block_count": code_blocks,
         "external_link_count": links,
         "template_usage": "### what version" in lower or "### what issue are you seeing" in lower,
-        "has_proposed_fix_or_source_analysis": any(token in lower for token in ["possible implementation", "proposed fix", "source", "implementation direction"]),
-        "has_fork_or_prototype": any(token in lower for token in ["fork", "prototype", "commit/"]176),
+        "has_proposed_fix_or_source_analysis": any(
+            token in lower for token in ["possible implementation", "proposed fix", "source", "implementation direction"]
+        ),
+        "has_fork_or_prototype": any(
+            token in lower for token in ["github.com/", "/commit/", "/tree/", "prototype", "fork"]
+        ),
         "machine_title_specificity": 2 if len(title) >= 25 and not re.fullmatch(r"(?i)(bug|issue|help|codex issue|not working)", title.strip()) else (1 if len(title) >= 12 else 0),
         "machine_user_impact": 2 if any(token in lower for token in ["impact", "blocked", "cannot", "fails", "risk", "data loss", "disk"]) else (1 if len(words) >= 80 else 0),
         "machine_actual_expected": 2 if has_actual_expected else (1 if "expected" in lower else 0),
@@ -447,8 +449,11 @@ def objective_features(issue: dict[str, Any]) -> dict[str, Any]:
 
 
 def machine_quality_score(features: dict[str, Any]) -> float | None:
-    keys = [key for key in features if key.startswith("machine_") and key not in {"machine_quality_score"}]
-    values = [features[key] for key in keys if isinstance(features[key], int)]
+    values = [
+        value
+        for key, value in features.items()
+        if key.startswith("machine_") and key != "machine_quality_score" and isinstance(value, int)
+    ]
     if not values:
         return None
     return sum(values) / (2 * len(values))
@@ -468,7 +473,13 @@ def enrich_sample(
         number = issue["number"]
         print(f"{cohort_name}: fetching thread {index}/{len(sample)} #{number}", flush=True)
         comments = client.comments(number)
-        timeline = client.timeline(number)
+        timeline_error = None
+        try:
+            timeline = client.timeline(number)
+        except Exception as exc:  # Timeline is useful but not required for comment-based response rates.
+            timeline = []
+            timeline_error = str(exc)
+            print(f"timeline unavailable for #{number}: {exc}", file=sys.stderr, flush=True)
         authority = authority_logins(issue, timeline)
         created = parse_dt(issue["created_at"])
         day30 = created + timedelta(days=30)
@@ -486,17 +497,25 @@ def enrich_sample(
             "outcome_as_of_t_machine": outcome(issue, timeline),
             "verified_authority_logins": ";".join(sorted(authority)),
             "linked_pr_numbers": ";".join(str(value) for value in linked_pr_numbers(timeline)),
+            "timeline_available": timeline_error is None,
+            "timeline_error": timeline_error,
             "engagement_30d_machine": engagement_30["engagement"],
             "engagement_as_of_t_machine": engagement_t["engagement"],
             "first_verified_maintainer_at": first_maintainer_at,
             "first_verified_maintainer_hours": first_maintainer_hours,
             "late_maintainer_response": bool(first_maintainer_hours is not None and first_maintainer_hours > 720),
-            **{f"30d_{key}": value for key, value in engagement_30.items() if key not in {"engagement", "first_maintainer_at", "first_external_human_at"}},
+            **{
+                f"30d_{key}": value
+                for key, value in engagement_30.items()
+                if key not in {"engagement", "first_maintainer_at", "first_external_human_at"}
+            },
             **features,
             "coding_status": "machine provisional; requires rubric review",
         }
         records.append(record)
-        raw_threads.append({"issue": issue, "comments": comments, "timeline": timeline})
+        raw_threads.append(
+            {"issue": issue, "comments": comments, "timeline": timeline, "timeline_error": timeline_error}
+        )
     write_jsonl(output_dir / f"{cohort_name}-threads.jsonl", raw_threads)
     write_csv(output_dir / f"{cohort_name}-coded-machine.csv", records)
     return records
@@ -505,12 +524,17 @@ def enrich_sample(
 def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "n": len(records),
-        "engagement_30d": Counter(row["engagement_30d_machine"] for row in records),
-        "engagement_as_of_t": Counter(row["engagement_as_of_t_machine"] for row in records),
-        "outcome_as_of_t": Counter(row["outcome_as_of_t_machine"] for row in records),
-        "primary_issue_type_machine": Counter(row["primary_issue_type_machine"] for row in records),
+        "engagement_30d": dict(Counter(row["engagement_30d_machine"] for row in records)),
+        "engagement_as_of_t": dict(Counter(row["engagement_as_of_t_machine"] for row in records)),
+        "outcome_as_of_t": dict(Counter(row["outcome_as_of_t_machine"] for row in records)),
+        "primary_issue_type_machine": dict(Counter(row["primary_issue_type_machine"] for row in records)),
         "bot_response_30d": sum(bool(row.get("30d_bot_response_present")) for row in records),
-        "verified_maintainer_within_30d": sum(row["engagement_30d_machine"].startswith("maintainer") or row["engagement_30d_machine"].startswith("substantive") for row in records),
+        "verified_maintainer_within_30d": sum(
+            row["engagement_30d_machine"].startswith("maintainer")
+            or row["engagement_30d_machine"].startswith("substantive")
+            for row in records
+        ),
+        "timeline_unavailable": sum(not bool(row.get("timeline_available")) for row in records),
     }
 
 
@@ -530,7 +554,7 @@ def main() -> None:
     snapshot = parse_dt(args.snapshot)
     mature_start = datetime(2026, 4, 1, tzinfo=timezone.utc)
     mature_end = snapshot - timedelta(days=30)
-    freshness_start = mature_end + timedelta(microseconds=1)
+    freshness_start = mature_end + timedelta(seconds=1)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -545,7 +569,7 @@ def main() -> None:
         "freshness_sample_size": args.freshness_size,
         "mature_seed": args.mature_seed,
         "freshness_seed": args.freshness_seed,
-        "sampling": "simple random sample without replacement from complete deduplicated date-partitioned frame",
+        "sampling": "simple random sample without replacement from complete deduplicated recursively date-partitioned frame",
         "coding": "objective fields plus provisional deterministic machine coding; human rubric review required",
     }
     write_json(output_dir / "study-config.json", config)
@@ -579,7 +603,7 @@ def main() -> None:
         ],
     }
     write_json(output_dir / "machine-summary.json", summary)
-    print(json.dumps(summary, indent=2, default=dict), flush=True)
+    print(json.dumps(summary, indent=2), flush=True)
 
 
 if __name__ == "__main__":
