@@ -1,0 +1,88 @@
+{
+  "config": {
+    "source_repository": "openai/codex",
+    "snapshot_t": "2026-07-27T14:45:22Z",
+    "mature_start": "2026-04-01T00:00:00Z",
+    "mature_end": "2026-06-27T14:45:22Z",
+    "freshness_start": "2026-06-27T14:45:23Z",
+    "freshness_end": "2026-07-27T14:45:22Z",
+    "mature_sample_size": 300,
+    "freshness_sample_size": 50,
+    "mature_seed": 3561301,
+    "freshness_seed": 3561302,
+    "sampling": "simple random sample without replacement from complete deduplicated recursively date-partitioned frame",
+    "coding": "objective fields plus provisional deterministic machine coding; human rubric review required"
+  },
+  "frame_sizes": {
+    "mature": 8657,
+    "freshness": 4171
+  },
+  "mature": {
+    "n": 300,
+    "engagement_30d": {
+      "unverified human/community response": 100,
+      "maintainer information request": 21,
+      "author-only/no external human response": 145,
+      "substantive maintainer response": 20,
+      "maintainer acknowledgement": 14
+    },
+    "engagement_as_of_t": {
+      "unverified human/community response": 117,
+      "maintainer information request": 25,
+      "author-only/no external human response": 122,
+      "substantive maintainer response": 22,
+      "maintainer acknowledgement": 14
+    },
+    "outcome_as_of_t": {
+      "duplicate": 25,
+      "open unresolved": 200,
+      "not planned": 16,
+      "completed/fixed": 59
+    },
+    "primary_issue_type_machine": {
+      "performance or resource problem": 38,
+      "reproducible bug": 181,
+      "feature request": 64,
+      "model-behaviour report": 4,
+      "intermittent bug": 10,
+      "documentation request": 3
+    },
+    "bot_response_30d": 184,
+    "verified_maintainer_within_30d": 55,
+    "timeline_unavailable": 0
+  },
+  "freshness": {
+    "n": 50,
+    "engagement_30d": {
+      "unverified human/community response": 16,
+      "author-only/no external human response": 33,
+      "substantive maintainer response": 1
+    },
+    "engagement_as_of_t": {
+      "unverified human/community response": 16,
+      "author-only/no external human response": 33,
+      "substantive maintainer response": 1
+    },
+    "outcome_as_of_t": {
+      "open unresolved": 44,
+      "not planned": 1,
+      "completed/fixed": 3,
+      "duplicate": 2
+    },
+    "primary_issue_type_machine": {
+      "performance or resource problem": 10,
+      "reproducible bug": 28,
+      "feature request": 8,
+      "intermittent bug": 3,
+      "model-behaviour report": 1
+    },
+    "bot_response_30d": 31,
+    "verified_maintainer_within_30d": 1,
+    "timeline_unavailable": 0
+  },
+  "limitations": [
+    "Comment subtype, primary issue type, outcome detail, and quality fields marked machine are provisional rule-based coding.",
+    "Timeline availability varies; unavailable event data must not be treated as proof that no triage action occurred.",
+    "Human rubric scoring and reliability review are required before publication-quality claims about issue quality."
+  ]
+}

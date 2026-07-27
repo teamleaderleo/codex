@@ -1,0 +1,14 @@
+{
+  "source_repository": "openai/codex",
+  "snapshot_t": "2026-07-27T14:45:22Z",
+  "mature_start": "2026-04-01T00:00:00Z",
+  "mature_end": "2026-06-27T14:45:22Z",
+  "freshness_start": "2026-06-27T14:45:23Z",
+  "freshness_end": "2026-07-27T14:45:22Z",
+  "mature_sample_size": 300,
+  "freshness_sample_size": 50,
+  "mature_seed": 3561301,
+  "freshness_seed": 3561302,
+  "sampling": "simple random sample without replacement from complete deduplicated recursively date-partitioned frame",
+  "coding": "objective fields plus provisional deterministic machine coding; human rubric review required"
+}

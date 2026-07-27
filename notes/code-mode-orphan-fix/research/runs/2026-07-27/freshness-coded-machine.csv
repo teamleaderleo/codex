@@ -1,0 +1,3837 @@
+number,url,title,body,state,state_reason,created_at,updated_at,closed_at,comments_count,author_login,author_type,author_association,labels,reactions_total,primary_issue_type_machine,outcome_as_of_t_machine,verified_authority_logins,linked_pr_numbers,timeline_available,timeline_error,engagement_30d_machine,engagement_as_of_t_machine,first_verified_maintainer_at,first_verified_maintainer_hours,late_maintainer_response,30d_bot_response_present,30d_community_response_present,30d_maintainer_acknowledgement_present,30d_maintainer_information_request_present,30d_substantive_maintainer_response_present,body_word_count,code_block_count,external_link_count,template_usage,has_proposed_fix_or_source_analysis,has_fork_or_prototype,machine_title_specificity,machine_user_impact,machine_actual_expected,machine_reproduction,machine_environment,machine_evidence,machine_scope,machine_prior_art,machine_diagnosis_discipline,machine_first_screen_readability,machine_quality_score,coding_status
+30405,https://github.com/openai/codex/issues/30405,Windows Codex 26.623.5546.0 still persists high-frequency TRACE logs to logs_2.sqlite WAL,"### Summary
+
+On Windows, Codex Desktop `26.623.5546.0` still persists high-frequency `TRACE` logs into the local SQLite feedback log database (`logs_2.sqlite`) and its WAL during normal active use.
+
+This appears related to existing reports such as #17320, #28224, #29532, #29832, and #30236, but I am filing this with fresh Windows data from `26.623.5546.0`.
+
+### Environment
+
+- OS: Microsoft Windows NT 10.0.26200.0, x64
+- Codex app package: `OpenAI.Codex_26.623.5546.0_x64__2p2nqsd0c76g0`
+- App-server command: `codex.exe app-server --analytics-default-enabled`
+- Observed command runner: `codex-command-runner-0.142.3.exe`
+- Files observed:
+  - `C:\Users\<user>\.codex\logs_2.sqlite`
+  - `C:\Users\<user>\.codex\logs_2.sqlite-wal`
+  - `C:\Users\<user>\.codex\state_5.sqlite-wal`
+- Current shell environment had `RUST_LOG=warn`; no user/machine `RUST_LOG` override was found.
+
+### Observed behavior
+
+A 30-second local sample during normal Codex use showed continuous insert/prune churn in `logs_2.sqlite`:
+
+```text
+logs.max(id):   21,156,392 -> 21,181,109
+Delta ids:      +24,717 in 30 seconds
+Approx rate:    ~824 inserted log ids/sec
+Retained rows:  44,757 -> 44,852
+Delta rows:     +95
+```
+
+Recent persisted rows after the sample were entirely TRACE-level:
+
+```text
+Recent 1000 rows by level:
+TRACE 1000
+
+Recent 1000 rows by target:
+TRACE log                                  949
+TRACE codex_app_server::outgoing_message   51
+```
+
+File sizes and mtimes at the same point:
+
+```text
+logs_2.sqlite       147,492,864 bytes
+logs_2.sqlite-wal    25,206,192 bytes
+state_5.sqlite-wal    4,243,632 bytes
+```
+
+A separate 30-second mtime sample showed `logs_2.sqlite-wal`, `logs_2.sqlite`, and `state_5.sqlite-wal` modification times advancing repeatedly while the `.sandbox` text log did not continue growing. This suggests the ongoing write pressure is mostly SQLite/WAL churn rather than simple text-log append growth.
+
+Representative TRACE bodies were not included because they may contain private local/session data. Sanitized inspection showed low-level websocket/tokio/tungstenite style entries such as `poll_read`, `poll_next`, `WouldBlock`, frame metadata, and large frame payload logging.
+
+### Disk write / SSD endurance concern
+
+A Windows Performance Counter sample over the same 30-second window reported the `codex` process at approximately:
+
+```text
+Average process IO Write Bytes/sec: ~1,346,401 B/s (~1.35 MB/s)
+Max process IO Write Bytes/sec:     ~15,324,126 B/s (~15.3 MB/s)
+```
+
+I understand Windows process IO counters are not identical to physical NAND writes and may include non-disk IO. The physical disk counter is also system-wide, not Codex-only. Still, the SQLite evidence above confirms that a large part of the churn is local persistence.
+
+If the measured ~1.35 MB/s write rate were sustained, it would be approximately:
+
+```text
+~116 GB/day
+~42.5 TB/year
+```
+
+That is a meaningful fraction of common consumer SSD endurance ratings:
+
+```text
+150 TBW drive:  ~28% of warranty TBW/year
+300 TBW drive:  ~14% of warranty TBW/year
+600 TBW drive:   ~7% of warranty TBW/year
+1200 TBW drive:  ~3.5% of warranty TBW/year
+```
+
+Short bursts at the observed peak are not equivalent to sustained writes, but the issue is concerning because the churn is mostly diagnostic TRACE data and can recur throughout long Codex sessions.
+
+### Expected behavior
+
+Production Codex Desktop builds should not persist high-frequency frame-level / dependency-level TRACE logs into `logs_2.sqlite` by default, especially when `RUST_LOG=warn` is in effect.
+
+Expected improvements:
+
+- The SQLite log sink should honor the same effective log-level filter as the runtime logger, or have its own documented configuration.
+- Low-value `TRACE target=log` and websocket/tungstenite frame logs should be suppressed, sampled, summarized, or bounded.
+- Local diagnostic logs should have clear size/write caps, rotation, and WAL checkpoint/truncation behavior.
+- Users should have a documented option to disable or reduce persistent local diagnostic logging without disabling durable thread/state data.
+
+### Privacy note
+
+I am not attaching `logs_2.sqlite` or raw `feedback_log_body` values because they may contain private session text, local paths, tool output, or protocol payload fragments.",open,,2026-06-28T03:08:44Z,2026-06-28T23:25:01Z,,6,fffire-oss,User,NONE,"['bug', 'windows-os', 'app', 'app-server', 'performance']",3,performance or resource problem,open unresolved,,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,657,6,0,False,False,False,2,2,1,0,2,2,2,2,2,2,0.85,machine provisional; requires rubric review
+30408,https://github.com/openai/codex/issues/30408,MCP server processes leak: per-thread processes never cleaned up (9+ GB RSS),"## Bug description
+
+Codex app-server spawns a full set of global MCP server processes for each new thread/conversation, but **never kills them when threads are archived or closed**. Over time, orphaned MCP processes accumulate unboundedly.
+
+## Environment
+- Codex Desktop: 0.142.3 (macOS, Apple Silicon)
+- OS: macOS 15.x, 64 GB RAM
+
+## Steps to reproduce
+1. Configure global MCP servers in `~/.codex/config.toml` (e.g. `playwright`, `davinci-resolve`, `node_repl`)
+2. Open Codex Desktop, create ~25 threads over a session
+3. Close/archive threads as normal
+4. Check process list
+
+## Expected behavior
+MCP server processes should be cleaned up when the owning thread is closed or archived. At most one set of MCP processes should exist per actively-used server.
+
+## Actual behavior
+After 25 threads, observed **133 orphaned MCP processes** consuming **~9.3 GB RSS**:
+
+| MCP Server | Orphaned Processes | RSS |
+|---|---|---|
+| `playwright` (npm + node) | 52 | 2.9 GB |
+| `davinci-resolve` (python) | 26 | 3.5 GB |
+| `node_repl` | 26 | 266 MB |
+| npm exec wrappers | 29 | 2.6 GB |
+
+All processes had PPID = app-server PID. The app-server holds them indefinitely.
+
+## Root cause
+The app-server does not track which MCP processes belong to which thread, and has no lifecycle management to kill MCP processes when threads end. There is also no `idle_timeout`, `reuse`, or `shared` config option for MCP servers.
+
+## Workaround
+- Manually kill orphaned processes: `pkill -P <app-server-pid> -f ""playwright-mcp|davinci-resolve""`
+- Remove rarely-used MCP servers from global config and add them per-project instead
+
+## Suggested fix
+- Track MCP process ownership per-thread
+- Kill MCP processes when the owning thread is closed/archived
+- Alternatively, add a `shared` or `reuse` mode so all threads share a single MCP process instance
+- Consider an `idle_timeout` option to auto-kill MCP processes after N minutes of no use",open,,2026-06-28T03:40:13Z,2026-07-26T00:01:55Z,,17,kkkayye,User,NONE,"['bug', 'mcp', 'app', 'app-server', 'performance']",4,performance or resource problem,open unresolved,,28,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,296,0,0,False,False,False,2,1,2,2,2,0,2,,2,2,0.8333333333333334,machine provisional; requires rubric review
+30710,https://github.com/openai/codex/issues/30710,Windows Desktop: immediate submit after opening a stored thread can show Error submitting message,"﻿### What version of the Codex App are you using (From About Codex dialog)?
+
+Codex Desktop Windows app package: `OpenAI.Codex 26.623.9142.0`.
+
+Bundled CLI/core visible from the installed Codex runtime: `codex-cli 0.130.0-alpha.5`.
+
+### What subscription do you have?
+
+ChatGPT Pro (`$100` plan).
+
+### What platform is your computer?
+
+`Microsoft Windows NT 10.0.26200.0 x64`, Codex Desktop app.
+
+### What issue are you seeing?
+
+Tags: `app`, `app-server`, `session`, `windows-os`, `Desktop`, `turn/start`, `thread/resume`, `notLoaded`, `Error submitting message`.
+
+When reopening a long/stored Desktop thread on Windows and submitting a prompt immediately, the composer can fail with **""Error submitting message""**. Fully restarting Codex Desktop clears the condition.
+
+This appears to be a narrower race than the generic sidecar stall reports: the thread exists on disk, but the runtime may still be in a stored/not-loaded state when the Desktop client sends `turn/start`.
+
+### What steps can reproduce the bug?
+
+1. Use Codex Desktop on Windows with an existing long/stored thread that is not currently loaded in the app-server runtime.
+2. Open the thread.
+3. Immediately submit a prompt before the thread visibly finishes loading/resuming.
+4. Observe that the composer can show **""Error submitting message""**.
+5. Quit/restart Codex Desktop.
+6. Reopen the same thread and submit again; the failure can clear after restart.
+
+Observed pattern:
+
+- the thread is still readable/alive,
+- restart clears the submit failure,
+- the failure is most likely at the `turn/start` vs `thread/resume` boundary rather than model/provider execution.
+
+### What is the expected behavior?
+
+Desktop should not submit `turn/start` against a stored-but-not-yet-loaded thread without a recoverable path.
+
+Expected behavior could be one of:
+
+- disable or queue composer submit until `thread/resume` completes,
+- call/wait for `thread/resume` before `turn/start`, or
+- receive a structured app-server error that lets the client retry after resume instead of showing generic **""Error submitting message""**.
+
+### Additional information
+
+Related issues:
+
+- #27395 is closely related because it covers Desktop **""Error submitting message""** around `turn/start` and app-server sidecar behavior.
+- #23644 is closely related because restart clears stale conversation/session state.
+- #30704 is related only as a broader Windows Desktop live-state issue; its direct symptom is active-turn interruption from opening a local file, so it does not look like the primary duplicate.
+
+I also posted a detailed analysis and patch outline on #27395:
+https://github.com/openai/codex/issues/27395#issuecomment-4843338799
+
+Root-cause hypothesis from the public app-server code:
+
+`TurnRequestProcessor::load_thread` resolves a thread id and then calls `thread_manager.get_thread(thread_id)`. For `turn/start`, if Desktop races ahead before `thread/resume` has loaded the stored thread into the runtime, the app-server can return an unstructured `thread not found`-style failure even though the rollout exists on disk.
+
+A small contract improvement would be to return a structured retryable invalid-request error for this boundary, for example:
+
+```json
+{
+  ""code"": -32600,
+  ""message"": ""thread not loaded or not found: <thread_id>; call thread/resume and wait for it to complete before turn/start"",
+  ""data"": {
+    ""thread_error_code"": ""thread_not_loaded"",
+    ""retry_method"": ""thread/resume"",
+    ""blocked_method"": ""turn/start""
+  }
+}
+```
+
+That would give Desktop a precise signal to wait/retry after resume instead of surfacing a generic composer error.
+
+Potential test coverage:
+
+1. create a fake stored rollout,
+2. start app-server without calling `thread/resume`,
+3. send `turn/start` for that stored thread id,
+4. assert the full JSON-RPC error object includes `thread_error_code=thread_not_loaded`, `retry_method=thread/resume`, and `blocked_method=turn/start`.
+
+Per `docs/contributing.md`, external code PRs are invitation-only. I am opening this as a bug report with reproduction details and a high-level fix outline rather than an unsolicited PR.
+",open,,2026-06-30T12:23:09Z,2026-07-14T17:58:47Z,,1,YoneRai12,User,NONE,"['bug', 'windows-os', 'app', 'app-server']",1,performance or resource problem,open unresolved,,,True,,unverified human/community response,unverified human/community response,,,False,False,True,False,False,False,614,1,1,True,False,True,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
+30886,https://github.com/openai/codex/issues/30886,Codex App crashes when Open in File Explorer targets unavailable removable drive,"# Codex App bug report: ""Open in File Explorer"" crashes when attachment path is unavailable
+
+## Summary
+
+In the Codex desktop app on Windows, selecting **Open in File Explorer** from an attachment menu can crash the entire Codex app when the attachment points to a file on a removable drive that is currently unavailable.
+
+The app should show a non-fatal error such as ""Path does not exist"" or ""Drive is unavailable"" instead of terminating.
+
+## Environment
+
+- Product: Codex desktop app
+- OS: Windows 11 Home, Chinese edition
+- OS version: 10.0.26200, 64-bit
+- Thread URL: `codex://threads/019eea77-e6d4-76e1-8bc4-8e3497a7395f`
+- Affected action: attachment menu -> `Open in File Explorer`
+
+## Affected file path
+
+The attachment pointed to a PPTX file on a removable USB drive using drive letter `F:`.
+
+Example pattern:
+
+```text
+F:\...\20260614\Al_MoOx_interface_2groups_template_v2.pptx
+```
+
+The original path contained non-ASCII Chinese folder/file names, but the core trigger appears to be that the `F:` drive was unavailable when the menu item was clicked.
+
+## Steps to reproduce
+
+1. In Codex desktop app on Windows, create or view a thread with a file attachment whose local path is on a removable drive, for example `F:\...\file.pptx`.
+2. Close Codex or leave the thread.
+3. Unplug or otherwise unmount the removable drive so the original drive letter no longer exists.
+4. Reopen the thread.
+5. Open the attachment menu.
+6. Click **Open in File Explorer**.
+
+## Actual behavior
+
+Codex desktop app crashes/exits.
+
+## Expected behavior
+
+Codex should not crash. It should handle the missing path gracefully and show an inline/toast/dialog error, for example:
+
+```text
+Cannot open file location: path does not exist or drive is unavailable.
+```
+
+## Confirmation
+
+After reconnecting the USB drive and restoring the `F:` drive, the same attachment could be opened from the same Codex thread. This suggests the file and thread data were valid, and the crash was triggered by missing-path handling.
+
+## Privacy note
+
+This report intentionally does not include the PPT file or full session logs, because logs and documents may contain private research data.
+",open,,2026-07-02T02:03:08Z,2026-07-02T02:04:36Z,,1,Xiaoka0814,User,NONE,"['bug', 'windows-os', 'app']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,339,2,0,False,False,False,2,2,2,2,2,2,2,,2,2,1.0,machine provisional; requires rubric review
+30957,https://github.com/openai/codex/issues/30957,"SQLite WAL journal mode corrupts runtime DBs (logs_2, state_5, …) when CODEX_HOME is on a network filesystem (NFS)","### What version of Codex CLI is running?
+
+codex-cli 0.137.0
+
+### What subscription do you have?
+
+Business
+
+### Which model were you using?
+
+gpt-5.4-mini
+
+### What platform is your computer?
+
+Linux 6.12.94+deb13-amd64 x86_64 unknown
+
+### What terminal emulator and version are you using (if applicable)?
+
+ssh
+
+### Codex doctor report
+
+[report.json](https://github.com/user-attachments/files/29616846/report.json)
+
+### What issue are you seeing?
+
+When CODEX_HOME (~/.codex) is on an NFSv4.2 mount, codex's runtime SQLite databases periodically corrupt. logs_2.sqlite is hit most often (it is the high-volume trace/feedback writer), but the same root cause affects all four runtime DBs (state_5.sqlite, logs_2.sqlite, goals_1.sqlite, memories_1.sqlite) because they all open with PRAGMA journal_mode=WAL.
+
+Observed: PRAGMA integrity_check returns database disk image is malformed (DB header corruption); codex's auto-recovery moves the damaged DB into ~/.codex/db-backups/ and rebuilds a fresh one. With logs_2 this is merely annoying (ephemeral, recreatable); with state_5 it degrades the resume index (codex falls back to the JSONL rollout scan, so data isn't lost, but the index is rebuilt repeatedly).
+
+Relevant mount: mini7:/mnt/home on /home type nfs4 (rw,relatime,vers=4.2,hard,proto=tcp,local_lock=none,sec=sys). CODEX_HOME is shared across multiple hosts (codex run from different SSH sessions/machines against the same home).
+
+### What steps can reproduce the bug?
+
+1. Put CODEX_HOME on NFSv4 (e.g. ~/.codex under an NFSv4.2 mount, local_lock=none, shared by ≥1 host).
+2. Run codex normally over time / from more than one host against the same CODEX_HOME.
+3. After some uptime, inspect the runtime DBs:
+sqlite3 ~/.codex/logs_2.sqlite 'PRAGMA integrity_check;'
+sqlite3 ~/.codex/state_5.sqlite 'PRAGMA integrity_check;'
+3. Expected to eventually return database disk image is malformed (header) rather than ok.
+4. Equivalently, observe codex auto-creating ~/.codex/db-backups/<ts>/ and rebuilding the DB on startup.
+
+Root cause is in codex-rs/state/src/runtime.rs::base_sqlite_options, which hardcodes SqliteJournalMode::Wal for every runtime DB.
+
+
+### What is the expected behavior?
+
+Runtime SQLite DBs should not corrupt when CODEX_HOME is on a network filesystem. SQLite's own documentation states WAL must not be used on network filesystems (mmap'd -shm is not coherent across
+NFS clients — https://www.sqlite.org/wal.html, §""Use of WAL with Network Filesystems""). Codex should use a rollback journal mode (e.g. Truncate) on NFS and keep Wal only on local filesystems.
+
+### Additional information
+
+Root cause. SQLite WAL coordinates readers/writers through a mmap'd shared-memory index file (*-shm). On NFS each client has its own page-cache view of -shm; mmap coherence is not guaranteed
+across clients, so a WAL checkpoint can write wrong data back to the DB → header corruption. This is independent of fcntl locking — SQLite's POSIX byte-range locks work on NFSv4; the failure is
+the separate mmap'd index. Rollback journal modes (Delete/Truncate) create no -shm, so they don't have this exposure.
+
+Empirical verification (NFSv4.2 host, sqlite 3.46.1):
+- fcntl byte-range locks are enforced on this mount (local_lock=none → stateful server-side NFSv4 locks); a conflicting LOCK_EX|LOCK_NB gets EAGAIN.
+- WAL creates -shm while a connection is open; Delete/Truncate create no -shm.
+- Delete/Truncate on NFS: 4 concurrent writers × 200 rows = 800 rows, 0 database is locked errors, integrity_check=ok.
+- Latency on NFS, batched 1000 rows/txn (codex's log_db.rs flush path): WAL 0.0041 s, Truncate 0.0041 s (== WAL), Delete 0.0055 s. Rollback modes are effectively free vs WAL on the batched path.
+
+Proposed fix. In base_sqlite_options, choose journal mode from the DB path's filesystem instead of hardcoding Wal:
+- Linux: statfs(2), compare f_type to NFS_SUPER_MAGIC (0x6969).
+- macOS: statfs, check MNT_NFS in f_flags.
+- Platforms without a portable `statfs` (Windows, BSD, …): fall back to `Wal` (current behavior — never worse than today).
+- `statfs` error or an otherwise-unclassifiable mount: bias toward the NFS-safe mode (`Truncate`) rather than silently keeping `WAL`, since this is a corruption-prevention fix.
+
+On NFS use SqliteJournalMode::Truncate (rollback journal, no -shm, NFS-safe; == WAL on the batched path, less metadata churn than Delete because it truncates the journal instead of create+unlink per commit). On local filesystems keep Wal. The decision can be factored into a pure helper for unit testing (the statfs call can't be exercised in CI without an NFS mount). This fixes the corruption for all runtime DBs, not just logs_2.
+
+Current workaround. A wrapper deletes logs_2.sqlite{,-wal,-shm} on each codex startup so every session starts with a clean WAL state. This works only because logs_2 is ephemeral; it does not protect state_5/goals_1/memories_1, and is not a source-level fix.
+
+",open,,2026-07-02T22:25:00Z,2026-07-03T00:12:48Z,,1,dkhokhlov,User,CONTRIBUTOR,"['bug', 'CLI', 'session']",0,performance or resource problem,open unresolved,dkhokhlov,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,785,0,2,True,True,True,2,2,2,2,2,1,2,,2,2,0.9444444444444444,machine provisional; requires rubric review
+30958,https://github.com/openai/codex/issues/30958,stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses),"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.623.81905
+
+### What subscription do you have?
+
+Pro 20x
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26200.0 x64
+
+### What issue are you seeing?
+
+Since yesterday, I have been encountering recurring connection errors while using Codex, which are blocking my ability to complete tasks. The stream consistently drops before the completion of the response.
+
+Error Message(s):
+
+""stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)""
+
+""Error running remote compact task: stream disconnected before completion: error sending request for url (https://chatgpt.com/backend-api/codex/responses)""
+
+Context & Observations:
+
+The issue occurs frequently during normal usage, often when the model is generating longer responses or performing remote compaction tasks.
+
+### What steps can reproduce the bug?
+
+Anything, even something like ""continue""
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",open,,2026-07-02T22:54:38Z,2026-07-23T08:32:36Z,,5,zhangwenzheng0451,User,NONE,"['bug', 'context', 'app', 'connectivity']",0,reproducible bug,open unresolved,zhangwenzheng0451,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,155,0,2,True,False,False,2,1,2,1,2,1,2,,2,2,0.8333333333333334,machine provisional; requires rubric review
+31089,https://github.com/openai/codex/issues/31089,Proposal: add event-driven one-shot waits for local path changes,"# Proposal: event-driven one-shot waits for local path changes
+
+## Summary
+
+Add a small event-driven one-shot wait helper on top of the existing
+`codex-file-watcher` subscriber API. This provides a reusable building block for
+future waitable operations that can suspend on filesystem events instead of
+polling.
+
+## Motivation
+
+Some Codex workflows need to wait for a local result, such as a generated file,
+lockfile update, or other filesystem-side completion signal. When the target is
+watchable, an event-driven wait avoids repeated status checks and lets callers
+bound the wait with `tokio::time::timeout` or cancellation.
+
+This is intentionally narrower than adding a background daemon or ""wake GPT""
+mechanism. The change only adds a local execution-layer primitive that can be
+used by later call sites with a polling fallback when an event source is not
+available.
+
+## Implementation
+
+The patch adds `PathChangeWaiter` to `codex-rs/file-watcher/src/lib.rs`.
+
+`PathChangeWaiter`:
+
+- owns a `FileWatcherSubscriber` and `WatchRegistration`;
+- registers one or more `WatchPath` values;
+- waits once for the next matching `FileWatcherEvent`;
+- unregisters automatically when the waiter is dropped or a timeout/cancellation
+  drops the `wait()` future.
+
+This reuses the existing `FileWatcher` implementation and does not add any new
+dependencies.
+
+## Tests
+
+Added coverage for:
+
+- a normal existing file change completing the wait;
+- cancellation/timeout dropping the registration and clearing watch counts;
+- missing-file fallback via parent directory events.
+
+Validation run locally:
+
+```text
+just fmt
+just test -p codex-file-watcher
+just fix -p codex-file-watcher
+git diff --check
+```
+
+`just test -p codex-file-watcher` result:
+
+```text
+24 tests run: 24 passed, 0 skipped
+```
+
+## Follow-up direction
+
+After this primitive lands, a later change can replace selected
+`sleep/check/sleep` loops with a strategy such as:
+
+```text
+event-driven filesystem wait
+    -> timeout/cancel cleanup
+    -> polling fallback for unsupported targets
+```
+
+This keeps the first change small and reviewable while moving Codex toward
+event-driven wait behavior where the event source supports it.
+
+## Contribution note
+
+The repository currently says unsolicited code PRs are closed without review.
+This should be proposed first as an issue or design comment, and the code patch
+should be submitted only if maintainers invite a PR.
+
+[0001-Add-one-shot-path-change-waiter.patch](https://github.com/user-attachments/files/29654185/0001-Add-one-shot-path-change-waiter.patch)",closed,not_planned,2026-07-04T05:56:05Z,2026-07-04T07:36:21Z,2026-07-04T07:36:21Z,3,LioEinaudi,User,NONE,"['enhancement', 'CLI']",0,feature request,not planned,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,380,3,1,False,True,True,2,1,0,0,0,2,2,,2,2,0.6111111111111112,machine provisional; requires rubric review
+31121,https://github.com/openai/codex/issues/31121,Codex Desktop crashes/restarts when opening /abs/path/E:/... Markdown file with default Windows app,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+OpenAI.Codex_26.623.8305.0
+
+### What subscription do you have?
+
+ChatGPT Team
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26100.0 x64
+
+### What issue are you seeing?
+
+Codex Desktop version: OpenAI.Codex_26.623.8305.0
+
+Issue:
+When I click a local Markdown link in Codex with a path like:
+
+/abs/path/E:/my2/SIM-Recon-Workspace/RIM/docs/superpowers/specs/2026-07-05-rim-estimate-pgxy-dataout-design.md
+
+and choose to open it with the default app, Codex Desktop restarts / flashes / exits and comes back.
+
+My default `.md` application is Typora:
+
+D:\Program Files\typora_1.11.6_Green_64Bit\Typora\Typora.exe ""%1""
+
+If I open the same file directly with the real Windows path, Typora works normally:
+
+E:\my2\SIM-Recon-Workspace\RIM\docs\superpowers\specs\2026-07-05-rim-estimate-pgxy-dataout-design.md
+
+So the file itself and the Typora file association seem to be OK.
+
+Observed behavior:
+- Clicking `/abs/path/E:/...` from Codex and opening with the default app causes Codex Desktop to restart / flash.
+- Windows does not show a Codex AppCrash.
+- WebView exit type appears to be Normal.
+
+Expected behavior:
+Codex should normalize the internal path:
+
+/abs/path/E:/my2/...
+
+to a valid Windows path:
+
+E:\my2\...
+
+before passing it to Windows ShellExecute / the default application.
+
+Possible cause:
+Codex Desktop may be passing the `/abs/path/E:/...` pseudo path directly to Windows or to the default app, instead of converting it back to a valid Windows path first.
+
+### What steps can reproduce the bug?
+
+
+如果你想更短，可以填这版：
+
+```markdown
+### Steps to reproduce
+
+1. Use Codex Desktop on Windows.
+2. Click a local Markdown file link generated by Codex, using a path like:
+
+   `/abs/path/E:/my2/SIM-Recon-Workspace/RIM/docs/superpowers/specs/2026-07-05-rim-estimate-pgxy-dataout-design.md`
+
+3. Choose to open it with the default Windows app.
+4. The default `.md` app is Typora:
+
+   `D:\Program Files\typora_1.11.6_Green_64Bit\Typora\Typora.exe ""%1""`
+
+5. Codex Desktop restarts / flashes / exits and then comes back.
+
+### Expected behavior
+
+Codex should convert `/abs/path/E:/...` to the real Windows path `E:\...` before opening the file with the default app.
+
+### Actual behavior
+
+Codex Desktop appears to pass the `/abs/path/E:/...` pseudo path directly to Windows / the default app, which causes Codex Desktop to restart or flash.
+
+Opening the same file directly with the real Windows path works normally in Typora.
+
+### Additional info
+
+- Codex Desktop version: `OpenAI.Codex_26.623.8305.0`
+- Windows does not show a Codex AppCrash.
+- WebView exit type appears to be `Normal`.
+- Session ID: not available.
+- Token limit usage: not applicable.
+- Context window usage: not applicable.
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",open,,2026-07-04T17:53:59Z,2026-07-04T17:56:42Z,,1,gouwenct,User,NONE,"['bug', 'windows-os', 'app']",0,reproducible bug,open unresolved,gouwenct,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,459,0,0,True,False,False,2,1,2,2,2,1,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+31122,https://github.com/openai/codex/issues/31122,RFC: Need a standardized way to show different AGENTS.md files and/or content to different agents,"### What variant of Codex are you using?
+
+CLI
+
+### What feature would you like to see?
+
+I opened this issue (https://github.com/agentsmd/agents.md/issues/185) a little while ago in the `AGENTS.md` standard repo, but honestly there aren't many eyeballs on those issues, so I figure it's time to poke around with it.
+
+Now that the GitHub copilot cli also is adopting `AGENTS.md` it's getting even more difficult to show only the relevant bits to different harnesses.
+
+In short, I want to be able to maintain a main `AGENTS.md` with harness agnostic info, and overlay something like `AGENTS.codex.md`, so I can compose the contents without having to do some ugly generation scripting like I'm doing now.
+
+This seems like a better solution than the others I can think of and we've all tried:
+- xml tagging and scripting that strips irrelevant tags
+- `CLAUDE.md` and `copilot-instructions.md`, etc... symlinked
+- `@` references in a `CLAUDE.md` or `copilot-instructions.md` file
+- passing in different files as command line args on launch 
+- skills (I love and use skills heavily of course, but there are still things I want in context by default!)
+
+### Additional information
+
+There are some similar or related ideas open already:
+https://github.com/openai/codex/issues/1974
+
+There are some similar but kinda irrelevant open issues:
+https://github.com/openai/codex/issues/10067
+
+
+Upvotes and comments encourage on the AGENTS.md repo issue instead of this one, but of course the codex team could ship an experimental feature.
+
+My current setup works kinda okay, but it's a pain to manage, and means I do still end up showing a ton of irrelevant info to my agents (e.g. info about gpt models to Claude). Not to mention that I find the models overall need vastly different instructions... Which I simply cannot do *properly* with the current options.",open,,2026-07-04T18:49:26Z,2026-07-04T18:50:05Z,,0,ariccio,User,NONE,"['enhancement', 'CLI', 'config']",0,feature request,open unresolved,ariccio,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,320,0,3,False,False,True,2,2,0,0,0,0,2,2,2,2,0.6,machine provisional; requires rubric review
+31517,https://github.com/openai/codex/issues/31517,"Codex App sends tool_search_call.arguments as a JSON string, causing Responses API invalid_type errors","### What version of the Codex App are you using (From “About Codex” dialog)?
+
+Codex App: 26.623.19656.0  (please confirm from About Codex) Codex CLI: 0.142.5
+
+### What subscription do you have?
+
+team
+
+### What platform is your computer?
+
+_No response_
+
+### What issue are you seeing?
+
+Codex App intermittently records/replays internal `tool_search_call.arguments` as a JSON-encoded string instead of a JSON object. The next Responses API request fails before the assistant can continue.
+
+Observed errors:
+
+Invalid type for 'input[28].arguments': expected an object, but got a string instead.
+Invalid type for 'input[62].arguments': expected an object, but got a string instead.
+
+This does not appear to be a chrome-devtools MCP server failure. The chrome-devtools MCP tool list is available:
+
+listed MCP server tools while building tool list server_name=chrome-devtools tool_count=29
+
+But internal `tool_search_call` items are sometimes malformed.
+
+Examples from local rollout JSONL, with PII redacted:
+
+1. Session:
+019f3f79-5b48-7de1-9f57-0e4179b70a18
+
+Bad input[28]:
+
+{
+  ""type"": ""tool_search_call"",
+  ""call_id"": ""call_H91Re6731TtEVu1BXFJJ2cuf"",
+  ""status"": ""completed"",
+  ""execution"": ""client"",
+  ""arguments"": ""{\""query\"":\""chrome devtools network request list get current page navigate click input\"",\""limit\"":10}""
+}
+
+Expected:
+
+{
+  ""type"": ""tool_search_call"",
+  ""call_id"": ""call_H91Re6731TtEVu1BXFJJ2cuf"",
+  ""status"": ""completed"",
+  ""execution"": ""client"",
+  ""arguments"": {
+    ""query"": ""chrome devtools network request list get current page navigate click input"",
+    ""limit"": 10
+  }
+}
+
+2. Same session later:
+
+Bad input[62]:
+
+{
+  ""type"": ""tool_search_call"",
+  ""call_id"": ""call_Q5wet5GUYIcEiweMrZO8jJjO"",
+  ""status"": ""completed"",
+  ""execution"": ""client"",
+  ""arguments"": ""{\""limit\"":10,\""query\"":\""spawn agent wait agent subagent multi agent\""}""
+}
+
+The local router also logged:
+
+failed to parse tool_search arguments: invalid type: string ""..."", expected struct SearchToolCallParams
+
+
+### What steps can reproduce the bug?
+
+1. Start a Codex App thread on Windows.
+2. Use a task that requires Chrome DevTools MCP or asks the model to check available tools.
+3. Example prompt pattern:
+   - ""Use Chrome DevTools MCP to inspect real page network requests.""
+   - ""Check whether multi-agent/subagent tools are available.""
+4. The assistant emits a message such as:
+   ""Chrome DevTools MCP is available... checking whether multi-agent tools are available.""
+5. Codex emits an internal `tool_search_call`.
+6. In some cases, `tool_search_call.arguments` is stored/sent as a JSON string rather than an object.
+7. The next Responses API request fails with:
+   `Invalid type for 'input[n].arguments': expected an object, but got a string instead.`
+
+
+### What is the expected behavior?
+
+`tool_search_call.arguments` should always be serialized as a JSON object before storing/replaying/sending to Responses API. A malformed internal tool_search item should not poison the thread history.
+
+### Additional information
+
+- This reproduced across multiple sessions:
+  - 019f3d04-f96e-76c0-abf4-a04c5b9394cf
+  - 019f3f79-5b48-7de1-9f57-0e4179b70a18
+- It can happen without auto-compaction.
+- Auto-compaction may make the issue more visible because malformed history is replayed.
+- Workaround: manually repair the rollout JSONL by converting stringified `tool_search_call.arguments` to objects and removing orphan parse-failure outputs, or avoid triggering tool_search.",open,,2026-07-08T02:32:54Z,2026-07-09T14:16:26Z,,4,u2bo,User,NONE,"['bug', 'windows-os', 'tool-calls', 'app', 'app-server']",0,intermittent bug,open unresolved,u2bo,,True,,unverified human/community response,unverified human/community response,,,False,False,True,False,False,False,463,0,0,True,False,False,2,2,2,2,2,1,2,,2,2,0.9444444444444444,machine provisional; requires rubric review
+31814,https://github.com/openai/codex/issues/31814,"GPT-5.6 Sol cannot specify subagent models, forcing all subagents to also be Sol instances","### What issue are you seeing?
+
+GPT-5.6 Sol selects MultiAgent V2 through its model metadata (`multi_agent_version = ""v2""`), independently of the `features.multi_agent_v2` feature toggle. MultiAgent V2 then defaults `hide_spawn_agent_metadata` to `true`.
+
+Despite its name, this setting does more than hide metadata in output. It removes these functional inputs from the model-visible `spawn_agent` schema:
+
+- `agent_type`
+- `model`
+- `reasoning_effort`
+- `service_tier`
+
+The default was `false` (which I believe is correct), but was changed to `true` in PR #26114 by @jif-oai with the rather cryptic message `For MAv2 CBv9`. 
+
+
+### Why is this a problem?
+
+Sol's most important use case is as a subagent orchestrator. 
+This setting makes it impossible to use Terra/Luna subagents.
+
+### Steps to reproduce
+
+1. Start a fresh session using `gpt-5.6-sol` with default MultiAgent V2 configuration.
+2. Inspect the model-visible `spawn_agent` schema.
+3. Observe that `agent_type`, `model`, `reasoning_effort`, and `service_tier` are absent.
+4. Spawn a subagent and observe that it inherits the Sol parent configuration.
+5. Set the following configuration and start a fresh session:
+
+```toml
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+```
+
+6. Observe that the routing fields are now exposed.
+
+### Expected behavior
+
+GPT 5.6 Sol sessions should, by default, be able to spawn subagents with explicit models.
+
+Possible fixes include:
+
+- defaulting `hide_spawn_agent_metadata` to `false`;
+- splitting output/description redaction from input capability controls;
+- replacing the boolean with an explicit routing policy or model allowlist; or
+- providing a documented subagent default model while preserving explicit overrides.
+
+At minimum, the setting should be renamed and documented to make clear that it removes subagent routing capabilities.
+
+### Related issues
+
+- #14039 requests broader per-subagent model/provider/profile selection.
+- #26767 requests global subagent runtime defaults.
+- #26363 and #26828 cover regressions and custom-role visibility caused by related hiding behavior.
+- #31097 documents the forced V2 selection behavior.
+
+Those issues are adjacent, but none addresses the specific default behavior of model-selected V2 on GPT-5.6 Sol.
+
+### Workaround
+
+```toml
+[features.multi_agent_v2]
+hide_spawn_agent_metadata = false
+tool_namespace = ""agents""
+```
+
+(note: the tool_namespace flag fixes the other common issue `Invalid Value: 'tools'. Function 'collaboration.spawn_agent' is reserved for use by this model and must match the configured schema.`)",closed,completed,2026-07-09T16:34:22Z,2026-07-17T04:39:46Z,2026-07-15T09:34:25Z,98,spadaval,User,NONE,"['bug', 'CLI', 'subagent', 'config']",191,reproducible bug,completed/fixed,jif-oai,1;312;6093,True,,substantive maintainer response,substantive maintainer response,2026-07-15T09:33:50Z,136.991,False,True,True,True,True,True,352,2,0,True,False,False,2,1,2,2,0,2,2,2,2,2,0.85,machine provisional; requires rubric review
+31872,https://github.com/openai/codex/issues/31872,Organize: Project | Sort by: Last updated in the sidebar is ignored - hard to find recent work,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.707.30751
+
+### What subscription do you have?
+
+Pro + Business
+
+### What platform is your computer?
+
+Darwin 27.0.0 arm64 arm
+
+### What issue are you seeing?
+
+Projects that I had recently worked on and were near the top prior to the Codex upgrade, are now randomly arranged making me think I had lost recent chats.
+
+
+### What steps can reproduce the bug?
+
+Feedback ID: 019f484d-89f2-7302-84ed-cc1ba156c13b
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",closed,duplicate,2026-07-09T19:49:05Z,2026-07-09T20:48:13Z,2026-07-09T20:48:13Z,1,grunkey,User,NONE,"['bug', 'app', 'session']",0,reproducible bug,duplicate,grunkey,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,92,0,0,True,False,False,2,1,2,1,2,1,2,,2,2,0.8333333333333334,machine provisional; requires rubric review
+31946,https://github.com/openai/codex/issues/31946,"[macOS] 1,360 Node processes consume 41 GB and hang WindowServer within 20 minutes of restart","## Summary
+
+A Codex Desktop MCP/Node lifecycle failure escalated into two system-wide outages on a 16 GB Apple Silicon Mac.
+
+This appears related to #30408, but adds a materially more severe failure mode on the current desktop build: after the first memory-exhaustion restart, the process fleet grew again to 1,360 system-wide Node processes with a 41.32 GiB aggregate footprint in under 20 minutes. WindowServer then failed its userspace watchdog and the computer restarted again.
+
+## Environment
+
+- Desktop bundle: ChatGPT/Codex 26.707.31123
+- Bundle build: 5042
+- Bundled app-server: codex-cli 0.144.0-alpha.4
+- macOS 26.5.1 (25F80)
+- Mac mini, Apple M4
+- Physical memory: 16 GB
+
+## First failure: macOS Jetsam evidence
+
+macOS generated two JetsamEvent reports 5 minutes 56 seconds apart. Both reports use a 16,384-byte page size.
+
+| Snapshot | All Node processes | Node in Codex coalition | All-Node resident footprint | Codex coalition processes | Codex coalition resident footprint | Free memory |
+|---|---:|---:|---:|---:|---:|---:|
+| 06:20:05 | 760 | 755 | 1,662,363 pages = 25.37 GiB | 799 | 1,895,040 pages = 28.92 GiB | 5,445 pages = 85.1 MiB |
+| 06:26:01 | 843 | 842 | 1,778,409 pages = 27.14 GiB | 881 | 2,034,698 pages = 31.05 GiB | 2,246 pages = 35.1 MiB |
+
+In 5 minutes 56 seconds:
+
+- Node count increased by 83.
+- Codex-coalition process count increased by 82.
+- All-Node resident footprint increased by 1.77 GiB.
+- Codex-coalition resident footprint increased by 2.13 GiB.
+
+A separate Node diagnostic report recorded this ownership chain:
+
+~~~text
+responsibleProc = ChatGPT
+coalitionName   = com.openai.codex
+parentProc      = node
+~~~
+
+At 06:26 the system compressor occupied 9.40 GiB and represented 50.99 GiB of uncompressed system-wide pages. That compressor value is system-wide and is not attributed entirely to Codex.
+
+The machine was manually restarted at 06:32:18 after becoming unusable.
+
+## Second failure after restart
+
+A userspace-watchdog spin report captured the system at 06:51:54, approximately 19 minutes 36 seconds after the first restart:
+
+| Process family | Count | Aggregate footprint |
+|---|---:|---:|
+| Node | 1,360 | 42,312.49 MiB = 41.32 GiB |
+| Codex Renderer | 4 | 945.68 MiB |
+| codex | 2 | 546.63 MiB |
+| ChatGPT | 1 | 340.66 MiB |
+| Codex Service | 3 | 186.44 MiB |
+| node_repl | 11 | 65.05 MiB |
+| WindowServer | 1 | 998.67 MiB |
+
+The watchdog report does not contain coalition IDs for each of the 1,360 Node processes, so this report alone cannot prove that every one belonged to Codex. However:
+
+1. the immediately preceding Jetsam reports attributed 842 of 843 Node processes to the Codex coalition;
+2. live process inspection showed repeated app-server-owned batches of Playwright MCP, Chrome DevTools MCP, XcodeBuildMCP, plugin server.mjs processes, and node_repl;
+3. earlier batches remained alive while later batches appeared.
+
+At 06:52:05 macOS recorded:
+
+~~~text
+monitoring timed out for service
+unresponsive work processor(s): WindowServer main thread
+42 seconds since last successful checkin
+~~~
+
+WindowServer was not spinning on CPU: its main thread used about 0.105 seconds of CPU across 11 samples. The sampled stacks were blocked in SkyLight / QuartzCore / kernel paths, with some samples passing through APFS compressed-file reads. This supports a blocked system graphics session, but the unsymbolicated stack is not enough to claim a GPU-driver root cause.
+
+The system restarted again at 06:55:24.
+
+## Reproduction observations
+
+During tool-enabled Codex activity, repeated process batches included:
+
+~~~text
+npm exec @playwright/mcp@latest
+npm exec chrome-devtools-mcp@latest
+npm exec xcodebuildmcp@latest mcp
+node ./scripts/start-mcp.mjs
+node ./mcp/server.mjs
+cua_node/bin/node_repl
+~~~
+
+The interval included both an initial multi-agent diagnostic phase and later serial tool calls. Therefore the evidence does not isolate concurrency as the sole trigger or prove the exact spawn boundary. It does show that the process fleet remained unbounded across normal tool-host activity.
+
+## Expected behavior
+
+MCP and tool-host subprocesses should be reused or torn down at a bounded lifecycle boundary. Their count and memory footprint must remain bounded regardless of thread, subagent, or tool-call volume.
+
+## Actual behavior and impact
+
+The Node/MCP process fleet accumulated until macOS had only about 35 MiB of free pages, then reproduced after restart and reached 41.32 GiB of system-wide Node footprint. WindowServer stopped responding and the machine restarted.
+
+This is not merely elevated application RAM. It is a system-availability failure.
+
+## Evidence boundaries and privacy
+
+Verified facts above come from macOS JetsamEvent reports, a Node diagnostic report, a WindowServer watchdog report, and a live process-tree snapshot.
+
+Not yet proven:
+
+- whether each process batch is keyed to a thread, subagent, tool-host instance, or individual tool call;
+- whether every Node process in the second watchdog snapshot belonged to Codex;
+- whether WindowServer was blocked by memory pressure, I/O pressure, or another downstream mechanism.
+
+Project names, usernames, local paths, prompts, and raw session logs are intentionally omitted. Sanitized report excerpts and aggregation commands can be provided privately.
+",open,,2026-07-09T23:36:32Z,2026-07-09T23:49:21Z,,2,liyanqing90,User,NONE,"['bug', 'mcp', 'app', 'performance']",0,performance or resource problem,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,818,0,0,False,False,False,2,2,2,2,2,1,2,2,2,2,0.95,machine provisional; requires rubric review
+32016,https://github.com/openai/codex/issues/32016,Text flickering and overlapping when scrolling through long ChatGPT conversations in Codex Desktop,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.707.31428
+
+### What subscription do you have?
+
+GPT PLUS
+
+### What platform is your computer?
+
+Windows 10
+
+### What issue are you seeing?
+
+In the latest version of Codex Desktop, the built-in chat window for conversations with the web ChatGPT service has rendering issues when browsing long chat histories.
+
+When the conversation contains a large amount of text, quickly scrolling with the mouse wheel or dragging the scrollbar often causes the chat content to flicker. In some cases, multiple lines of text overlap with each other, making the conversation difficult or impossible to read.
+
+### What steps can reproduce the bug?
+
+1. Open Codex Desktop.
+2. Open the built-in ChatGPT conversation window.
+3. Open a conversation with a long chat history containing multiple paragraphs or code blocks.
+4. Quickly scroll through the conversation using:
+   - Mouse wheel scrolling, or
+   - Dragging the scrollbar thumb.
+5. Observe the text rendering behavior.
+
+### What is the expected behavior?
+
+- The chat content frequently flickers during fast scrolling.
+- Multiple lines of text may overlap.
+- Some parts of the conversation appear incorrectly rendered until the window is refreshed or scrolling stops.
+
+### Additional information
+
+_No response_",closed,duplicate,2026-07-10T04:02:31Z,2026-07-13T03:49:53Z,2026-07-13T03:49:53Z,11,CavenTi,User,NONE,"['bug', 'windows-os', 'app']",3,reproducible bug,duplicate,CavenTi,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,200,0,0,True,False,False,2,1,2,2,2,1,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+32027,https://github.com/openai/codex/issues/32027,agents.max_depth = 1 permits child-to-grandchild spawning in 0.144.1,"### Codex version
+
+Codex CLI 0.144.1, macOS arm64. This is the latest stable GitHub release as of 2026-07-10.
+
+### Configuration
+
+    [agents]
+    max_depth = 1
+    max_threads = 50
+
+The configuration passes:
+
+    codex --strict-config --version
+
+with:
+
+    codex-cli 0.144.1
+
+There is no project-local Codex config overriding the user-level agents table.
+
+### Reproduction
+
+1. Start a fresh Codex task.
+2. Have the root thread spawn one direct child.
+3. Have that child make exactly one no-op subagent spawn attempt.
+4. Observe that the spawn succeeds and the grandchild runs.
+
+Observed spawned path shape:
+
+    /root/explorer_depth_probe/noop
+
+The grandchild returned only NOOP, so the probe made no repository or external changes.
+
+### Expected behavior
+
+The official Subagents documentation says agents.max_depth defaults to 1, the root starts at depth 0, and max_depth = 1 lets the root spawn direct children while preventing those children from spawning deeper descendants:
+
+https://developers.openai.com/codex/subagents
+
+### Actual behavior
+
+A direct child successfully spawned a grandchild despite agents.max_depth = 1.
+
+### Additional verification
+
+- All custom agent TOMLs parse.
+- The user config contains exactly agents.max_depth = 1.
+- Codex strict config accepts the setting.
+- No custom agent file defines another agents table or overrides max_depth.
+- The no-op grandchild completed successfully, so this was not only a UI display artifact.
+",open,,2026-07-10T05:05:34Z,2026-07-10T05:06:44Z,,1,EatMyTarts,User,NONE,"['bug', 'CLI', 'subagent', 'config']",0,reproducible bug,open unresolved,,2,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,213,0,1,False,False,False,2,1,2,2,2,0,2,,2,2,0.8333333333333334,machine provisional; requires rubric review
+32245,https://github.com/openai/codex/issues/32245,max_threads not working since gpt-5.6(-sol),"### What version of Codex CLI is running?
+
+codex-cli 0.144.1
+
+### What subscription do you have?
+
+X20
+
+### Which model were you using?
+
+gpt-5.6-sol
+
+### What platform is your computer?
+
+Linux Mint 22.3.0 (Zena)
+
+### What terminal emulator and version are you using (if applicable)?
+
+Alacritty 0.17.0
+
+### Codex doctor report
+
+_Removed this after solving to save some space_
+
+### What issue are you seeing?
+
+Before today I had my `max_threads` on 50 and I could simply ask Codex to ""Spawn one subagent per failing test file"" to figure things out. It would spawn, say, 16 subagents, one for each test file and those would then report back.
+
+We are currently limited to 4 threads (so 3 subagents + the main) it seems. I've tried changing stuff around in the config files but to no real avail. Prompts like this still work, but now it gets limited to just 3 in parallel - meaning that getting a report on 16 failing test files kind of takes ages now.
+
+### What steps can reproduce the bug?
+
+1. Delete `~/.codex` for a fresh start
+2. `codex --yolo` to generate a fresh `~/.codex` directory
+3. Login to your OpenAI account and close codex.
+4. In the newly generated `~/.codex/config.toml` add `max_threads = 10` under `[agents]`.
+5. `codex --yolo`
+6. Ask it to create 10 (no-fork) subagents in parallel that all run sleep 120
+7. It will create 3, wait for the 3 to finish, then create another 3, etc etc.
+
+### What is the expected behavior?
+
+It creates 9 subagents (10 in total with the main agent) that all sleep.
+
+### Additional information
+
+`codex doctor --json` shows failures because I have codex locally (`~/.local/bin`) installed instead of globally. This always used to be fine and I don't see how this would affect the `max_threads` thing.",closed,completed,2026-07-10T19:16:35Z,2026-07-10T19:47:17Z,2026-07-10T19:47:17Z,1,jordi735,User,NONE,"['bug', 'CLI', 'subagent', 'config']",2,reproducible bug,completed/fixed,jordi735,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,305,0,0,True,False,True,2,1,2,2,2,1,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+32466,https://github.com/openai/codex/issues/32466,ChatGPT/Codex Desktop 26.707 misses live turn updates until the same thread is opened in VS Code,"## Summary
+
+After updating to the unified ChatGPT/Codex Desktop app, the macOS Desktop UI intermittently fails to receive or apply live turn updates.
+
+Opening the same thread in the VS Code Codex extension causes Desktop to catch up immediately. This has now been observed in two variants:
+
+1. **Missed completion update:** Desktop remained stuck showing `Working for 1m`. Opening the same thread in VS Code caused the completed response to appear immediately in both clients. Desktop then showed that the task had actually `Worked for 36s`.
+2. **Stalled live progress:** During an active turn, Desktop showed the working state and some tool activity but did not show the newer commentary/progress. Opening the same thread in VS Code caused additional live progress to appear immediately in both clients.
+
+This is the first time I have encountered this behavior. It started after updating to the unified ChatGPT/Codex Desktop app.
+
+## Environment
+
+- ChatGPT/Codex Desktop: `26.707.41301`
+- Build: `5103`
+- Application: `/Applications/ChatGPT.app`
+- Bundle identifier: `com.openai.codex`
+- macOS: `26.5.1 (25F80)`
+- Architecture: `arm64`
+
+## Reproduction conditions
+
+The cross-client refresh path requires a thread that is accessible from both Desktop and the VS Code Codex extension.
+
+The issue appears intermittent, but both observed occurrences were captured in screen recordings.
+
+## Steps to reproduce
+
+1. Choose a thread that is accessible from both Desktop and the VS Code Codex extension.
+2. Open the thread in ChatGPT/Codex Desktop.
+3. Send a prompt that performs normal tool work.
+4. Wait while Desktop displays the active `Working` state.
+5. Observe that live progress may stop updating, or that Desktop may remain active after the turn has already completed.
+6. Open the same thread in the VS Code Codex extension.
+7. Observe that the missing progress or completed response immediately appears in VS Code and Desktop.
+
+## Actual behavior
+
+Desktop can remain subscribed to a stale or incomplete live-turn state even though newer progress or the completed result is available to another client.
+
+Opening the thread in VS Code appears to force a thread refresh or synchronization, after which Desktop receives the missing turn updates.
+
+## Expected behavior
+
+Desktop should continuously display live turn progress and apply the final completion update without requiring another client to open the thread.
+
+## Diagnostic observations
+
+For the missed-completion reproduction, I performed an A/B check with all custom DOM/RTL injection fully disabled. The problem still occurred, so the custom runtime was not the cause.
+
+Renderer measurements collected during that test:
+
+- No long task exceeded `500ms`
+- Maximum observed long task: `223ms`
+- No fatal runtime error was recorded
+- Repeated `ResizeObserver loop completed with undelivered notifications.` warnings were observed
+
+The timing and cross-client behavior suggest a Desktop live thread/turn synchronization issue rather than model latency or a long renderer freeze.
+
+## Screen recording
+
+The recordings show Desktop falling behind the live turn state. When the same thread is opened in the VS Code Codex extension, the missing progress or completed response appears in both clients.
+
+https://github.com/user-attachments/assets/48b0dbff-cc86-42b4-8946-9cf1e65e1f0e",open,,2026-07-11T18:43:39Z,2026-07-11T19:16:47Z,,1,nivdam,User,NONE,"['bug', 'app', 'connectivity', 'session']",0,intermittent bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,506,0,1,False,False,True,2,2,2,2,2,0,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+32535,https://github.com/openai/codex/issues/32535,macOS desktop notifications appear but completion sound does not play,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.707.51957 (build 5175)
+
+### What subscription do you have?
+
+Pro
+
+### What platform is your computer?
+
+Darwin 25.4.0 arm64 arm; macOS 26.4.1 (25E253); MacBook Air (Mac16,12), Apple M4
+
+### What issue are you seeing?
+
+Codex successfully displays native macOS completion-notification banners, but those notifications are silent. This occurs both when Codex is focused and when another application is focused.
+
+I confirmed the following locally:
+
+- macOS lists the app under ""ChatGPT"" (bundle identifier com.openai.codex) with **Badges, Sounds, Desktop** enabled.
+- **Play sound for notification** is enabled for the app.
+- Alert volume is 100%; output is not muted and uses the built-in MacBook Air speakers.
+- A normal macOS alert sound plays successfully when invoked directly.
+- The bundled Codex sound at /Applications/ChatGPT.app/Contents/Resources/codex-notification.wav also plays successfully when invoked directly.
+- Codex logs show the turn-complete notification being created and forwarded without an error.
+- The visible notification banner arrives every time, but no sound accompanies it.
+- Removing all local Codex notification overrides, fully quitting the app, and restarting did not change the behavior.
+- The failure persisted after updating from build 26.707.41301 to 26.707.51957.
+
+This establishes a problem in the desktop notification-sound path rather than general audio output or notification-banner delivery.
+
+### What steps can reproduce the bug?
+
+1. On macOS, enable notifications and **Play sound for notification** for the Codex desktop app (listed as ""ChatGPT"" in System Settings on this installation).
+2. Open Codex and start a normal prompt.
+3. Optionally switch focus to another application while the turn runs.
+4. Wait for the turn to complete.
+5. Observe that the native completion-notification banner appears, but no notification sound plays.
+6. Repeat while Codex remains focused; the result is also silent.
+
+The behavior persists after removing custom notification-related entries from ~/.codex/config.toml, quitting with Cmd+Q, and reopening Codex.
+
+### What is the expected behavior?
+
+When a completion notification is delivered and macOS notification sounds are enabled for Codex, the notification should play the configured Codex completion sound.
+
+### Additional information
+
+Potential diagnostic lead, not a confirmed root cause: inspection of the JavaScript packaged in the installed app's app.asar shows that Codex stages codex-notification.wav in its entitled shared-group Library/Sounds directory, creates the Electron notification with silent: false, and supplies codex-notification (without the .wav extension) as the sound value.
+
+Because current Electron/macOS notification delivery uses Apple's UNNotification API, it may be useful to compare the same notification using the default sound, codex-notification, and codex-notification.wav. Another possibility is notification-service incompatibility with the particular 24-bit stereo linear-PCM WAV, even though the file plays directly. These are hypotheses only.
+
+Related but not exact duplicates:
+- #13019 concerns desktop sessions ignoring command-line notification hooks.
+- #3962 is primarily a request for audible completion notifications in the extension/CLI.
+
+This issue was investigated and drafted by OpenAI Codex using gpt-5.6-sol. Two independent adversarial reviews were also run with gpt-5.6-sol, at medium and high reasoning effort, to distinguish verified evidence from the proposed root-cause hypotheses. Rory Watts reviewed and submitted the report from his GitHub account.",open,,2026-07-12T07:15:54Z,2026-07-12T07:17:14Z,,1,RoryWatts,User,NONE,"['bug', 'app']",3,reproducible bug,open unresolved,RoryWatts,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,548,0,0,True,True,False,2,1,2,2,2,1,2,2,2,2,0.9,machine provisional; requires rubric review
+32683,https://github.com/openai/codex/issues/32683,[Windows] Codex App crashes in CrBrowserMain when Browser Use opens a page (0xC0000005 at chrome.dll+0x2e08f46),"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.707.8168.0
+
+### What subscription do you have?
+
+ChatGPT Pro (20x)
+
+### What platform is your computer?
+
+`Microsoft Windows NT 10.0.22631.0 x64`
+
+### What issue are you seeing?
+
+On Windows, asking Codex to use its **in-app browser / Browser Use IAB backend** reliably crashes the entire Codex App. There is no error dialog; the application simply disappears.
+
+A neutral page is sufficient to reproduce it. The exact prompt used was:
+
+```text
+请用内置浏览器打开 example.com
+```
+
+English translation: `Please use the in-app browser to open example.com.`
+
+The page reaches DOM ready, then the browser process crashes about 1–5 seconds later.
+
+I captured six Crashpad minidumps from independent reproductions. All six have the same native crash signature and the same Chrome stack prefix:
+
+```text
+Process type: browser
+Crashing thread: CrBrowserMain
+Exception: 0xC0000005 (EXCEPTION_ACCESS_VIOLATION)
+Operation: read
+Invalid address: 0x558
+Fault: chrome.dll+0x2e08f46
+RCX: 0x0
+Instruction: mov rax, qword ptr [rcx+0x558]
+Chromium version: 150.0.7871.115
+```
+
+This is a null-object read in the Chromium browser main thread, not a renderer-only failure or a normal app exit.
+
+The app log consistently reaches the Browser Use IAB WebView attach/navigation path immediately before the crash. A representative redacted sequence is:
+
+```text
+IAB_LIFECYCLE renderer created browser sidebar webview ... initialUrl=about:blank
+mcp_app_sandbox.attach_unmatched guestWebContentsId=3 url=undefined urlProtocol=invalid
+IAB_LIFECYCLE runtime attached browser sidebar webview ...
+IAB_LIFECYCLE registered debugger listener ...
+browser sidebar dom-ready ... url=https://example.com/
+```
+
+Some reproductions also contain this immediately before the crash, although it is not present in every reproduction:
+
+```text
+Received Browser Use PiP metadata ... tabID=1
+Failed to upsert Browser Use PiP content ... tabID=1
+```
+
+### What steps can reproduce the bug?
+
+1. Start Codex App on Windows.
+2. Open either a new conversation or an existing saved conversation.
+3. Send this prompt:
+
+   ```text
+   请用内置浏览器打开 example.com
+   ```
+
+4. Wait for the in-app browser WebView to open and navigate to `https://example.com/`.
+5. Within approximately 1–5 seconds after DOM ready, the entire Codex App exits without an error dialog.
+
+Observed reproduction rate during diagnosis: **6/6**.
+
+Affected Codex session/thread ID from the final reproduction:
+
+```text
+[REDACTED — available privately to OpenAI maintainers upon request]
+```
+
+Token/context usage is not a factor: this also reproduces in a fresh, nearly empty conversation.
+
+### What is the expected behavior?
+
+The in-app browser should open `https://example.com/` and remain usable without terminating the Codex App.
+
+If Browser Use or the WebView fails, Codex should report a recoverable error and keep the main application running instead of crashing the Chromium browser process.
+
+### Additional information
+
+### Controlled tests already performed
+
+- Reproduces with both a new conversation and an existing saved conversation.
+- Reproduces with both `https://example.com/` and a Discord page, so it is not specific to one website.
+- Reproduces with both a visible right-panel WebView and a hidden Browser Use host.
+- A targeted Chromium-partition reset was attempted, but later inspection showed that the active nested Chromium profile retained older files. Therefore, I am **not** claiming this as a verified clean-profile reproduction.
+- Reproduces with Nahimic stopped. The resulting dump contained no Nahimic/A-Volute modules but had the identical crash address and Chrome stack.
+- Reproduces with Windhawk stopped. The resulting dump contained no Windhawk modules/plugins but had the identical crash address and Chrome stack.
+- Reproduced on app package `26.707.6957.0` and again after updating to `26.707.8168.0`. Both packages used Chromium `150.0.7871.115` and produced the same native fault.
+
+### Excluded system-level causes
+
+- No Windows Display, `nvlddmkm`, WHEA, DxgKrnl, or GPU-reset events occurred around the crashes.
+- The GPU child process remained alive until the browser main process terminated.
+- No out-of-memory or resource-exhaustion event was recorded. One representative incident had about 65% committed memory in use, about 3.2 GB available physical memory, and low page-file utilization.
+- The main process was responsive immediately before the crash; this is not an AppHang.
+
+### Existing issue search
+
+I searched the repository for Windows crashes involving Browser Use, `chrome.dll`, and `CrBrowserMain`.
+
+- #24998 is broadly related because the Windows app closes unexpectedly, but it does not identify Browser Use/IAB as the trigger or report this fixed `CrBrowserMain` / `chrome.dll+0x2e08f46` signature.
+- #21530 and #21912 concern Browser Use/IAB discovery or connection failures rather than a reproducible native browser-main crash.
+
+This therefore appears to be a distinct, reliably reproducible Browser Use/IAB native crash.
+
+### Diagnostic artifacts
+
+Crashpad minidumps and full desktop logs are available. I have not attached the raw dumps publicly because minidumps can contain process memory and session data, but I can provide them privately to OpenAI maintainers if requested.",open,,2026-07-13T02:51:28Z,2026-07-26T20:40:54Z,,26,udxklsj,User,NONE,"['bug', 'windows-os', 'app', 'browser']",9,reproducible bug,open unresolved,udxklsj,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,789,6,4,True,True,False,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
+32713,https://github.com/openai/codex/issues/32713,[Windows][Codex Desktop] In-app browser repeatedly creates duplicate localhost tabs and recreates them after manual close,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.707.61608
+
+### What subscription do you have?
+
+Plus
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26200.0 x64
+
+### What issue are you seeing?
+
+Codex Desktop repeatedly creates a large number of duplicate in-app browser tabs while inspecting a local web application.
+
+All of the tabs point to the same local development URL and port:
+http://127.0.0.1:14188
+The page title shown in the browser history is:
+
+Professor Typing Animation
+
+Instead of reusing the existing browser tab, Codex appears to create another tab during repeated visual checks, screenshots, DOM inspections, navigation retries, or task iterations.
+
+When I manually close the duplicate tabs, Codex automatically recreates many of them again while the task is still running.
+
+This can result in dozens of identical browser tabs for the same URL.
+
+### What steps can reproduce the bug?
+
+1. Open Codex Desktop on Windows.
+2. Open a local frontend project.
+3. Start the local development server at: http://127.0.0.1:14188
+4. Ask Codex to inspect, modify, and visually verify the webpage using the in-app browser.
+5. Allow Codex to perform several rounds of browser inspection or screenshot verification.
+6. Open the browser history or browser tab list.
+7. Observe that many duplicate tabs have been created for the same URL.
+8. Manually close the duplicate tabs.
+9. Continue or wait for the active Codex task.
+10. Observe that Codex creates many duplicate tabs again.
+
+### What is the expected behavior?
+
+Codex should reuse the existing managed browser tab when repeatedly inspecting the same local URL.
+
+For example, it should:
+
+- Select an existing tab for http://127.0.0.1:14188.
+- Reuse the same tab for navigation, refreshes, screenshots, and DOM inspection.
+- Avoid creating another tab when an equivalent tab already exists.
+- Stop recreating tabs after the user manually closes them.
+- Clean up unused managed tabs when the browser task finishes.
+- Limit the number of background or hidden tabs created by one task.
+
+### Additional information
+
+Actual behavior
+
+- Codex creates many duplicate browser tabs that all point to the same localhost URL.
+- Closing the tabs manually does not resolve the problem because the active task creates them again.
+- The in-app browser tab state appears to be out of sync with the visible browser state, or browser retries are creating new tabs without cleaning up previous tabs.
+
+Impact
+
+This causes:
+- Browser history and tab lists to become flooded with duplicate entries.
+- Increased memory and resource usage.
+- Difficulty identifying the currently active browser session.
+- Confusing behavior when manually closing tabs.
+- Repeated tab creation during long-running UI development tasks.
+- Potential accumulation of hidden or background browser sessions.
+- 
+Screenshot
+<img width=""340"" height=""1076"" alt=""Image"" src=""https://github.com/user-attachments/assets/7e049d23-2b05-4b34-8b1f-981f53dfa7b0"" />
+
+Additional information
+
+The local development server uses one URL and one port. Codex does not need a separate browser tab for every inspection step.
+
+The behavior appears related to browser-tab lifecycle management, deduplication, retry handling, and synchronization between:
+
+- Visible in-app browser tabs
+- Hidden or background managed tabs
+- The currently selected tab
+- Tabs created by browser automation
+- Tabs manually closed by the user
+
+A possible mitigation would be to check for an existing matching URL before creating a new tab and to finalize or clean up managed tabs when the task ends.
+
+Pseudo-code for the expected behavior:
+```js
+const existingTabs = await browser.tabs.list();
+
+const matchingTab = existingTabs.find(
+  (tab) => tab.url === ""http://127.0.0.1:14188""
+);
+
+const tab = matchingTab ?? await browser.tabs.new();
+
+await tab.goto(""http://127.0.0.1:14188"");
+```
+Codex should also detect that a user manually closed a tab and avoid immediately recreating multiple replacement tabs unless a new browser operation explicitly requires one.",open,,2026-07-13T07:38:20Z,2026-07-13T07:38:52Z,,0,leo2783,User,NONE,"['bug', 'windows-os', 'app', 'browser']",0,reproducible bug,open unresolved,leo2783,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,634,1,6,True,True,True,2,2,2,2,2,2,2,,2,2,1.0,machine provisional; requires rubric review
+32742,https://github.com/openai/codex/issues/32742,[Windows Desktop] Terminating a shell command does not kill its descendant process tree,"### Codex version
+
+Codex Desktop for Windows: `26.707.8479.0`
+
+### Platform
+
+Windows 11 x64
+
+### What happened?
+
+Codex Desktop started a Git command that created multiple levels of child processes:
+
+```text
+Codex / shell wrapper
+└── git.exe
+    └── git.exe
+        ├── git.exe
+        └── ssh.exe
+```
+
+The command was terminated through the Codex tool interface, and Codex reported:
+
+```text
+Script terminated
+```
+
+However, the descendant processes were not terminated. They continued running and creating additional descendants after Codex reported successful termination.
+
+The number of surviving processes initially reached approximately:
+
+- 660+ `git.exe`
+- 660+ `ssh.exe`
+
+It later exceeded approximately:
+
+- 1,200 `git.exe`
+- 1,200 `ssh.exe`
+
+Closing Codex Desktop did not terminate these processes.
+
+Because surviving descendants continued creating new processes, terminating individual `git.exe` and `ssh.exe` processes was ineffective. A complete Windows restart was ultimately required.
+
+### System impact
+
+The surviving process tree caused severe resource exhaustion:
+
+- System committed memory increased to approximately `61.6 / 63.2 GB`.
+- The computer has 32 GB of physical RAM.
+- The Windows page file expanded substantially.
+- Free space on the system drive decreased by approximately 13 GB.
+- The Windows graphical interface became unstable.
+- Resource usage returned to normal after restarting Windows.
+
+The memory was primarily consumed by the surviving command descendants rather than by the Codex Desktop process itself.
+
+### Expected behavior
+
+When Codex reports that a command has been terminated, the entire process tree created by that command should be terminated, including grandchildren and deeper descendants.
+
+On Windows, shell commands should be placed in a Windows Job Object configured with kill-on-job-close behavior, or managed using an equivalent process-tree termination mechanism.
+
+Codex should not display `Script terminated` while descendants belonging to the command are still running.
+
+Closing Codex Desktop should also clean up command descendants owned by that Codex session.
+
+### Actual behavior
+
+Codex appears to have terminated only the directly tracked process or shell wrapper.
+
+Deeper descendants survived, became detached from the terminated command, and continued running independently.
+
+### Triggering command
+
+The incident was triggered by a Git partial-clone command over SSH, equivalent to:
+
+```text
+git clone --filter=blob:none --sparse --depth=1 --no-checkout user@example-host:/redacted/repository redacted-local-directory
+```
+
+Git itself entered a recursive child-process condition. That Git behavior is already being addressed upstream and is not the primary subject of this report.
+
+The Codex-specific issue is that terminating the command did not contain or terminate its complete process tree.
+
+### Related Codex issue
+
+This appears related to:
+
+https://github.com/openai/codex/issues/4337
+
+That report describes child processes surviving command timeouts. It was closed after a fix, but this incident occurred in a current Windows Desktop build and may indicate that Windows descendant cleanup remains incomplete or has regressed.
+
+### Reproducibility
+
+I have not deliberately reproduced the incident because it can create thousands of processes, exhaust system commit capacity, destabilize Windows, and require a restart.
+
+All hostnames, usernames, repository names, SSH aliases, task identifiers, and local paths in this report have been redacted.",open,,2026-07-13T09:33:31Z,2026-07-13T09:43:47Z,,2,Hadeanyolo,User,NONE,"['bug', 'windows-os', 'tool-calls', 'app']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,494,3,1,False,True,True,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
+32763,https://github.com/openai/codex/issues/32763,"Codex Desktop silently rewrites autonomy settings, causing projectless .codex EPERM prompts","### Summary
+
+Codex Desktop silently rewrote the machine-wide autonomy tuple in `~/.codex/config.toml` from:
+
+```toml
+approval_policy = ""never""
+sandbox_mode = ""danger-full-access""
+approvals_reviewer = ""user""
+```
+
+to:
+
+```toml
+approval_policy = ""on-request""
+sandbox_mode = ""workspace-write""
+approvals_reviewer = ""guardian_subagent""
+```
+
+Fresh projectless threads then inherited the restricted profile. Their generated workspace root was writable, but the reserved `.codex` child was explicitly read-only, so ordinary goal-artifact creation failed with `Operation not permitted` and agents requested escalation for basic local setup.
+
+This is separate from #32039 (projectless root symlink validation). The projectless root was already repaired to a real local directory and task creation itself succeeded.
+
+### Environment
+
+- Codex Desktop: `26.707.61608` (build `5200`)
+- Codex CLI: `0.144.3`
+- macOS: `26.5.2` (build `25F84`)
+- Architecture: Apple Silicon (`arm64`)
+
+### Evidence
+
+- A pre-incident config backup has `never / danger-full-access / user`.
+- The rewritten `config.toml` had a filesystem birth/modification time of `2026-07-13 07:10:14 -0300`, the exact second one affected projectless thread was created.
+- Other bounded config backups all retain the intended tuple.
+- Two affected projectless thread `turn_context` records show:
+  - `approval_policy: on-request`
+  - `sandbox_policy.type: workspace-write`
+  - managed permission profile
+  - workspace root writable
+  - workspace `.codex` read-only
+- The first ordinary `mkdir -p .codex/<goal>` in each affected thread returned `Operation not permitted`.
+- Direct `create_goal` calls later succeeded; the approval request was caused by the filesystem profile/path collision, not the goal API itself.
+- After restoring `never / danger-full-access / user`, two fresh projectless canaries started with `permission_profile: disabled`, created `.codex/<goal>/goal.md` and `plan.md`, activated/completed goals, made ordinary local edits, and finished with no approval prompt.
+- No installed LaunchAgent or local maintenance script writes these settings. The exact writer is not represented by a session-level patch event, so attribution to a specific Desktop code path remains uncertain.
+
+### Observed sequence
+
+1. Configure `~/.codex/config.toml` with `never / danger-full-access / user`.
+2. Use Codex Desktop to create projectless threads.
+3. Observe that `config.toml` has been atomically replaced with `on-request / workspace-write / guardian_subagent`.
+4. In a fresh projectless thread, attempt ordinary workspace-local state under `.codex/<name>`.
+5. Observe `EPERM` and an escalation request.
+
+The rewrite was not reproduced on every subsequent projectless creation, so this may depend on a settings migration or a one-time Desktop persistence path.
+
+### Expected behavior
+
+Codex Desktop updates must preserve explicit user autonomy settings in `~/.codex/config.toml`. Creating a projectless task must not silently replace them.
+
+If Desktop intentionally migrates or overrides these fields, it should:
+
+- expose the change clearly;
+- preserve an explicit existing user choice;
+- avoid making a projectless workspace's required local state path read-only; and
+- never turn ordinary projectless goal setup into a user approval prompt.
+
+### Local mitigation
+
+I restored the intended tuple and installed a narrow event-driven guard that backs up the config and repairs only the exact known-bad triple. This protects the local workflow but does not fix the underlying Desktop write.
+
+",open,,2026-07-13T10:40:35Z,2026-07-13T20:03:03Z,,2,johnsilvavlogs,User,NONE,"['bug', 'sandbox', 'app', 'config']",1,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,489,2,0,False,False,False,2,1,1,2,2,2,2,2,2,2,0.9,machine provisional; requires rubric review
+32790,https://github.com/openai/codex/issues/32790,"apply_patch approval review takes 68–121 seconds on windows, 16–17 ms with full access","### What version of Codex CLI is running?
+
+codex-cli 0.144.3
+
+### What subscription do you have?
+
+chatgpt pro x20
+
+### Which model were you using?
+
+gpt-5.6-sol medium
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26120.0 x64
+
+### What terminal emulator and version are you using (if applicable)?
+
+windows terminal, powershell 7
+
+### Codex doctor report
+
+```json
+{
+  ""schemaVersion"": 1,
+  ""generatedAt"": ""1783946980s since unix epoch"",
+  ""overallStatus"": ""ok"",
+  ""codexVersion"": ""0.144.3"",
+  ""checks"": {
+    ""app_server.status"": {
+      ""id"": ""app_server.status"",
+      ""category"": ""app-server"",
+      ""status"": ""ok"",
+      ""summary"": ""background server is not running"",
+      ""details"": {
+        ""control socket"": ""C:\\Users\\Johnf\\.codex\\app-server-control\\app-server-control.sock"",
+        ""daemon state dir"": ""C:\\Users\\Johnf\\.codex\\app-server-daemon"",
+        ""mode"": ""ephemeral"",
+        ""pid file"": ""C:\\Users\\Johnf\\.codex\\app-server-daemon\\app-server.pid (missing)"",
+        ""settings"": ""C:\\Users\\Johnf\\.codex\\app-server-daemon\\settings.json (missing)"",
+        ""status"": ""not running"",
+        ""update-loop pid file"": ""C:\\Users\\Johnf\\.codex\\app-server-daemon\\app-server-updater.pid (missing)""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""auth.credentials"": {
+      ""id"": ""auth.credentials"",
+      ""category"": ""auth"",
+      ""status"": ""ok"",
+      ""summary"": ""auth is configured"",
+      ""details"": {
+        ""auth file"": ""C:\\Users\\Johnf\\.codex\\auth.json"",
+        ""auth storage mode"": ""File"",
+        ""stored API key"": ""false"",
+        ""stored ChatGPT tokens"": ""true"",
+        ""stored agent identity"": ""false"",
+        ""stored auth mode"": ""chatgpt""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""config.load"": {
+      ""id"": ""config.load"",
+      ""category"": ""config"",
+      ""status"": ""ok"",
+      ""summary"": ""config loaded"",
+      ""details"": {
+        ""CODEX_HOME"": ""C:\\Users\\Johnf\\.codex"",
+        ""config.toml"": ""C:\\Users\\Johnf\\.codex\\config.toml"",
+        ""config.toml parse"": ""ok"",
+        ""cwd"": ""C:\\Users\\Johnf"",
+        ""enabled feature flags"": ""<redacted>"",
+        ""feature flag overrides"": ""memories=true, hooks=false"",
+        ""feature flags enabled"": ""35"",
+        ""log dir"": ""C:\\Users\\Johnf\\.codex\\log"",
+        ""mcp servers"": ""2"",
+        ""model"": ""gpt-5.6-sol"",
+        ""model provider"": ""openai"",
+        ""sqlite home"": ""C:\\Users\\Johnf\\.codex""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""git.environment"": {
+      ""id"": ""git.environment"",
+      ""category"": ""git"",
+      ""status"": ""ok"",
+      ""summary"": ""git version 2.51.0.windows.1"",
+      ""details"": {
+        ""PATH git #1"": ""c:\\program files\\git\\cmd\\git.exe"",
+        ""PATH git #2"": ""C:\\Program Files\\Git\\cmd\\git.exe"",
+        ""PATH git entries"": ""2"",
+        ""git build options"": ""git version 2.51.0.windows.1; cpu: x86_64; built from commit: 4d21a77b98af5cf479d8b6f863c2aa94257cd4e1; sizeof-long: 4; sizeof-size_t: 8; shell-path: D:/git-sdk-64-build-installers/usr/bin/sh; feature: fsmonitor--daemon; libcurl: 8.15.0; OpenSSL: OpenSSL 3.2.4 11 Feb 2025; zlib: 1.3.1; SHA-1: SHA1_DC; SHA-256: SHA256_BLK; default-ref-format: files; default-hash: sha1"",
+        ""git exec path"": ""C:/Program Files/Git/mingw64/libexec/git-core"",
+        ""git version"": ""git version 2.51.0.windows.1"",
+        ""repo detected"": ""false"",
+        ""selected git"": ""c:\\program files\\git\\cmd\\git.exe""
+      },
+      ""remediation"": null,
+      ""durationMs"": 278
+    },
+    ""installation"": {
+      ""id"": ""installation"",
+      ""category"": ""install"",
+      ""status"": ""ok"",
+      ""summary"": ""installation looks consistent"",
+      ""details"": {
+        ""PATH codex #1"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\codex"",
+        ""PATH codex #2"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\codex.cmd"",
+        ""PATH codex entries"": ""2"",
+        ""current executable"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe"",
+        ""install context"": ""npm (package C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc, bin C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin, resources C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\codex-resources, path C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\codex-path)"",
+        ""managed by bun"": ""false"",
+        ""managed by npm"": ""true"",
+        ""managed by pnpm"": ""false"",
+        ""managed package root"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex"",
+        ""npm update target"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex""
+      },
+      ""remediation"": null,
+      ""durationMs"": 729
+    },
+    ""mcp.config"": {
+      ""id"": ""mcp.config"",
+      ""category"": ""mcp"",
+      ""status"": ""ok"",
+      ""summary"": ""MCP configuration is locally consistent"",
+      ""details"": {
+        ""configured servers"": ""2"",
+        ""disabled servers"": ""1"",
+        ""stdio servers"": ""2""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""network.env"": {
+      ""id"": ""network.env"",
+      ""category"": ""network"",
+      ""status"": ""ok"",
+      ""summary"": ""network-related environment looks readable"",
+      ""details"": {
+        ""proxy env vars"": ""none""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""network.provider_reachability"": {
+      ""id"": ""network.provider_reachability"",
+      ""category"": ""reachability"",
+      ""status"": ""ok"",
+      ""summary"": ""active provider endpoints are reachable over HTTP"",
+      ""details"": {
+        ""ChatGPT base URL"": ""https://chatgpt.com/backend-api/ reachable (HTTP 403)"",
+        ""reachability mode"": ""ChatGPT auth""
+      },
+      ""remediation"": null,
+      ""durationMs"": 151
+    },
+    ""network.websocket_reachability"": {
+      ""id"": ""network.websocket_reachability"",
+      ""category"": ""websocket"",
+      ""status"": ""ok"",
+      ""summary"": ""Responses WebSocket handshake succeeded"",
+      ""details"": {
+        ""DNS"": ""2 IPv4, 0 IPv6, first IPv4"",
+        ""auth mode"": ""chatgpt"",
+        ""connect timeout"": ""15000 ms"",
+        ""endpoint"": ""wss://chatgpt.com/backend-api/<redacted>"",
+        ""handshake result"": ""HTTP 101 Switching Protocols"",
+        ""model provider"": ""openai"",
+        ""models etag present"": ""true"",
+        ""provider name"": ""OpenAI"",
+        ""proxy env vars"": ""none"",
+        ""reasoning header"": ""false"",
+        ""server model present"": ""false"",
+        ""supports websockets"": ""true"",
+        ""wire API"": ""responses""
+      },
+      ""remediation"": null,
+      ""durationMs"": 868
+    },
+    ""runtime.provenance"": {
+      ""id"": ""runtime.provenance"",
+      ""category"": ""runtime"",
+      ""status"": ""ok"",
+      ""summary"": ""running npm on windows-x86_64"",
+      ""details"": {
+        ""commit"": ""unknown"",
+        ""current executable"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe"",
+        ""install method"": ""npm (package C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc, bin C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin, resources C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\codex-resources, path C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\codex-path)"",
+        ""platform"": ""windows-x86_64"",
+        ""version"": ""0.144.3""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""runtime.search"": {
+      ""id"": ""runtime.search"",
+      ""category"": ""search"",
+      ""status"": ""ok"",
+      ""summary"": ""search is OK (bundled)"",
+      ""details"": {
+        ""search command"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\codex-path\\rg.exe"",
+        ""search command readiness"": ""file exists"",
+        ""search provider"": ""bundled""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""sandbox.helpers"": {
+      ""id"": ""sandbox.helpers"",
+      ""category"": ""sandbox"",
+      ""status"": ""ok"",
+      ""summary"": ""sandbox configuration is readable"",
+      ""details"": {
+        ""approval policy"": ""OnRequest"",
+        ""codex-linux-sandbox helper"": ""none"",
+        ""execve wrapper helper"": ""none"",
+        ""filesystem sandbox"": ""restricted"",
+        ""network sandbox"": ""enabled""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""state.paths"": {
+      ""id"": ""state.paths"",
+      ""category"": ""state"",
+      ""status"": ""ok"",
+      ""summary"": ""state paths and databases are inspectable"",
+      ""details"": {
+        ""CODEX_HOME"": ""C:\\Users\\Johnf\\.codex (dir)"",
+        ""active rollout files"": ""674 files, 5138386180 total bytes, 7623718 average bytes"",
+        ""archived rollout files"": ""0 files, 0 total bytes, 0 average bytes"",
+        ""goals DB"": ""C:\\Users\\Johnf\\.codex\\goals_1.sqlite (file)"",
+        ""goals DB integrity"": ""ok"",
+        ""log DB"": ""C:\\Users\\Johnf\\.codex\\logs_2.sqlite (file)"",
+        ""log DB integrity"": ""ok"",
+        ""log dir"": ""C:\\Users\\Johnf\\.codex\\log (missing)"",
+        ""memories DB"": ""C:\\Users\\Johnf\\.codex\\memories_1.sqlite (file)"",
+        ""memories DB integrity"": ""ok"",
+        ""sqlite home"": ""C:\\Users\\Johnf\\.codex (dir)"",
+        ""state DB"": ""C:\\Users\\Johnf\\.codex\\state_5.sqlite (file)"",
+        ""state DB integrity"": ""ok""
+      },
+      ""remediation"": null,
+      ""durationMs"": 2951
+    },
+    ""state.rollout_db_parity"": {
+      ""id"": ""state.rollout_db_parity"",
+      ""category"": ""threads"",
+      ""status"": ""ok"",
+      ""summary"": ""rollout files and state DB thread inventory agree"",
+      ""details"": {
+        ""default model provider"": ""openai"",
+        ""rollout DB active files"": ""674"",
+        ""rollout DB active rows"": ""674"",
+        ""rollout DB archive mismatches"": ""0"",
+        ""rollout DB archived files"": ""0"",
+        ""rollout DB archived rows"": ""0"",
+        ""rollout DB duplicate DB paths"": ""0"",
+        ""rollout DB duplicate rollout thread ids"": ""0"",
+        ""rollout DB malformed file names"": ""0"",
+        ""rollout DB missing active rows"": ""0"",
+        ""rollout DB missing archived rows"": ""0"",
+        ""rollout DB model providers"": ""openai=674"",
+        ""rollout DB rows"": ""674"",
+        ""rollout DB scan cap reached"": ""false"",
+        ""rollout DB scan errors"": ""0"",
+        ""rollout DB sources"": ""cli=298, subagent:other=203, subagent:thread_spawn=159, subagent:review=13, vscode=1"",
+        ""rollout DB stale rows"": ""0""
+      },
+      ""remediation"": null,
+      ""durationMs"": 50197
+    },
+    ""system.environment"": {
+      ""id"": ""system.environment"",
+      ""category"": ""system"",
+      ""status"": ""ok"",
+      ""summary"": ""OS language en-GB"",
+      ""details"": {
+        ""EDITOR"": ""not set"",
+        ""VISUAL"": ""not set"",
+        ""os"": ""Windows 10.0.26120 (Windows 11 Core) [64-bit]"",
+        ""os language"": ""en-GB"",
+        ""os type"": ""Windows"",
+        ""os version"": ""10.0.26120""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""terminal.env"": {
+      ""id"": ""terminal.env"",
+      ""category"": ""terminal"",
+      ""status"": ""ok"",
+      ""summary"": ""terminal metadata was detected"",
+      ""details"": {
+        ""WT_SESSION"": ""present"",
+        ""color output"": ""enabled"",
+        ""console input code page"": ""65001"",
+        ""console output code page"": ""65001"",
+        ""stderr console mode"": ""0x00000007 (VT processing: true)"",
+        ""stderr is terminal"": ""true"",
+        ""stdin is terminal"": ""true"",
+        ""stdout console mode"": ""0x00000007 (VT processing: true)"",
+        ""stdout is terminal"": ""true"",
+        ""terminal"": ""Windows Terminal"",
+        ""terminal size"": ""92x48""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""terminal.title"": {
+      ""id"": ""terminal.title"",
+      ""category"": ""title"",
+      ""status"": ""ok"",
+      ""summary"": ""terminal title default"",
+      ""details"": {
+        ""terminal title activity"": ""true"",
+        ""terminal title items"": ""activity, project-name"",
+        ""terminal title project source"": ""cwd"",
+        ""terminal title project value"": ""Johnf"",
+        ""terminal title source"": ""default""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""updates.status"": {
+      ""id"": ""updates.status"",
+      ""category"": ""updates"",
+      ""status"": ""ok"",
+      ""summary"": ""update configuration is locally consistent"",
+      ""details"": {
+        ""cached latest version"": ""0.144.3"",
+        ""check for update on startup"": ""true"",
+        ""last checked at"": ""2026-07-13T06:45:54.121168500Z"",
+        ""latest version"": ""0.144.3"",
+        ""latest version status"": ""current version is not older"",
+        ""npm update target"": ""C:\\Users\\Johnf\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex"",
+        ""update action"": ""npm install -g @openai/codex"",
+        ""version cache"": ""C:\\Users\\Johnf\\.codex\\version.json""
+      },
+      ""remediation"": null,
+      ""durationMs"": 846
+    }
+  }
+}
+```
+
+### What issue are you seeing?
+
+on windows, codex 0.144.3 routes every apply_patch call through automatic approval review under normal permissions.
+
+three trivial patches took 68.248s, 94.612s, and 121.345s. the identical patches under full access took 16ms, 17ms, and 17ms.
+
+same cli version, model, repository, and operations. only the permission profile changed. this isolates the slowdown to the approval review path and makes normal permissions unusable.
+
+uploaded thread:
+019f5b78-05ec-73e0-b6c7-ed05b236bc47
+
+### What steps can reproduce the bug?
+
+Uploaded thread: 019f5b78-05ec-73e0-b6c7-ed05b236bc47
+
+### What is the expected behavior?
+
+routine apply_patch operations inside a trusted writable worktree should not spend minutes in automatic approval review. full access should not be required for normal patch performance.
+
+### Additional information
+
+started happening with 0.144.1, continued to current version, was not happening before this, cant roll back because otherwise 5.6 is unavaiable in unaffected versions. ",open,,2026-07-13T12:55:06Z,2026-07-13T16:43:19Z,,2,johnlukefrancis,User,NONE,"['bug', 'windows-os', 'sandbox', 'CLI', 'tool-calls', 'performance']",4,performance or resource problem,open unresolved,johnlukefrancis,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,1639,1,1,True,True,False,2,1,2,2,2,2,1,2,2,1,0.85,machine provisional; requires rubric review
+32806,https://github.com/openai/codex/issues/32806,🚨 [SEVERE REGRESSION] GPT-5.6 Sol context cut again: 353K → 258K despite advertised 1.05M,"### What version of Codex CLI is running?
+
+`codex-cli 0.144.3`
+
+### What subscription do you have?
+
+Paid ChatGPT-authenticated Codex subscription. Exact tier is redacted for privacy because the catalog/runtime regression is not account-specific.
+
+### Which model were you using?
+
+`gpt-5.6-sol`
+
+### What platform is your computer?
+
+Linux x86_64. Exact host and kernel details are redacted because they are unrelated to server-delivered model metadata.
+
+### What terminal emulator and version are you using (if applicable)?
+
+Codex desktop/CLI environment. Local application and project identifiers are redacted.
+
+### Codex doctor report
+
+Not included to avoid publishing machine, account, path, repository, and runtime metadata. The relevant sanitized version, model-catalog fields, and runtime values are included below.
+
+### What issue are you seeing?
+
+## Summary
+
+Codex has silently reduced the usable context window for `gpt-5.6-sol` **again**.
+
+The previous server-delivered Codex model catalog exposed:
+
+```json
+{
+  ""context_window"": 372000,
+  ""max_context_window"": 372000,
+  ""effective_context_window_percent"": 95
+}
+```
+
+That produced a `353,400`-token effective runtime window:
+
+```text
+372,000 × 95% = 353,400
+```
+
+The current freshly fetched catalog now exposes:
+
+```json
+{
+  ""context_window"": 272000,
+  ""max_context_window"": 272000,
+  ""effective_context_window_percent"": 95
+}
+```
+
+Codex therefore now reports only `258,400` effective tokens:
+
+```text
+272,000 × 95% = 258,400
+```
+
+This is a further **95,000-token / 26.9% reduction** from the already restricted 353.4K Codex window. It is not UI rounding. Sanitized historical runtime records repeatedly report `model_context_window: 353400` before the rollout and `model_context_window: 258400` afterward. No local `model_context_window` or auto-compaction override is configured.
+
+Issue #31860 already documented that the earlier 353.4K Codex cap was far below the published GPT-5.6 Sol model specification. This report covers the new and materially worse regression from 353.4K to 258.4K.
+
+The official GPT-5.6 Sol model page still advertises:
+
+- 1,050,000-token context window
+- 922,000 maximum input
+- 128,000 maximum output
+
+Source: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+
+At the same 95% effective-window policy, the advertised model would provide approximately `997,500` usable tokens. Codex now exposes only `258,400`, or **25.9%** of that comparable effective capacity.
+
+## Why this is unacceptable
+
+This combination is infuriating: OpenAI advertises a 1.05M flagship model, initially restricts it to 353K in Codex, and then silently cuts it again to 258K. Paying users are left with more compactions, lost working context, disrupted long-running tasks, and no advance notice or explanation.
+
+This feels dismissive of paying users and materially undermines trust in Codex as a professional development tool. Repository-scale analysis, long-running implementation work, multi-agent coordination, large specifications, and tool-heavy sessions all depend on stable context capacity. Context size is not a cosmetic setting that can be silently reduced by another 26.9%.
+
+The pricing situation makes this even more frustrating. The same official model page states that requests above 272K input are priced at `2×` input and `1.5×` output for the full request. Codex now caps the raw window at exactly 272K, so users cannot even choose to access the published long-context tier through Codex.
+
+To be precise: this report concerns the Codex product limit under ChatGPT authentication. The pricing comparison refers to OpenAI's published API long-context policy; it demonstrates that long-context capacity exists and is explicitly priced, while Codex prevents access to it.
+
+Major competing platforms already offer 1M-class context:
+
+- Google documents Gemini models with 1M or larger context windows: https://ai.google.dev/gemini-api/docs/long-context
+- xAI documents a 1,000,000-token window for its flagship Grok 4.3: https://docs.x.ai/developers/models/grok-4.3
+- Anthropic documents a 1M context option for Claude Sonnet 4: https://docs.anthropic.com/en/docs/about-claude/pricing
+
+A flagship coding product limited to 258K effective context is no longer competitive, especially when its underlying OpenAI model is publicly specified at 1.05M.
+
+### What steps can reproduce the bug?
+
+1. Run Codex CLI `0.144.3` with the official OpenAI provider and ChatGPT authentication.
+2. Select `gpt-5.6-sol`.
+3. Ensure there is no local `model_context_window`, `model_auto_compact_token_limit`, provider, or project override.
+4. Fetch or refresh the server-delivered model catalog.
+5. Inspect the sanitized `gpt-5.6-sol` catalog entry.
+6. Observe `context_window: 272000`, `max_context_window: 272000`, and `effective_context_window_percent: 95`.
+7. Start or continue a thread and inspect token-usage metadata.
+8. Observe `model_context_window: 258400`.
+9. Compare with earlier sanitized GPT-5.6 Sol thread records, which report `model_context_window: 353400`.
+
+The transition was observed on 2026-07-13. Old and new values briefly overlapped across existing and newly started threads, consistent with a phased or cached server-side catalog rollout.
+
+### What is the expected behavior?
+
+1. Codex should expose the full published 1.05M GPT-5.6 Sol context window, with a clear effective input/output reserve.
+2. If a product-specific cap is unavoidable, it must be prominently documented before users select the model.
+3. Context limits must not be silently reduced for existing or new paid-user workflows.
+4. Active threads should retain the context contract under which they were started.
+5. Users should be allowed to opt into the published long-context tier when they accept the associated usage or pricing impact.
+6. As an immediate stopgap, restore the previous 372K raw / 353.4K effective Codex limit while full 1.05M support is implemented.
+7. OpenAI should explain why the context was reduced, whether the change is temporary, which plans/surfaces are affected, and how usage accounting interacts with this cap.
+
+### Additional information
+
+Related reports:
+
+- #31860 — GPT-5.6 Sol was already capped at 372K raw / 353.4K effective instead of the published 1.05M.
+- #29039 — a GPT-5.5 thread changed from 1M to 258K mid-thread.
+- #30910 — request to restore 1M context support.
+
+Privacy note: this report intentionally excludes account identifiers, thread IDs, repository names, local paths, prompts, transcripts, and exact machine metadata. Only model metadata and aggregate context-window observations required to reproduce the regression are included.",closed,completed,2026-07-13T14:33:32Z,2026-07-19T08:49:47Z,2026-07-13T20:29:28Z,27,Lady-Lin,User,NONE,"['bug', 'CLI', 'context']",51,reproducible bug,completed/fixed,,57;811;812,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,994,4,4,True,True,False,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
+32817,https://github.com/openai/codex/issues/32817,Add an option to hide or collapse code snippets in Codex CLI progress output,"### What variant of Codex are you using?
+
+CLI
+
+### What feature would you like to see?
+
+## Summary
+
+I would like Codex CLI to support an option that hides or collapses code snippets in intermediate reasoning, progress updates, and tool-call output.
+
+When Codex is working, it often prints code fragments, diffs, or file snippets directly in the terminal. In many cases, I only want to see the natural-language progress summary, such as what file is being inspected, what change is planned, or which validation step is running.
+
+## Suggested behavior
+
+Add a display setting such as:
+
+```toml
+[ui]
+code_output = ""collapsed""
+```
+
+Possible modes:
+
+* `show`: current behavior
+* `hide`: do not show code snippets in progress output
+* `collapsed`: show a placeholder and allow the user to expand the code manually
+
+For example, instead of printing a full code block immediately, Codex CLI could show:
+
+```text
+[Code snippet collapsed — press Enter or click to expand]
+```
+
+This could apply to:
+
+* code blocks in assistant progress messages
+* large command outputs containing source code
+* tool output that includes file snippets
+* diffs or patch previews, if the user has not explicitly requested them
+
+## Motivation
+
+This would reduce terminal noise and make Codex easier to follow during long coding sessions.
+
+It would also help users who prefer to review actual changes through `git diff`, their editor, or a dedicated review step instead of seeing code fragments mixed into the live progress log.
+
+## Expected result
+
+Users can keep Codex's progress output readable by default, while still being able to expand code when needed.
+
+
+### Additional information
+
+_No response_",open,,2026-07-13T15:15:40Z,2026-07-13T15:16:23Z,,0,Traveller23,User,NONE,"['enhancement', 'TUI', 'CLI', 'config']",1,feature request,open unresolved,Traveller23,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,257,2,0,False,True,False,2,1,2,0,0,2,2,,2,2,0.7222222222222222,machine provisional; requires rubric review
+32862,https://github.com/openai/codex/issues/32862,Codex Desktop: existing task repeatedly reverts to on-request approvals despite full-access/no-approval settings,"## Summary
+An existing Codex Desktop task repeatedly asks for file-edit approval even after the user chooses **Allow always** and even after global/per-task settings are changed to full-access/no-approval. The task rehydrates back to `approval_mode = on-request` whenever continued through background thread messaging.
+
+## Environment
+- OS: Windows
+- App: OpenAI Codex / ChatGPT Desktop
+- App package observed: `OpenAI.Codex_26.707.8479.0_x64__2p2nqsd0c76g0`
+- Affected task/thread: `019dfee1-c0dd-7323-966b-d9f63460807f`
+- Task title: `Microbot Recode`
+- Project path: `E:\Microbot-nightly`
+- Old task source in local state: `vscode`
+- Old task CLI version in local state: `0.128.0-alpha.1`
+- Current controller task CLI version observed separately: `0.144.0-alpha.4`
+
+## Expected behavior
+When permissions are set to full access / never ask, and the user chooses **Allow always**, Codex should not repeatedly prompt:
+
+`Allow ChatGPT to edit the following file?`
+
+Normal edits inside the trusted project should proceed without repeated modal approval prompts.
+
+## Actual behavior
+The task repeatedly shows file-edit approval prompts for normal edits inside the trusted project, for example:
+
+`E:/Microbot-nightly/runelite-client/src/main/java/.../Rs2Dialogue.java`
+
+Clicking **Allow always** does not persist. The same approval prompt appears again shortly after on the next edit attempt.
+
+## Reproduction steps
+1. Open existing task `019dfee1-c0dd-7323-966b-d9f63460807f`.
+2. Continue it from another Codex task using `send_message_to_thread`.
+3. Ask it to edit a file inside `E:\Microbot-nightly`.
+4. Observe a file-edit approval prompt.
+5. Click **Allow always**.
+6. Ask/allow another edit.
+7. Observe that the approval prompt returns.
+
+## Local state evidence
+The task row in:
+
+`C:\Users\Clouddy\.codex\state_5.sqlite`
+
+repeatedly rewrites to:
+
+- `approval_mode = on-request`
+- `sandbox_policy = managed/restricted`
+
+Even after manually setting:
+
+- `approval_mode = never`
+- `sandbox_policy = {""type"":""disabled""}`
+
+The JSON UI mirror at:
+
+`C:\Users\Clouddy\.codex\.codex-global-state.json`
+
+also gets rewritten from:
+
+- `:danger-full-access`
+- `approvalPolicy: never`
+
+back to:
+
+- `:workspace`
+- `approvalPolicy: on-request`
+
+when the old task is resumed.
+
+## Additional observed behavior
+A canary edit attempt after permission repair still triggered approval immediately. The dev task reported:
+
+> Editing still triggered an approval/pending prompt, so I terminated it immediately. No new patch landed.
+
+The old task is therefore unusable for unattended or delegated code edits even though the project is trusted and the intended global policy is no approvals.
+
+## Impact
+This breaks long-running multi-task workflows where one task is the controller and another specific existing task is the required development task. It causes repeated blocking approval popups and makes **Allow always** unreliable.
+
+## Severity
+High. It prevents unattended automation and invalidates the user's selected persistent permission mode.
+
+## Requested fix
+Existing tasks should respect current global/project/task permission settings when resumed, or there should be a supported way to permanently migrate an old task from legacy `on-request` permissions to `full-access/never`.
+
+**Allow always** must persist for the task/project and should not be overwritten by task rehydration.
+",open,,2026-07-13T19:47:44Z,2026-07-25T16:04:29Z,,3,Clouddylol,User,NONE,"['bug', 'windows-os', 'sandbox', 'app', 'session']",0,reproducible bug,open unresolved,,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,482,0,0,False,True,False,2,2,2,2,2,1,2,,2,2,0.9444444444444444,machine provisional; requires rubric review
+32963,https://github.com/openai/codex/issues/32963,[App] Allow agent thread search to include archived tasks,"### What variant of Codex are you using?
+
+App — ChatGPT desktop for macOS
+
+### What feature would you like to see?
+
+Expose archived tasks through the agent-facing thread search control. The current `codex_app__list_threads` tool accepts `query` and `limit`, but it has no archive-state filter and excludes archived tasks from results.
+
+Please add an option such as:
+
+```text
+archiveState: active | archived | all
+```
+
+or an `includeArchived` boolean. Search results should also expose `archived` and `archivedAt` metadata.
+
+This would allow a manager task to locate and reuse completed work without requiring the user to manually unarchive tasks or requiring the agent to inspect internal local state. Ideally, the same behavior would work consistently for local and connected-host tasks.
+
+### Additional information
+
+Verified behavior on ChatGPT desktop build `26.707.71524` (`5263`), macOS `26.5.2`, Apple Silicon:
+
+1. Choose an existing archived task with a known unique title.
+2. Call `codex_app__list_threads` using that title as the query.
+3. The result is empty.
+4. Call `codex_app__read_thread` with the already-known archived task ID.
+5. The archived task and its history are returned successfully.
+
+This shows that archived tasks remain readable, but they are not discoverable through the agent thread-search control.
+
+Related: #20732 requests archived-task visibility in the normal desktop UI. This request is specifically for the agent-facing thread-management tool/API.
+
+Expected outcome: agent tasks can search active, archived, or all tasks explicitly, without changing archive state. No task IDs, project names, or archived conversation content are included in this report.",open,,2026-07-14T05:28:46Z,2026-07-14T05:30:41Z,,1,CJavierSaldana,User,NONE,"['enhancement', 'app', 'session']",0,feature request,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,250,1,0,False,False,False,2,1,1,0,0,2,2,2,2,2,0.7,machine provisional; requires rubric review
+33072,https://github.com/openai/codex/issues/33072,Cannot revert to original plan after one-month hackathon Pro 5x benefit expires,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+**26.707.72221** (Codex desktop / ChatGPT app, macOS arm64)
+
+Codex CLI: **0.144.4**
+
+### What subscription do you have?
+
+My account was moved to a **one-month Pro 5x / Pro X5** benefit during the Paris hackathon / Codex Build Week flow because the normal credit redemption path did not work (see related issues below).
+
+That one-month benefit has now **ended**.
+
+I do **not** want to:
+- upgrade to Go / Plus / Pro,
+- buy credits,
+- or add auto top-up.
+
+I only want to **return to my original pre-hackathon plan** and regain a normal, consistent account state.
+
+Right now the UI is inconsistent:
+- the pricing page at `https://chatgpt.com/#pricing` shows plan options (Go / Plus / Pro),
+- repeated attempts to change plan show: **`There was a problem updating your subscription`** (multiple stacked error toasts),
+- Codex usage is blocked with usage-limit messaging (`prolite_rate_limit_reached` / `usage_limit` in local logs).
+
+### What platform is your computer?
+
+```
+Darwin 25.5.0 arm64 arm
+```
+
+OS language: `en-FR`
+
+### What issue are you seeing?
+
+After my one-month hackathon Pro 5x benefit expired, I am stuck in a broken billing/subscription state and cannot return to my original plan.
+
+**User-visible symptoms**
+- ChatGPT pricing page shows repeated orange banners: `There was a problem updating your subscription`
+- I cannot preview or apply any plan change from the pricing UI
+- Codex is effectively blocked by usage limits
+- I am not trying to purchase a new paid tier or add credits — I only want my account restored to the plan I had before the hackathon subscription override
+
+**Local Codex desktop log evidence (2026-07-14, redacted)**
+
+Repeated backend failures when the app tries to preview subscription changes:
+
+```
+GET /subscriptions/update/preview?account_id=5b93f2e5-1013-43f8-8a00-6bd4823650c8&updated_plan=chatgptpro
+HTTP 400
+{""detail"":""Updates to Enterprisey/Gratis subscriptions cannot be previewed via this endpoint""}
+```
+
+Other related failures from the same session:
+
+```
+GET /wham/usage
+HTTP 401 {""detail"":""Unauthorized""}
+
+GET /subscriptions/auto_top_up/settings
+HTTP 401 {""detail"":{""message"":""Unauthorized - Access token is missing""}}
+
+Codex usage limit banner:
+bannerType=prolite_rate_limit_reached
+eventType=codex_usage_limit_banner_shown
+limitReason=usage_limit
+```
+
+Log files (local paths, available on request):
+- `~/Library/Logs/com.openai.codex/2026/07/14/codex-desktop-c6883e4c-af28-4110-b9a1-e90296bfcf7a-93222-t0-i1-134652-0.log`
+- `~/Library/Logs/com.openai.codex/2026/07/14/codex-desktop-1fb6e675-da1f-49aa-aa32-4768d306664a-86539-t0-i1-134406-0.log`
+
+**Codex doctor (CLI, redacted)**
+- `codex-cli 0.144.4`
+- macOS standalone install
+- state DB healthy (`~/.codex/state_5.sqlite`, `~/.codex/logs_2.sqlite`)
+
+### What steps can reproduce the bug?
+
+1. Start from an account that received the Paris hackathon / Build Week one-month Pro 5x override because credits checkout/redemption failed.
+2. Wait until that one-month benefit expires.
+3. Open `https://chatgpt.com/#pricing` or the Codex app plan/subscription UI.
+4. Try to return to the original pre-hackathon plan (or any plan change).
+5. Observe repeated UI error: `There was a problem updating your subscription`.
+6. Open Codex and try to use it.
+7. Observe usage-limit blocking and no usable reset path.
+
+### What is the expected behavior?
+
+When the temporary one-month hackathon Pro 5x benefit ends, the account should automatically and cleanly revert to the user's original plan.
+
+If manual action is required, the subscription UI should allow a normal downgrade/revert without forcing a new purchase, credit pack, or auto top-up.
+
+The backend should not leave the account in an `Enterprisey/Gratis` state that cannot be previewed/updated via `/subscriptions/update/preview`.
+
+### Additional information
+
+#### Related issues from the same account/history
+
+This is a continuation of an ongoing subscription/account-state problem:
+
+- #32978 — **No Codex reset available and subscription update fails on Pro 5x during Build Week** (open; documents the hackathon override, missing resets, and the same subscription update error)
+- #27645 — **Codex Paris workshop promo applies discount but checkout fails** (open; original hackathon/workshop credit redemption failure)
+- #22714 — Codex mobile Remote Control stale host issue (closed; separate, but same account history)
+
+#### Timeline / context
+
+1. Paris workshop / hackathon promo checkout failed (#27645).
+2. Account was moved to a one-month Pro 5x benefit instead of normal credits (#32978).
+3. During that month: no usable Codex usage resets, subscription page already failed to update.
+4. **Now (July 14, 2026):** the one-month benefit has ended, but I still cannot revert to my original plan and Codex remains blocked.
+
+#### What I am asking for
+
+Please restore my account to my **original pre-hackathon plan** and clear the inconsistent `Enterprisey/Gratis` / expired-benefit billing state so that:
+- subscription changes work again, or automatic revert completes,
+- Codex usage reflects the correct plan entitlements,
+- I am not forced into [go/Plus/Pro](https://www.golinks.io/Plus/Pro?trackSource=github) upgrades or credit purchases.
+
+I can provide account email, exact original plan name, promo code, invoices, and full unredacted logs privately to OpenAI Support if needed.
+",open,,2026-07-14T14:00:49Z,2026-07-14T14:22:27Z,,2,ardjo-s,User,NONE,"['bug', 'rate-limits', 'app']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,816,3,3,True,True,False,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
+33154,https://github.com/openai/codex/issues/33154,Codex desktop composer intermittently freezes and requires app restart,"### Description
+
+The Codex desktop app intermittently freezes on macOS. The composer stops accepting keyboard input, so work cannot continue until the app is closed and reopened. This has occurred repeatedly.
+
+There is also related model-routing friction: routine tasks that previously worked reliably with GPT-5.5 Medium were recommended or routed to GPT-5.6 Sol High without a clear task-specific reason. Please investigate both the composer/input hang and overly aggressive model or reasoning-effort escalation guidance.
+
+### Diagnostic upload
+
+Logs, diagnostics, and the feedback session were uploaded through `/feedback`.
+
+Uploaded thread ID: `019f6264-08e1-7050-8143-f9394585dd6d`
+
+The upload was performed through Codex CLI v0.144.2; the freezing behavior itself occurs in the Codex desktop app on macOS.
+
+### Impact
+
+The user must close and reopen Codex to regain typing and continue active work.",open,,2026-07-14T20:51:18Z,2026-07-14T20:52:45Z,,1,karl-englund,User,NONE,"['bug', 'model-behavior', 'app', 'performance']",0,model-behaviour report,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,137,0,0,False,False,False,2,2,0,0,0,2,2,,2,2,0.6666666666666666,machine provisional; requires rubric review
+33273,https://github.com/openai/codex/issues/33273,Codex Browser,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+Version 26.707.72221
+
+### What subscription do you have?
+
+Plus
+
+### What platform is your computer?
+
+_No response_
+
+### What issue are you seeing?
+
+ID 019f645b-0c92-7703-ba40-657af4d5d6ed
+
+### What steps can reproduce the bug?
+
+When ever codex browser is called , codex crashes and closes
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",open,,2026-07-15T07:02:08Z,2026-07-15T07:03:19Z,,2,Fawzankhan-404,User,NONE,"['bug', 'app', 'browser']",0,reproducible bug,open unresolved,Fawzankhan-404,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,68,0,0,True,False,False,1,0,2,1,2,1,2,,2,2,0.7222222222222222,machine provisional; requires rubric review
+33489,https://github.com/openai/codex/issues/33489,Accepting an AI edit in a writing block does not apply the changes,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.707.9981.0
+
+### What subscription do you have?
+
+plus
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26200.0 x64
+
+### What issue are you seeing?
+
+In the Codex Windows desktop app, I edited a writing block and asked Codex to revise its content. Codex successfully displayed a comparison UI with “Reject” and “Accept” buttons.
+
+After clicking “Accept”, nothing changed on the page. The original content remained visible, and there was no confirmation, error message, or other indication that the revised content had been applied.
+
+### What steps can reproduce the bug?
+
+1. Open a conversation containing a writing block, such as a document or Markdown table.
+
+2. Click the edit action on the writing block.
+
+3. Submit an instruction asking Codex to revise the content.
+
+4. Wait for the comparison UI with the “Reject” and “Accept” buttons.
+
+5. Click “Accept”.
+
+6. Observe that the page and writing block do not change.
+
+### What is the expected behavior?
+
+Clicking “Accept” should replace the previous writing-block content with the revised version, close the comparison UI, and save the accepted revision in the conversation.
+
+### Additional information
+
+- Codex App version: 26.707.9981.0
+
+- Platform: Microsoft Windows NT 10.0.26200.0 x64
+
+- Session ID: 019f68e7-3ea4-7940-ae37-8de56d146e1f",open,,2026-07-16T03:45:11Z,2026-07-16T03:45:51Z,,0,Orion-FFF,User,NONE,"['bug', 'windows-os', 'app']",0,reproducible bug,open unresolved,Orion-FFF,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,221,0,0,True,False,False,2,1,2,2,2,1,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+33630,https://github.com/openai/codex/issues/33630,Allow UserPromptSubmit hooks to fail closed before model requests,"### What variant of Codex are you using?
+
+Codex Desktop/App, app-server, and CLI. The motivating reproduction was on Windows with Codex 0.144.5; the proposed behavior was also implemented and validated against current `main`.
+
+### What feature would you like to see?
+
+Add an opt-in fail-closed policy for `UserPromptSubmit` command hooks so a detector or policy hook can prevent prompt transmission when the hook itself fails.
+
+Today, a `UserPromptSubmit` hook can reject a prompt through a valid blocking result, but Codex continues submission when the hook process crashes, times out, cannot be executed, or emits malformed output. That makes the hook unsuitable for local secret-paste prevention or similar pre-transmission policy checks: detector failure must not silently become permission to send the prompt.
+
+A narrow configuration shape would be:
+
+```json
+{
+  ""hooks"": {
+    ""UserPromptSubmit"": [
+      {
+        ""matcher"": """",
+        ""failureMode"": ""block"",
+        ""hooks"": [
+          {
+            ""type"": ""command"",
+            ""command"": ""path/to/local-detector""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Proposed semantics:
+
+- `failureMode` accepts `continue` or `block`.
+- Omitted or `continue` preserves the existing fail-open behavior.
+- `block` applies only to `UserPromptSubmit`; other events warn and remain fail-open.
+- Nonzero exit, timeout, missing executable, malformed output, and event-serialization failure produce a redacted blocking diagnostic and no model request.
+- The policy participates in hook trust hashing so changing it requires re-trust.
+- Desktop/app-server config reads expose the effective value so UI and runtime state remain consistent.
+
+This is the concrete blocking-policy part of the broader cross-surface hook goals tracked in #21753.
+
+### Additional information
+
+I prepared a validated candidate implementation because external code contributions are invitation-only:
+
+- Branch: https://github.com/AleZworks/codex/tree/codex/user-prompt-submit-fail-closed
+- Compare: https://github.com/openai/codex/compare/main...AleZworks:codex/user-prompt-submit-fail-closed
+- Commit: https://github.com/AleZworks/codex/commit/11c13c7
+
+The candidate:
+
+- implements the opt-in policy in config and the hook engine;
+- carries it through `configRequirements/read` for Desktop/app-server consumers;
+- regenerates config, JSON Schema, and TypeScript artifacts;
+- adds unit and RPC coverage;
+- adds a Linux core integration test that asserts a failed fail-closed `UserPromptSubmit` hook results in zero model requests.
+
+Local validation completed:
+
+- `just write-config-schema`
+- `just write-app-server-schema`
+- `just test -p codex-app-server-protocol` (262 passed)
+- `just test -p codex-config` (205 passed)
+- `just test -p codex-hooks -E 'test(user_prompt_submit)'` (8 passed)
+- `just test -p codex-hooks -E 'test(failure_mode_changes_hook_trust_hash)'` (1 passed)
+- `just test -p codex-app-server -E 'test(config_requirements_read_includes_hook_failure_mode)'` (1 passed)
+- targeted `just fix` across affected crates
+- `cargo fmt --all`
+
+The core hooks integration suite is cfg-disabled on Windows and is intended to run in Linux CI.
+",open,,2026-07-16T16:00:16Z,2026-07-16T16:00:52Z,,0,AleZworks,User,NONE,"['enhancement', 'windows-os', 'CLI', 'app', 'hooks', 'config', 'app-server']",0,feature request,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,432,1,3,False,False,True,2,2,0,2,0,2,2,2,2,2,0.8,machine provisional; requires rubric review
+33729,https://github.com/openai/codex/issues/33729,[file-search] Session can complete before the first query is processed,"### What issue are you seeing?
+
+`FileSearchSession` can call `SessionReporter::on_complete()` after the directory walk finishes but before the matcher has processed its first `QueryUpdated` signal.
+
+This matters to the synchronous `run()` path: it creates the session, starts the walker and matcher workers, then sends the query and waits for completion. The walker and caller send through different clones of the channel sender. For a fast or empty walk, `WalkComplete` can be received first, causing `run()` to return the reporter's default empty snapshot before its requested query has run.
+
+### What steps can reproduce the bug?
+
+On `main` commit `315195492c80fdade38e917c18f9584efd599304`, add the following regression test inside the existing `file-search/src/lib.rs` test module:
+
+```rust
+#[test]
+fn initial_query_survives_preemption_after_session_creation() {
+    let dir = create_temp_tree(/*file_count*/ 40);
+    let reporter = Arc::new(RunReporter::default());
+    let session = create_session(
+        vec![dir.path().to_path_buf()],
+        FileSearchOptions::default(),
+        reporter.clone(),
+        /*cancel_flag*/ None,
+    )
+    .expect(""session"");
+
+    // Model the caller being descheduled after create_session returns but
+    // before run() can send its initial query.
+    thread::sleep(Duration::from_millis(100));
+    session.update_query(""file-0039"");
+
+    let snapshot = reporter.wait_for_complete();
+    assert_eq!(snapshot.query, ""file-0039"");
+}
+```
+
+The short pause models a valid operating-system preemption at the exact boundary used by `run()`; the test otherwise follows the real `create_session → update_query → wait_for_complete` path and does not inject private work signals.
+
+Run:
+
+```text
+just test -p codex-file-search initial_query_survives_preemption_after_session_creation
+```
+
+The test fails on both the initial run and nextest retry:
+
+```text
+left: """"
+right: ""file-0039""
+```
+
+### What is the expected behavior?
+
+Completing the directory walk should not complete a session that has not received a query. Once a query is received, the existing contract should remain unchanged: the reporter is eventually completed for that update.
+
+### Additional information
+
+Root-cause hypothesis: `matcher_worker` gates completion on `!status.running && walk_complete`, but it does not track whether a query has ever been received. A minimal fix is to record receipt of the first `QueryUpdated` and require that state before reporting normal completion.
+
+The session-based implementation originated in merged PR #9939. I searched existing issues and pull requests using the relevant file-search symbols and completion-order terms; I found related session completion discussions in that PR, but no report covering `WalkComplete` arriving before the first `QueryUpdated` signal.
+
+I have a focused regression test and local one-commit fix ready. I would be happy to submit it if a Codex maintainer invites a PR.",open,,2026-07-17T03:20:11Z,2026-07-17T03:29:00Z,,0,youzi-1122,User,NONE,"['bug', 'CLI']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,390,3,0,True,False,False,2,2,2,2,0,2,2,2,2,2,0.9,machine provisional; requires rubric review
+33735,https://github.com/openai/codex/issues/33735,Codex App session JSONL files grow to 24 GB due to repeated inline image data during context compaction,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.715.2305.0 (bundled Codex CLI: 0.145.0-alpha.18)
+
+### What subscription do you have?
+
+ChatGPT Pro
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26200.0 x64
+
+### What issue are you seeing?
+
+The Codex App's local session storage has grown unexpectedly to 27.761 GiB on my C: drive.
+
+Storage breakdown:
+
+- `C:\Users\<username>\.codex`: 27.761 GiB
+- `sessions`: 25.312 GiB
+- `sessions\2026\07`: 24.365 GiB across 360 JSONL files
+- July 13–17 alone: 23.521 GiB across 310 files
+
+A representative 268.4 MiB rollout file contains 234.6 MiB of `image_url` data (87.4% of the file) and 208 image references.
+
+The largest 359.3 MiB rollout file contains 77 `compacted` records totaling approximately 239.992 MiB. Inspection of `replacement_history` shows that previously attached inline images are serialized again in repeated context-compaction records.
+
+Multi-agent or descendant sessions also appear to copy the image-containing history, further amplifying the disk usage.
+
+There is no crash or visible error message. The symptom is rapid and unexpected growth of local session files.
+
+### What steps can reproduce the bug?
+
+1. Start a task in Codex Desktop on Windows.
+2. Attach several images to the task.
+3. Continue using the same task long enough for multiple context compactions.
+4. Optionally spawn subagents or descendant tasks from the image-containing conversation.
+5. Inspect the files under:
+
+   `C:\Users\<username>\.codex\sessions\YYYY\MM\DD\`
+
+6. Observe that individual `rollout-*.jsonl` files grow to hundreds of MiB.
+7. Inspecting JSON field lengths shows that the same inline `image_url` data is stored repeatedly inside `compacted.payload.replacement_history`.
+
+In my case, July session files reached 24.365 GiB, while a representative 268.4 MiB session file contained 234.6 MiB of repeated image data.
+
+### What is the expected behavior?
+
+Previously attached images should not be embedded again in every context-compaction snapshot.
+
+Image attachments should ideally be stored once and referenced by file path, content hash, or attachment ID. Session storage should grow roughly in proportion to unique conversation content rather than multiplying with every compaction or descendant session.
+
+### Additional information
+
+Representative affected session ID:
+
+`019f6df5-3051-7602-9310-5fcc14f80edb`
+
+Largest affected session ID:
+
+`019f49cf-e6c7-7aa0-b8eb-ead797461965`
+
+The analysis was performed using file sizes, record types, and JSON field lengths only. No session data was modified.
+
+I have not attached the full JSONL files because they may contain private prompts, local file paths, tool output, and embedded images. I can provide a sanitized diagnostic summary if needed.",open,,2026-07-17T04:03:56Z,2026-07-25T12:15:39Z,,3,xiaxiangfeng,User,NONE,"['bug', 'windows-os', 'context', 'app', 'session', 'performance']",2,performance or resource problem,open unresolved,xiaxiangfeng,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,435,0,0,True,False,False,2,2,2,2,2,1,2,,2,2,0.9444444444444444,machine provisional; requires rubric review
+33898,https://github.com/openai/codex/issues/33898,"`--output-last-message` doesn't create parent dirs; write fails after the turn completes yet exits 0, silently losing the final message","### What happened
+
+`codex exec --output-last-message <path>` does not create the parent directory of `<path>`. If the directory doesn't exist, the failure surfaces only **after the turn completes** — the model does all its work, the JSONL stream ends with `turn.completed`, and then the final-message write fails with a line on stderr:
+
+```
+Failed to write last message file ""/tmp/.../missing-dir/out.md"": No such file or directory (os error 2)
+```
+
+Worse, **the process still exits 0**, so the failure is invisible to any script checking the exit code. The tokens are spent, the final message is lost, and nothing but a stderr line (easily swallowed in headless/background contexts) indicates anything went wrong.
+
+### Repro
+
+```bash
+codex exec -s read-only --skip-git-repo-check --json \
+  --output-last-message /tmp/does-not-exist-$RANDOM/out.md \
+  ""Output exactly: REPRO"" </dev/null
+echo $?   # prints 0; no file was written
+```
+
+Observed on codex-cli 0.144.5, macOS 26 (Darwin 25.5.0, arm64).
+
+### Expected
+
+Any of these would fix it (in descending order of preference):
+
+1. Create parent directories before writing, like most output-file flags.
+2. Validate the path at argument-parse time and fail fast — *before* the run spends tokens.
+3. At minimum, exit non-zero when the write fails so orchestration scripts can detect the loss.
+
+### Why it matters
+
+`--output-last-message` is the natural primitive for headless orchestration (one output file per background worker). In that setting the flag's current behavior is the worst possible combination: the cost is incurred, the artifact is lost, and the exit code reports success. We now `mkdir -p` defensively before every dispatch, but the failure mode is subtle enough that it seems worth fixing at the source.
+",open,,2026-07-17T20:25:20Z,2026-07-18T09:51:59Z,,1,BigCactusLabs,User,NONE,"['bug', 'exec', 'CLI']",0,reproducible bug,open unresolved,,,True,,unverified human/community response,unverified human/community response,,,False,False,True,False,False,False,290,2,0,False,True,False,2,2,1,2,2,2,2,,2,2,0.9444444444444444,machine provisional; requires rubric review
+33918,https://github.com/openai/codex/issues/33918,"After finished prompt > Turn off pc, sleep or hibernate.","### What variant of Codex are you using?
+
+App
+
+### What feature would you like to see?
+
+Ability to tell Codex to shut off, put to sleep or hibernate your pc once it is done with all prompts you have given/queued.
+
+### Additional information
+
+_No response_",open,,2026-07-17T22:56:30Z,2026-07-17T22:57:06Z,,0,vanguard89,User,NONE,"['enhancement', 'app', 'computer-use']",0,feature request,open unresolved,vanguard89,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,44,0,0,False,False,False,2,0,0,0,0,0,2,,2,2,0.4444444444444444,machine provisional; requires rubric review
+34016,https://github.com/openai/codex/issues/34016,Windows Computer Use can pair lock-screen pixels with target-app accessibility state,"### What version of the Codex App are you using?
+
+Codex Desktop `26.715.3651.0`
+
+Bundled Computer Use plugin: `26.715.31251`
+
+Bundled `@oai/sky`: `0.4.20`
+
+### What subscription do you have?
+
+Not relevant / not verified for this local runtime behavior.
+
+### What platform is your computer?
+
+Windows x64, OS build `26100`.
+
+### What issue are you seeing?
+
+When the Windows desktop is locked, the supported bundled Computer Use wrapper initializes and can still enumerate or launch target applications, but window activation and state capture do not surface a reliable structured locked-session result.
+
+In a locked session:
+
+- `activate_window` failed with the generic error `failed to activate captured window`.
+- `get_window_state({ include_screenshot: true, include_text: true })` returned lock-screen pixels while the returned window identity still referred to the requested application.
+- For Paint, the same state response included a detailed Paint accessibility tree even though the screenshot showed the Windows lock screen.
+- For Calculator, the screenshot showed the lock screen while accessibility was null.
+
+This cross-modal mismatch makes it possible for an agent to see target-app accessibility semantics paired with pixels from a different security surface. The bundled guidance correctly says to stop when the desktop is locked, but the API did not identify that condition directly; it had to be inferred visually.
+
+No UI input was sent while the desktop was locked.
+
+### What steps can reproduce the bug?
+
+1. Lock the Windows desktop.
+2. In Codex Desktop, initialize Computer Use through the supported bundled wrapper:
+   `<plugin root>/scripts/computer-use-client.mjs`.
+3. Read the bundled `guidance`, `api`, and `confirmations` documentation.
+4. Call `list_windows()` / `list_apps()`.
+5. Launch Calculator or Paint and select exactly one returned target window.
+6. Call `activate_window({ window })`.
+7. Call `get_window_state({ window, include_screenshot: true, include_text: true })`.
+8. Compare the screenshot surface with the returned window identity and accessibility tree.
+
+### What is the expected behavior?
+
+One of the following should happen before any input is possible:
+
+- Return a structured `desktop_locked` or equivalent error.
+- Expose a first-class session/health state such as `get_session_state()` or `health_check()` with desktop lock, interactive-session, capture, and UI Automation readiness.
+- Refuse to return a target-app accessibility tree when the captured pixels belong to the lock screen.
+- At minimum, label the capture surface so screenshot/accessibility disagreement is explicit.
+
+`activate_window` should also distinguish locked desktop, stale window, and permission/activation failures instead of returning only `failed to activate captured window`.
+
+### Additional information
+
+After manually unlocking the desktop, the same bundled runtime successfully:
+
+1. Launched a fresh Calculator window.
+2. Activated and captured matching screenshot/accessibility state.
+3. Clicked `2 + 3 =` using fresh accessibility state before each action.
+4. Verified the display value `5`.
+5. Closed only the owned Calculator window and verified it was gone.
+
+That isolates the failure to locked-session detection/capture behavior rather than general plugin initialization or Calculator control.
+
+Related: #26528 includes intermittent `failed to activate captured window` behavior, but does not appear to cover this reproducible lock-screen screenshot / target-app accessibility mismatch.",open,,2026-07-18T13:13:18Z,2026-07-18T13:13:56Z,,0,ianbotts,User,NONE,"['bug', 'windows-os', 'app', 'computer-use']",0,intermittent bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,495,0,0,True,False,False,2,1,2,2,2,1,2,2,2,2,0.9,machine provisional; requires rubric review
+34071,https://github.com/openai/codex/issues/34071,"Composer's Rich Text support is broken in many ways, but it cannot be disabled","### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.715.31925
+
+### What subscription do you have?
+
+Plus
+
+### What platform is your computer?
+
+Microsoft Windows NT 10.0.26100 x64
+
+### What issue are you seeing?
+
+Please see the screencast. Watch carefully, please, as it shows at least 4 different problems, all of which are caused by the poor quality of the implementation of what is apparently supposed to be Rich Text mode support.
+
+https://github.com/user-attachments/assets/8a607fa1-4d52-4486-a007-e133b61ce3f5
+
+
+Main issue:
+While Rich Text mode support is broken in so many ways, **it cannot be disabled**.
+
+See #33586 for additional context on how that buggy mode produces unintended input that changes code meaning, that is eventually silently sent to the model.
+
+### What steps can reproduce the bug?
+
+Use the Codex chat UI ""composer"" either in VS Code or in the Codex (aka ChatGPT) App, and try these scenarios:
+- Writing or pasting lines containing the `-` symbol at the start of the line
+- Pasting code `int readPointer();` from a C++ file with the [Night Owl](https://marketplace.visualstudio.com/items?itemName=sdras.night-owl) theme enabled (where `readPointer` is shown as italic)
+- Copy a word from a line that appears as a list item inside the composer, and paste it elsewhere
+
+Then:
+- Try to locate a setting like ""Plain Text mode"" or ""Rich Text mode"" somewhere. There is no such setting, meaning that we are forced into a non-working ""feature"" without any chance to fully disable it until its proper implementation is landed.
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+This affects both: Codex (aka ChatGPT) App, and the VS Code Codex extension.",open,,2026-07-18T21:46:03Z,2026-07-18T22:17:09Z,,1,alexchexes,User,NONE,"['bug', 'windows-os', 'extension', 'app']",4,reproducible bug,open unresolved,alexchexes,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,283,0,2,True,False,True,2,2,2,1,2,1,2,2,2,2,0.9,machine provisional; requires rubric review
+34100,https://github.com/openai/codex/issues/34100,False positive in development,"### What version of Codex CLI is running?
+
+0.144.6
+
+### What subscription do you have?
+
+Pro 20
+
+### Which model were you using?
+
+gpt-5.6-sol
+
+### What platform is your computer?
+
+Linux 6.8.0-136-generic x86_64 x86_64
+
+### What terminal emulator and version are you using (if applicable)?
+
+tmux
+
+### Codex doctor report
+
+```json
+{
+  ""schemaVersion"": 1,
+  ""generatedAt"": ""1784427515s since unix epoch"",
+  ""overallStatus"": ""warning"",
+  ""codexVersion"": ""0.144.6"",
+  ""checks"": {
+    ""app_server.status"": {
+      ""id"": ""app_server.status"",
+      ""category"": ""app-server"",
+      ""status"": ""ok"",
+      ""summary"": ""background server is not running"",
+      ""details"": {
+        ""control socket"": ""/home/kunorikiku/.codex/app-server-control/app-server-control.sock"",
+        ""daemon state dir"": ""/home/kunorikiku/.codex/app-server-daemon"",
+        ""mode"": ""persistent"",
+        ""pid file"": ""/home/kunorikiku/.codex/app-server-daemon/app-server.pid (missing)"",
+        ""settings"": ""/home/kunorikiku/.codex/app-server-daemon/settings.json (file)"",
+        ""status"": ""not running"",
+        ""update-loop pid file"": ""/home/kunorikiku/.codex/app-server-daemon/app-server-updater.pid (file)""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""auth.credentials"": {
+      ""id"": ""auth.credentials"",
+      ""category"": ""auth"",
+      ""status"": ""ok"",
+      ""summary"": ""auth is configured"",
+      ""details"": {
+        ""auth file"": ""/home/kunorikiku/.codex/auth.json"",
+        ""auth storage mode"": ""File"",
+        ""stored API key"": ""false"",
+        ""stored ChatGPT tokens"": ""true"",
+        ""stored agent identity"": ""false"",
+        ""stored auth mode"": ""chatgpt""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""config.load"": {
+      ""id"": ""config.load"",
+      ""category"": ""config"",
+      ""status"": ""ok"",
+      ""summary"": ""config loaded"",
+      ""details"": {
+        ""CODEX_HOME"": ""/home/kunorikiku/.codex"",
+        ""config.toml"": ""/home/kunorikiku/.codex/config.toml"",
+        ""config.toml parse"": ""ok"",
+        ""cwd"": ""/home/kunorikiku"",
+        ""enabled feature flags"": ""shell_tool, unified_exec, shell_snapshot, code_mode_host, terminal_resize_reflow, sqlite, hooks, enable_request_compression, multi_agent, apps, tool_search_always_defer_mcp_tools, tool_suggest, plugins, in_app_browser, browser_use, browser_use_full_cdp_access, browser_use_external, computer_use, remote_plugin, plugin_sharing, image_generation, resize_all_images, skill_mcp_dependency_install, mentions_v2, steer, guardian_approval, goals, collaboration_modes, tool_call_mcp_elicitation, auth_elicitation, personality, fast_mode, tui_app_server, remote_compaction_v2, workspace_dependencies"",
+        ""feature flag overrides"": ""none"",
+        ""feature flags enabled"": ""35"",
+        ""log dir"": ""/home/kunorikiku/.codex/log"",
+        ""mcp servers"": ""0"",
+        ""model"": ""gpt-5.6-sol"",
+        ""model provider"": ""openai"",
+        ""sqlite home"": ""/home/kunorikiku/.codex""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""git.environment"": {
+      ""id"": ""git.environment"",
+      ""category"": ""git"",
+      ""status"": ""ok"",
+      ""summary"": ""git version 2.43.0"",
+      ""details"": {
+        ""PATH git #1"": ""/usr/bin/git"",
+        ""PATH git #2"": ""/bin/git"",
+        ""PATH git entries"": ""2"",
+        ""git build options"": ""git version 2.43.0; cpu: x86_64; no commit associated with this build; sizeof-long: 8; sizeof-size_t: 8; shell-path: /bin/sh"",
+        ""git exec path"": ""/usr/lib/git-core"",
+        ""git version"": ""git version 2.43.0"",
+        ""repo detected"": ""false"",
+        ""selected git"": ""/usr/bin/git""
+      },
+      ""remediation"": null,
+      ""durationMs"": 18
+    },
+    ""installation"": {
+      ""id"": ""installation"",
+      ""category"": ""install"",
+      ""status"": ""ok"",
+      ""summary"": ""installation looks consistent"",
+      ""details"": {
+        ""PATH codex #1"": ""/home/kunorikiku/.local/bin/codex"",
+        ""PATH codex #2"": ""/home/kunorikiku/.local/bin/codex"",
+        ""PATH codex #3"": ""/usr/bin/codex"",
+        ""PATH codex #4"": ""/bin/codex"",
+        ""PATH codex entries"": ""4"",
+        ""current executable"": ""/home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/bin/codex"",
+        ""install context"": ""standalone (unix, package /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl, bin /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/bin, resources /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/codex-resources, path /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/codex-path)"",
+        ""managed by bun"": ""false"",
+        ""managed by npm"": ""false"",
+        ""managed by pnpm"": ""false"",
+        ""managed package root"": ""not set""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""mcp.config"": {
+      ""id"": ""mcp.config"",
+      ""category"": ""mcp"",
+      ""status"": ""ok"",
+      ""summary"": ""no MCP servers configured"",
+      ""details"": {},
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""network.env"": {
+      ""id"": ""network.env"",
+      ""category"": ""network"",
+      ""status"": ""ok"",
+      ""summary"": ""network-related environment looks readable"",
+      ""details"": {
+        ""proxy env vars"": ""none""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""network.provider_reachability"": {
+      ""id"": ""network.provider_reachability"",
+      ""category"": ""reachability"",
+      ""status"": ""ok"",
+      ""summary"": ""active provider endpoints are reachable over HTTP"",
+      ""details"": {
+        ""ChatGPT base URL"": ""https://chatgpt.com/backend-api/ reachable (HTTP 403)"",
+        ""reachability mode"": ""ChatGPT auth""
+      },
+      ""remediation"": null,
+      ""durationMs"": 509
+    },
+    ""network.websocket_reachability"": {
+      ""id"": ""network.websocket_reachability"",
+      ""category"": ""websocket"",
+      ""status"": ""ok"",
+      ""summary"": ""Responses WebSocket handshake succeeded"",
+      ""details"": {
+        ""DNS"": ""1 IPv4, 0 IPv6, first IPv4"",
+        ""auth mode"": ""chatgpt"",
+        ""connect timeout"": ""15000 ms"",
+        ""endpoint"": ""wss://chatgpt.com/backend-api/<redacted>"",
+        ""handshake result"": ""HTTP 101 Switching Protocols"",
+        ""model provider"": ""openai"",
+        ""models etag present"": ""true"",
+        ""provider name"": ""OpenAI"",
+        ""proxy env vars"": ""none"",
+        ""reasoning header"": ""false"",
+        ""server model present"": ""false"",
+        ""supports websockets"": ""true"",
+        ""wire API"": ""responses""
+      },
+      ""remediation"": null,
+      ""durationMs"": 909
+    },
+    ""runtime.provenance"": {
+      ""id"": ""runtime.provenance"",
+      ""category"": ""runtime"",
+      ""status"": ""ok"",
+      ""summary"": ""running standalone on linux-x86_64"",
+      ""details"": {
+        ""commit"": ""unknown"",
+        ""current executable"": ""/home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/bin/codex"",
+        ""install method"": ""standalone (unix, package /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl, bin /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/bin, resources /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/codex-resources, path /home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/codex-path)"",
+        ""platform"": ""linux-x86_64"",
+        ""version"": ""0.144.6""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""runtime.search"": {
+      ""id"": ""runtime.search"",
+      ""category"": ""search"",
+      ""status"": ""ok"",
+      ""summary"": ""search is OK (bundled)"",
+      ""details"": {
+        ""search command"": ""/home/kunorikiku/.codex/packages/standalone/releases/0.144.6-x86_64-unknown-linux-musl/codex-path/rg"",
+        ""search command readiness"": ""file exists"",
+        ""search provider"": ""bundled""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""sandbox.helpers"": {
+      ""id"": ""sandbox.helpers"",
+      ""category"": ""sandbox"",
+      ""status"": ""ok"",
+      ""summary"": ""sandbox configuration is readable"",
+      ""details"": {
+        ""approval policy"": ""Never"",
+        ""codex-linux-sandbox helper"": ""/home/kunorikiku/.codex/tmp/arg0/codex-arg0AuITql/codex-linux-sandbox"",
+        ""execve wrapper helper"": ""/home/kunorikiku/.codex/tmp/arg0/codex-arg0AuITql/codex-execve-wrapper"",
+        ""filesystem sandbox"": ""unrestricted"",
+        ""network sandbox"": ""enabled""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""state.paths"": {
+      ""id"": ""state.paths"",
+      ""category"": ""state"",
+      ""status"": ""ok"",
+      ""summary"": ""state paths and databases are inspectable"",
+      ""details"": {
+        ""CODEX_HOME"": ""/home/kunorikiku/.codex (dir)"",
+        ""active rollout files"": ""498 files, 5602937648 total bytes, 11250878 average bytes"",
+        ""archived rollout files"": ""10 files, 9427961 total bytes, 942796 average bytes"",
+        ""goals DB"": ""/home/kunorikiku/.codex/goals_1.sqlite (missing)"",
+        ""goals DB integrity"": ""skipped (missing)"",
+        ""log DB"": ""/home/kunorikiku/.codex/logs_2.sqlite (file)"",
+        ""log DB integrity"": ""ok"",
+        ""log dir"": ""/home/kunorikiku/.codex/log (dir)"",
+        ""memories DB"": ""/home/kunorikiku/.codex/memories_1.sqlite (missing)"",
+        ""memories DB integrity"": ""skipped (missing)"",
+        ""sqlite home"": ""/home/kunorikiku/.codex (dir)"",
+        ""standalone release cache"": ""2 entries in /home/kunorikiku/.codex/packages/standalone/releases"",
+        ""state DB"": ""/home/kunorikiku/.codex/state_5.sqlite (file)"",
+        ""state DB integrity"": ""ok""
+      },
+      ""remediation"": null,
+      ""durationMs"": 552
+    },
+    ""state.rollout_db_parity"": {
+      ""id"": ""state.rollout_db_parity"",
+      ""category"": ""threads"",
+      ""status"": ""warning"",
+      ""summary"": ""state database thread inventory could not be read"",
+      ""details"": {
+        ""default model provider"": ""openai"",
+        ""rollout DB active files"": ""497"",
+        ""rollout DB archived files"": ""10"",
+        ""rollout DB malformed file names"": ""0"",
+        ""rollout DB read error"": ""error returned from database: (code: 1) no such table: threads"",
+        ""rollout DB scan cap reached"": ""false"",
+        ""rollout DB scan error sample"": ""/home/kunorikiku/.codex/sessions/2026/05/05/rollout-2026-05-05T07-58-26-019df725-3d65-73e1-94ea-fbfa4ef40f71.jsonl (stream did not contain valid UTF-8)"",
+        ""rollout DB scan errors"": ""1""
+      },
+      ""issues"": [
+        {
+          ""severity"": ""warning"",
+          ""cause"": ""state DB thread rows could not be queried"",
+          ""measured"": ""error returned from database: (code: 1) no such table: threads"",
+          ""expected"": ""readable threads table"",
+          ""remedy"": null,
+          ""fields"": []
+        }
+      ],
+      ""remediation"": null,
+      ""durationMs"": 91060
+    },
+    ""system.environment"": {
+      ""id"": ""system.environment"",
+      ""category"": ""system"",
+      ""status"": ""ok"",
+      ""summary"": ""OS language en-US"",
+      ""details"": {
+        ""EDITOR"": ""not set"",
+        ""LANG"": ""en_US.UTF-8"",
+        ""VISUAL"": ""not set"",
+        ""os"": ""Ubuntu 24.4.0 (noble) [64-bit]"",
+        ""os language"": ""en-US"",
+        ""os type"": ""Ubuntu"",
+        ""os version"": ""24.4.0""
+      },
+      ""remediation"": null,
+      ""durationMs"": 5
+    },
+    ""terminal.env"": {
+      ""id"": ""terminal.env"",
+      ""category"": ""terminal"",
+      ""status"": ""warning"",
+      ""summary"": ""width 76 cols - output may wrap (recommended >=80)"",
+      ""details"": {
+        ""SSH_CLIENT"": ""present"",
+        ""SSH_CONNECTION"": ""present"",
+        ""SSH_TTY"": ""present"",
+        ""TERM"": ""xterm-256color"",
+        ""color output"": ""enabled"",
+        ""effective locale"": ""en_US.UTF-8"",
+        ""stderr is terminal"": ""true"",
+        ""stdin is terminal"": ""true"",
+        ""stdout is terminal"": ""true"",
+        ""terminal"": ""unknown"",
+        ""terminal size"": ""76x35""
+      },
+      ""issues"": [
+        {
+          ""severity"": ""warning"",
+          ""cause"": ""width 76 cols - output may wrap (recommended >=80)"",
+          ""measured"": ""76 x 35"",
+          ""expected"": "">= 80 columns"",
+          ""remedy"": ""resize the window to at least 80 columns"",
+          ""fields"": [
+            ""terminal size""
+          ]
+        }
+      ],
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""terminal.title"": {
+      ""id"": ""terminal.title"",
+      ""category"": ""title"",
+      ""status"": ""ok"",
+      ""summary"": ""terminal title default"",
+      ""details"": {
+        ""terminal title activity"": ""true"",
+        ""terminal title items"": ""activity, project-name"",
+        ""terminal title project source"": ""cwd"",
+        ""terminal title project value"": ""kunorikiku"",
+        ""terminal title source"": ""default""
+      },
+      ""remediation"": null,
+      ""durationMs"": 0
+    },
+    ""updates.status"": {
+      ""id"": ""updates.status"",
+      ""category"": ""updates"",
+      ""status"": ""ok"",
+      ""summary"": ""update configuration is locally consistent"",
+      ""details"": {
+        ""cached latest version"": ""0.144.6"",
+        ""check for update on startup"": ""true"",
+        ""last checked at"": ""2026-07-18T22:51:46.544853157Z"",
+        ""latest version"": ""0.144.6"",
+        ""latest version status"": ""current version is not older"",
+        ""update action"": ""standalone installer"",
+        ""version cache"": ""/home/kunorikiku/.codex/version.json""
+      },
+      ""remediation"": null,
+      ""durationMs"": 1276
+    }
+  }
+}
+```
+
+### What issue are you seeing?
+
+I am developing CUDA-related software and while it was tracing API flow to see how segfault occurred, it yielded such issue of false positives of cybersecurity concern - yet none of the development is even tied to web.
+
+### What steps can reproduce the bug?
+
+Uploaded thread: 019f7811-4890-7d10-b8d5-032ad7deaf7c
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",open,,2026-07-19T02:21:32Z,2026-07-19T02:24:29Z,,2,kunori-kiku,User,NONE,"['bug', 'CLI', 'safety-check']",0,performance or resource problem,open unresolved,kunori-kiku,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,1456,1,1,True,True,False,2,1,2,2,2,2,2,2,2,1,0.9,machine provisional; requires rubric review
+34164,https://github.com/openai/codex/issues/34164,[Windows app] “More details” Quick Chat ignores the saved model and submits with Auto,"## Summary
+
+In the Microsoft Store Codex/ChatGPT desktop app, selecting text in a Codex conversation and clicking **More details** opens a ChatGPT Quick Chat and immediately submits the generated prompt using **Auto**.
+
+The selected-text Quick Chat does not inherit either:
+
+- the user's saved ChatGPT model and thinking-effort selection; or
+- Codex's configured `model` / `model_reasoning_effort`.
+
+As a result, there is currently no way to make this shortcut use a reasoning model by default before its first message is submitted.
+
+## Environment
+
+- OS: Windows
+- Distribution: Microsoft Store
+- Package: `OpenAI.Codex`
+- App version: `26.715.4045.0`
+- Executable display name: ChatGPT
+
+## Steps to reproduce
+
+1. Open a Codex conversation in the Windows desktop app.
+2. Select some text in a message.
+3. Click **More details**.
+4. Observe that a ChatGPT Quick Chat opens and automatically submits “Tell me more about this”.
+5. Check the model used for the generated response.
+
+## Actual behavior
+
+The first Quick Chat request uses **Auto** with no explicit thinking effort.
+
+Changing Codex configuration does not affect it, for example:
+
+```toml
+model = ""gpt-5.6-sol""
+model_reasoning_effort = ""high""
+```
+
+Selecting another model and thinking effort in the regular ChatGPT UI also does not reliably affect a newly created selected-text Quick Chat.
+
+## Expected behavior
+
+The selected-text Quick Chat should do one of the following:
+
+1. inherit the user's last saved ChatGPT model and thinking-effort selection;
+2. provide a dedicated default-model setting for Quick Chat; or
+3. allow model selection before automatically submitting the first message.
+
+The smallest and least surprising behavior would be to inherit the existing saved ChatGPT model selection, including its thinking effort, before falling back to Auto.
+
+## Additional technical findings
+
+I inspected the packaged desktop frontend to distinguish this behavior from the Codex app-server path.
+
+- The action is identified as `selectedTextOverlay.moreDetails`.
+- It creates a new ChatGPT consumer Quick Chat and submits `model` and optional `thinking_effort` fields.
+- For a new selected-text Quick Chat, model resolution falls back to the server model-list default and ultimately `auto`.
+- The app already has a persisted global ChatGPT model selection (`chatgpt-last-selected-model-v1`), but this selected-text initialization path does not consult it.
+- This path is separate from Codex threads and does not read `~/.codex/config.toml`.
+
+This appears to be a model-state initialization bug specific to the selected-text Quick Chat path, rather than an account/model availability issue.
+
+## Suggested fix
+
+When initializing the selected-text Quick Chat, prefer the persisted ChatGPT model selection, including `thinkingEffort`, and only fall back to the conversation/model-list default when no saved selection exists.
+
+This would preserve entitlement and rollout checks from the existing model picker while preventing the shortcut from silently reverting to Auto.",open,,2026-07-19T12:02:21Z,2026-07-19T12:03:29Z,,1,oyasumiaiko,User,NONE,"['bug', 'windows-os', 'app']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,452,1,0,False,False,False,2,1,2,2,2,2,2,,2,2,0.9444444444444444,machine provisional; requires rubric review
+34221,https://github.com/openai/codex/issues/34221,macOS Dock icon renders red/maroon halo in transparent area on some display profiles,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.715.31925 (build 5551)
+
+### What subscription do you have?
+
+Unknown / not relevant to icon rendering
+
+### What platform is your computer?
+
+Darwin 25.5.0 arm64 arm (macOS 26.5.2 build 25F84; Apple M1 Max)
+
+### What issue are you seeing?
+
+The Codex macOS app icon renders with a conspicuous red/maroon halo across its nominally transparent canvas in the Dock. Neighboring Dock icons render normally, so the discoloration is localized to the Codex icon rather than being a uniform display tint.
+
+The reporter's machine/display configuration has previously exposed the same kind of red shift when transparent PNGs were scaled through an incorrect straight-alpha/premultiplied-alpha path. This Codex release is the first shipping app they have seen exhibit the problem directly in its app icon.
+
+### What steps can reproduce the bug?
+
+1. Run Codex App 26.715.31925 on the external C34J79x display configured as the main display at 3440 x 1440 and 100 Hz.
+2. Show Codex in the macOS Dock.
+3. Observe the reddish rectangular halo surrounding the purple Codex glyph, including areas intended to be transparent.
+
+The issue was captured in a screenshot on 2026-07-19. In-product feedback thread ID: 019f7bfd-cd55-7f41-b2d9-1e2c10cbf7ed.
+
+### What is the expected behavior?
+
+The transparent area surrounding the Codex glyph should remain visually transparent and should not introduce a red or maroon color cast when macOS scales or composites the app icon.
+
+### Additional information
+
+The symptom is consistent with hidden reddish RGB values beneath zero or near-zero alpha leaking during scaling/compositing, or with a straight-alpha versus premultiplied-alpha mismatch. That is a hypothesis, not a confirmed root cause. Please inspect the source icon's RGB values under transparent pixels and the alpha-aware resizing/color-profile conversion used to produce the shipped icon assets.
+
+The screenshot itself carries the C34J79x RGB display profile. The adjacent Calendar and Home icons in the same screenshot are not red-shifted.
+",open,,2026-07-19T20:10:37Z,2026-07-19T20:11:12Z,,0,tillt,User,NONE,"['bug', 'app']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,339,0,0,True,True,False,2,1,2,2,2,1,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+34730,https://github.com/openai/codex/issues/34730,"will constantly generate taskkill.exe when executing,","### What version of the Codex App are you using (From “About Codex” dialog)?
+
+win11 microsoft ChatGPT 2026/7/22
+
+### What subscription do you have?
+
+20x pro
+
+### What platform is your computer?
+
+_No response_
+
+### What issue are you seeing?
+
+New versions of the code will constantly generate taskkill.exe when executing, canceling, or cleaning up Shell commands, and will not be properly recycled. Each taskkill.exe in turn brings conhost.exe, which adds up to 287 taskkills + 302 conhosts for a single session. Codex then repeatedly queries an increasingly large process tree through WMI, creating a storm of WMI failures: 987 occurrences of Event ID 5858 in two hours. Processes, handles, and queries continued to pile up, further dragging down the DWM: handles went from 1,205 to 4,458 (growing faster than they could be cleaned up, and the system eventually ran out of quota), resulting in white Windows, stuttering inputs, rendering errors, and even system death
+
+### What steps can reproduce the bug?
+
+Any step. Every few minutes taskkill spikes, and after intervals of 1 to 3 hours codex does not respond
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",open,,2026-07-22T10:55:39Z,2026-07-24T02:56:36Z,,3,mengshenup,User,NONE,"['bug', 'windows-os', 'tool-calls', 'app', 'performance']",0,performance or resource problem,open unresolved,mengshenup,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,193,0,0,True,False,False,2,1,2,1,2,1,2,,2,2,0.8333333333333334,machine provisional; requires rubric review
+34871,https://github.com/openai/codex/issues/34871,Windows: Arabic RTL text renders as separated/reordered characters in Codex CLI,"## Bug
+Arabic text in the Codex CLI TUI on Windows is rendered as separated and reordered characters, making it unreadable.
+
+## Environment
+- Codex CLI: 0.145.0
+- OS: Windows
+- Shell: PowerShell with UTF-8 enabled (code page 65001)
+
+## Expected behavior
+Arabic should render with proper right-to-left direction and joined letter shaping.
+
+## Actual behavior
+Codex CLI displays the Arabic letters separately and in the wrong order.
+
+## Additional context
+Arabic renders correctly in Claude Code on the same PC, so this appears specific to the Codex CLI TUI. Screenshot attached.",open,,2026-07-23T04:33:29Z,2026-07-27T06:36:57Z,,2,mohilaly,User,NONE,"['bug', 'windows-os', 'TUI', 'CLI']",0,reproducible bug,open unresolved,,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,89,0,0,False,False,False,2,1,2,0,2,1,2,,2,2,0.7777777777777778,machine provisional; requires rubric review
+35002,https://github.com/openai/codex/issues/35002,VS Code Codex chat shows misleading visible message order and timestamps,"## Problem
+
+In Codex inside VS Code on Windows, the chat panel can show a visually confusing message order and timestamps.
+
+In the same visible chat area, an older assistant reply appears above while a different user question appears below, making it look like the assistant replied before the question was asked.
+
+## What I observed
+
+- An assistant message ending with:
+  - `make a one-click PC slowdown check script`
+  - `help update Codex step by step first`
+- was shown above
+- with timestamp: `Thursday 3:42 PM`
+
+At the same time, lower in the same visible chat area:
+
+- a user message: `What is the issue in chat?`
+- was shown below
+- with timestamp: `Thursday 3:37 PM`
+
+Also, the actual reply to `What is the issue in chat?` appeared as a different assistant message starting with:
+
+- `The issue in this chat is simple:`
+- `Your same message was sent multiple times.`
+
+This makes the visible order look wrong even though the underlying thread may still be intact.
+
+## Expected behavior
+
+- Each user message should clearly appear before its matching assistant reply.
+- Visible ordering in the chat panel should not make older assistant replies appear as if they belong to newer user questions.
+- Timestamps and message grouping should be easy to follow.
+
+## Actual behavior
+
+- Messages from different turns appear visually mixed in the visible panel area.
+- This creates confusion about which reply belongs to which question.
+- It can look like the assistant replied before the user asked.
+
+## Environment
+
+- Codex inside VS Code
+- Windows
+- India Standard Time (UTC+05:30)
+
+## Notes
+
+Possible areas to check:
+- message ordering in the Codex chat UI
+- timestamp rendering/grouping
+- scroll position or lazy loading causing mixed visual sequencing
+- whether messages from different turns are shown in a misleading visible order
+
+I have screenshots available if needed.",open,,2026-07-23T20:06:29Z,2026-07-23T20:07:04Z,,0,Abhireenu,User,NONE,"['bug', 'windows-os', 'extension', 'session']",0,performance or resource problem,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,293,0,0,False,False,False,2,1,2,0,2,1,2,,2,2,0.7777777777777778,machine provisional; requires rubric review
+35186,https://github.com/openai/codex/issues/35186,Codex weekly quota almost fully consumed while usage dashboard shows only ~59k tokens used,"### What version of the Codex App are you using (From “About Codex” dialog)?
+
+26.721.31836
+
+### What subscription do you have?
+
+ChatGPT Plus
+
+### What platform is your computer?
+
+_No response_
+
+### What issue are you seeing?
+
+## Description
+
+My Codex weekly quota was almost completely consumed today, but the Codex usage dashboard shows only around 59k tokens used.
+
+The displayed token usage and the actual quota consumption appear to be inconsistent.
+
+## Environment
+
+- Plan: ChatGPT Plus
+- Platform: macOS app + Web ChatGPT
+- Codex version: Latest available version
+- Account type: Personal Plus account
+
+## Steps to reproduce
+
+1. Use Codex/ChatGPT normally.
+2. Check Codex usage dashboard.
+3. Compare displayed token usage with remaining weekly quota.
+
+## Expected behavior
+
+The consumed quota should roughly correspond to the token usage shown in the Codex usage dashboard.
+
+For example, 50k-60k tokens of usage should not consume almost the entire weekly Codex quota.
+
+## Actual behavior
+
+Today:
+
+- Codex usage dashboard shows approximately:
+  - 59k tokens used
+
+<img width=""1770"" height=""978"" alt=""Image"" src=""https://github.com/user-attachments/assets/22426314-416a-4c09-baf3-0a4e7a3ec048"" />
+
+- However:
+  - Weekly Codex quota dropped from around 50% remaining to almost 0%
+  - I had to use a quota reset because the limit was unexpectedly reached
+
+The quota consumption appears significantly higher than the displayed token usage.
+
+## Additional information
+
+I initially suspected this was related to the ChatGPT macOS application, because I noticed quota decreasing while using Chat mode.
+
+However, after testing, the same behavior appears to happen in the web version as well.
+
+Therefore this does not seem to be limited to the desktop application.
+
+## Screenshot
+
+Attached screenshot shows the usage dashboard displaying only ~59k tokens used while the weekly quota was nearly exhausted.
+
+## Questions
+
+- Does Codex quota include hidden reasoning tokens, tool calls, context replay, or other internal usage that is not shown in the dashboard?
+- Is there a known issue where quota consumption is incorrectly calculated?
+- Could the usage dashboard be showing incomplete token accounting?
+
+Thanks.
+
+### What steps can reproduce the bug?
+
+just use
+
+### What is the expected behavior?
+
+_No response_
+
+### Additional information
+
+_No response_",open,,2026-07-24T13:51:34Z,2026-07-24T13:52:49Z,,1,biaobiaobiao108,User,NONE,"['bug', 'rate-limits', 'app']",0,reproducible bug,open unresolved,biaobiaobiao108,,True,,author-only/no external human response,author-only/no external human response,,,False,True,False,False,False,False,341,0,1,True,False,True,2,1,2,2,2,1,2,,2,2,0.8888888888888888,machine provisional; requires rubric review
+35460,https://github.com/openai/codex/issues/35460,Hugging Face Jobs plugin needs a typed connector-owned submit/observe/reduce lifecycle operation,"### Feature request
+
+The installed Hugging Face plugin exposes its Jobs tool with operation-specific `args: object<any>` and an `any` return. For asynchronous Jobs, callers then need a provider Job authority for later status and terminal-evidence operations. Recovering that authority by parsing an opaque submission response is brittle and can force private identifiers or raw provider evidence across the tool boundary.
+
+A bounded scalar-only measurement confirmed that a real submission response was valid bounded JSON but contained no eligible stable authority value under a conservative value-only rule. It stopped before inspect or logs, and persisted no raw values, field names, provider identifiers, URLs, paths, tokens, hashes, or logs.
+
+### Requested capability
+
+Please add a connector-declared typed capability to the Hugging Face Jobs plugin:
+
+- capability: `hf_jobs.submit_observe_reduce.v1`
+- operation: `submit_observe_reduce`
+- exact typed operation arguments
+- exact typed, non-`any` scalar result
+
+The operation should own submission, Job-authority acquisition, status observation, bounded terminal-evidence reduction, and authority teardown inside one connector invocation. The outer caller should never receive or supply the Job authority.
+
+### Authority lifetime
+
+The internal authority lease should be:
+
+- invocation-scoped and connector-owned
+- non-serializable, non-exportable, and non-persistable
+- unavailable to text, files, environment, shell, arguments, or other tools
+- usable only for connector-internal lifecycle operations
+- cleared before return on success, failure, timeout, or cancellation
+
+### Suggested typed result
+
+An exact 18-field scalar/symbolic result is sufficient:
+
+1. `schemaVersion`
+2. `channelID`
+3. `classification`
+4. `capabilityDeclared`
+5. `typedArgsSchemaDeclared`
+6. `typedResultSchemaDeclared`
+7. `submissionAccepted`
+8. `authorityLeaseCount`
+9. `authorityLeaseCleared`
+10. `internalStatusObservationCount`
+11. `terminalStateClass`
+12. `fixedMarkerMatchCount`
+13. `fixedMarkerValid`
+14. `rawEvidenceEscapeCount`
+15. `privateIdentifierEscapeCount`
+16. `providerJobCount`
+17. `retryOrFlavorChangeCount`
+18. `stoppedEarly`
+
+Allowlisted terminal classes can be `UNRESOLVED`, `COMPLETED`, `ERROR`, `CANCELED`, and `TIMEOUT`. The result should contain counts, booleans, and allowlisted symbols only, with no raw logs, exceptions, identifiers, URLs, paths, tokens, hashes, or binary values.
+
+### Acceptance behavior
+
+- fail before submission unless the exact typed args and result schemas are declared
+- one submission maximum per invocation
+- connector-internal status observation only
+- at most one bounded terminal-evidence capture and fixed-marker reduction
+- no separate outer inspect or logs operation
+- no retry, resubmission, or flavor change
+- deterministic fail-closed classifications for lease cardinality, terminal ambiguity, missing/multiple/invalid marker, and evidence escape
+- unconditional authority/evidence teardown on every exit
+
+This would make bounded Jobs workflows composable without exposing provider authority or relying on opaque `any` response parsing.",open,,2026-07-26T11:07:42Z,2026-07-26T11:08:17Z,,0,salixkoreensis94-spec,User,NONE,"['enhancement', 'skills']",0,feature request,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,392,0,0,False,False,False,2,1,0,0,2,1,2,,2,2,0.6666666666666666,machine provisional; requires rubric review
+35503,https://github.com/openai/codex/issues/35503,Allow custom model providers to disable automatic 401 auth recovery and replay,"### What variant of Codex are you using?
+
+Codex CLI and Codex App (provider transport shared in codex-rs)
+
+### What feature would you like to see?
+
+### Summary
+
+Custom model providers can set `requires_openai_auth = true` and can independently
+configure normal request and stream retry budgets. There is currently no provider
+setting that disables the separate recovery-and-replay path entered after an HTTP
+`401 Unauthorized`.
+
+Please add an optional provider setting:
+
+```toml
+[model_providers.example]
+name = ""Example""
+base_url = ""https://example.invalid/v1""
+wire_api = ""responses""
+requires_openai_auth = true
+request_max_retries = 0
+stream_max_retries = 0
+auth_recovery_max_retries = 0
+```
+
+### Expected behavior
+
+- When `auth_recovery_max_retries` is absent, preserve the current behavior.
+- When it is `0`, the first `401` must be returned through the existing provider
+  error mapping without refreshing/reloading authentication and without replaying
+  the logical provider request.
+- When it is a positive integer `N`, allow at most `N` 401-triggered recovery and
+  replay cycles for that logical provider invocation.
+- Keep this budget independent from `request_max_retries` and
+  `stream_max_retries`.
+- Apply the same rule to Responses HTTP and WebSocket connection paths.
+
+### Why this is needed
+
+On both the released source corresponding to `0.146.0-alpha.3.1` and the checked
+`main` snapshot, a 401 enters `handle_unauthorized(...)` and a successful recovery
+continues the surrounding loop, causing another provider request. Setting the
+existing request and stream retry budgets to zero does not configure that separate
+path.
+
+### Minimal acceptance tests
+
+1. Explicit zero + first HTTP request returns 401: one provider request, zero auth
+   recovery calls, no replay, original mapped 401 returned.
+2. Explicit zero + WebSocket connection returns 401: one connection attempt, zero
+   auth recovery calls, no reconnect caused by auth recovery.
+3. Positive budget of one: at most one recovery and one replay; a second 401 does
+   not cause a third provider request.
+4. Key absent: existing behavior remains unchanged.
+5. Invalid TOML values are rejected by the existing typed configuration/schema
+   path.
+
+### Scope
+
+This request does not change endpoints, credential sources, token audiences,
+fallback routing, the built-in OpenAI provider defaults, or telemetry schemas.
+
+### Verified source anchors
+
+- Release:
+  [`rust-v0.146.0-alpha.3.1`](https://github.com/openai/codex/releases/tag/rust-v0.146.0-alpha.3.1),
+  commit
+  [`ff75c5b939c477c49eb1bd5248da6dab71b109d1`](https://github.com/openai/codex/commit/ff75c5b939c477c49eb1bd5248da6dab71b109d1)
+- Checked `main` snapshot:
+  [`61a44880a85d2fd0d8770908dea5733495e571c8`](https://github.com/openai/codex/commit/61a44880a85d2fd0d8770908dea5733495e571c8)
+- Provider configuration:
+  [`codex-rs/model-provider-info/src/lib.rs`](https://github.com/openai/codex/blob/61a44880a85d2fd0d8770908dea5733495e571c8/codex-rs/model-provider-info/src/lib.rs)
+- 401 recovery and replay:
+  [`codex-rs/core/src/client.rs`](https://github.com/openai/codex/blob/61a44880a85d2fd0d8770908dea5733495e571c8/codex-rs/core/src/client.rs)
+
+### Additional information
+
+A fuller local design proposal is attached for context. It is deliberately broader than this Issue; the requested implementation scope remains limited to the provider-scoped 401 recovery/replay budget described above.
+
+Local proposal SHA-256: 3291ba284d98f8545f95b783e9636a57696f57fb9728fc063ecb2ebd1c01083e
+
+[OPENAI_CODEX_AUTH_RECOVERY_OTEL_UPSTREAM_PROPOSAL_CANDIDATE_V0.1.md](https://github.com/user-attachments/files/30390917/OPENAI_CODEX_AUTH_RECOVERY_OTEL_UPSTREAM_PROPOSAL_CANDIDATE_V0.1.md)",open,,2026-07-26T17:05:32Z,2026-07-27T02:42:06Z,,1,sswxiailongxia,User,NONE,"['enhancement', 'auth', 'CLI', 'custom-model', 'config']",0,feature request,open unresolved,sswxiailongxia,,True,,unverified human/community response,unverified human/community response,,,False,False,True,False,False,False,474,1,7,False,True,True,2,1,1,0,2,2,2,,2,2,0.7777777777777778,machine provisional; requires rubric review
+35555,https://github.com/openai/codex/issues/35555,"CLI hard-fails at startup when any process holds a write lock on logs_2.sqlite (telemetry DB gates boot; flat 5s busy_timeout, no retry)","### What version of Codex CLI is running?
+
+codex-cli 0.145.0 (Homebrew cask)
+
+### What subscription do you have?
+
+ChatGPT sign-in. Not a factor — the failure happens before authentication.
+
+### Which model were you using?
+
+N/A — the process aborts before any model call.
+
+### What platform is your computer?
+
+macOS 26.5.2 (25F84), Apple Silicon (arm64). Default `~/.codex` on the internal APFS volume — no network mount, no WSL.
+
+### What terminal emulator and version are you using (if applicable)?
+
+Originally hit in a terminal-multiplexer-managed shell; reproduced below under a plain pty allocated by `script(1)`. Not terminal-specific.
+
+### What issue are you seeing?
+
+Codex CLI hard-fails at startup — exits 1 before the TUI appears — whenever **any** process holds a write lock on `$CODEX_HOME/logs_2.sqlite` for longer than the 5s `busy_timeout`:
+
+```
+Codex couldn't start because another Codex process is using its local data.
+Quit any other copies of Codex that may still be running, then try again.
+Technical details:
+  Location: ~/.codex/state_5.sqlite
+  Cause: failed to initialize state runtime at ~/.codex: failed to open log DB at
+  ~/.codex/logs_2.sqlite: error returned from database: (code: 5) database is locked:
+  error returned from database: (code: 5) database is locked: (code: 5) database is locked
+ERROR: failed to initialize sqlite local db at ~/.codex/state_5.sqlite: ...
+```
+
+Two things compound here:
+
+1. **`logs_2.sqlite` is a pure telemetry sink, but it gates startup.** `StateRuntime::init` opens the log DB inside `try_init_with_roots_and_backfill_lease` (`codex-rs/rollout/src/state_db.rs`, the `failed to initialize state runtime at {}` context). If that open returns `SQLITE_BUSY`, the whole process aborts — there is no degraded mode that runs Codex with the SQLite log sink disabled.
+2. **The wait is a flat 5s `busy_timeout` with no retry/backoff** (`.busy_timeout(Duration::from_secs(5))` in `codex-rs/state/src/sqlite.rs`). Against a holder that does not release promptly, this is a permanent wedge rather than a transient stall.
+
+Because `$CODEX_HOME` is shared by every Codex client on a machine (CLI sessions, the desktop app's bundled `app-server`, IDE extensions), one stuck process takes down all of them.
+
+**How I hit it in the field.** A CLI instance had been suspended with SIGSTOP (`STAT=T` in `ps`) by a terminal multiplexer, right after an in-place update prompted a restart. A suspended process never releases its SQLite locks, so every subsequent `codex` invocation failed as above until that PID was killed. `kill -CONT` alone did not clear it — as a background tty job the process immediately re-stopped on SIGTTIN/SIGTTOU; it took `kill -TERM` followed by `kill -CONT`.
+
+Worth stating precisely, because it narrows the bug: suspending an **idle** CLI is *not* enough to trigger this. I tried that first and the second instance started fine. The suspended process has to be frozen *inside a write transaction*. So the probability of hitting this scales with how much of its time the log writer spends holding the write lock — which links this to #28224: the flush loop fires every 2s and the retention `DELETE` runs in the **same transaction** as the insert batch (`prune_logs_after_insert` in `codex-rs/state/src/runtime/logs.rs`), so a busy process holds that lock a large fraction of the time. On this machine the log DB is still absorbing 20,000–35,000 inserts/min on 0.145.0.
+
+### What steps can reproduce the bug?
+
+Deterministic and minimal. Uses `sqlite3` as the lock holder so you don't have to catch a Codex process freezing at the right instant:
+
+```bash
+export CODEX_HOME=$(mktemp -d)
+
+# 1. Let Codex create its DBs, then quit the TUI.
+codex
+
+# 2. Hold a write lock on the log DB from an unrelated process.
+mkfifo ""$CODEX_HOME/f""
+sqlite3 ""$CODEX_HOME/logs_2.sqlite"" < ""$CODEX_HOME/f"" &
+exec 9>""$CODEX_HOME/f""
+echo ""BEGIN IMMEDIATE;"" >&9
+
+# 3. Start Codex -> exits 1 with ""database is locked"".
+codex
+
+# 4. Release the lock -> Codex starts normally.
+echo ""ROLLBACK;"" >&9; exec 9>&-
+codex
+```
+
+Results on codex-cli 0.145.0 / macOS 26.5.2 / sqlite3 3.51.0, each arm run under `script(1)` with a 30–40s timeout:
+
+| arm | lock holder on `logs_2.sqlite` | outcome |
+|---|---|---|
+| A (control) | none | starts; TUI runs to timeout; 0 lines matching `locked` |
+| B | `BEGIN IMMEDIATE` held open | **exit 1**, error text above |
+| C (control) | lock released | starts; TUI runs to timeout; 0 lines matching `locked` |
+
+The arm-B error text is byte-identical to the field failure, including the misleading `Location: .../state_5.sqlite` line.
+
+### What is the expected behavior?
+
+1. **Failing to open `logs_2.sqlite` should not be fatal.** It is a telemetry sink. Codex should emit a warning and continue with the SQLite log sink disabled. Gating startup on `state_5.sqlite` is defensible; gating it on the log DB is not.
+2. **If it must stay fatal, name the blocker.** SQLite can't report the holder, but Codex can — e.g. write the owning PID into a heartbeat/lock row on open, and surface `blocked by PID <n>` instead of a bare `(code: 5) database is locked`. As written, the `Location:` line points at `state_5.sqlite` while the actual blocker is `logs_2.sqlite`, which sends people to the wrong file and, in the reports below, to deleting the wrong database.
+3. **Consider a bounded retry with backoff** instead of a flat 5s `busy_timeout` (also requested in #20213).
+
+A recovery hint in the message would help too: the fix is to find the stuck process (`lsof ""$CODEX_HOME/logs_2.sqlite""`) rather than to delete anything.
+
+### Additional information
+
+Related but, I believe, distinct — happy to have this folded in if maintainers disagree:
+
+- **#30105** — same error string, but the trigger there is two *live* app-servers contending. Here the holder is a single frozen process, so retry/backoff alone would not have helped.
+- **#20213** — contention causing freezes *during use*, plus the missing `SQLITE_BUSY` retry. This report is about a hard abort at startup, with an isolated repro for it.
+- **#28666**, **#31184** — generic ""database is locked"" reports without a reproduction.
+- **#28224** — the log-write volume that widens the window this failure needs; noted above as a contributing factor, not the cause.
+
+Notable in `recovery.rs`: `sqlite_error_detail_is_lock()` deliberately classifies ""database is locked"" as *not* corruption, so the automatic backup/reset path correctly refuses to fire. That is the right call — but combined with (1) it means the user gets a dead end with no self-heal and no diagnostic pointer.
+",open,,2026-07-27T06:27:52Z,2026-07-27T06:28:28Z,,0,ryan-chen-opus,User,NONE,"['bug', 'CLI', 'session']",0,reproducible bug,open unresolved,,25,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,1063,2,0,True,False,False,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
+35566,https://github.com/openai/codex/issues/35566,"[Windows Desktop] Repeated GPU process crash (exitCode=101457950) after update, AppX breaks into NeedsRemediation state","## Environment
+
+- **App**: OpenAI.Codex \26.721.4979.0\ x64 (Microsoft Store)
+- **Windows**: 10.0.26200 (Windows 11)
+- **GPU**: (user's GPU info from their machine, check dxdiag equivalent)
+- **CLI**: codex-cli 0.146.0-alpha.3.1
+
+## Symptoms
+
+1. Codex works for a while, then suddenly the GPU process crashes
+2. After the crash, Codex cannot be relaunched — clicking the icon does nothing
+3. AppX package status becomes \Modified, NeedsRemediation\
+4. The \codex://\ protocol handler becomes broken
+5. Re-registering (\Add-AppxPackage -Register\) and resetting (\Reset-AppxPackage\) from Windows Settings temporarily fix it, but the crash returns after some use
+
+## Logs (from \...\\LocalCache\\Local\\Codex\\Logs\)
+
+Every crash ends with:
+
+\\\
+Recoverable Chromium child process gone
+    exitCode=101457950
+    name=null
+    processType=GPU
+    reason=crashed
+    serviceName=GPU
+
+Recoverable Chromium child process gone
+    exitCode=18
+    name=null
+    processType=GPU
+    reason=launch-failed
+    serviceName=GPU
+\\\
+
+Before the GPU crash, the log shows many:
+\\\
+browser-sidebar-comment-mode-site-status failed to load
+\\\
+and occasional \ERR_CONNECTION_TIMED_OUT\ / \ERR_NETWORK_CHANGED\ on \/wham/usage\ and \/settings/user\.
+
+After the GPU process fails to restart, Windows destroys the AppX container (Event ID 217) and the package moves to \NeedsRemediation\.
+
+## What was tried (none permanently fixed)
+
+- \wsreset.exe\ (Windows Store cache reset)
+- \Add-AppxPackage -Register ... -DisableDevelopmentMode\
+- \Reset-AppxPackage\
+- Store Settings → Reset / Repair
+- Full reinstall from Microsoft Store
+- Clearing \...\\LocalCache\\Local\\Codex\
+- Setting \ELECTRON_DISABLE_GPU=1\
+- Updating GPU drivers (failed)
+
+## Related issues
+
+- #35465 — same GPU exitCode 101457950 + AppX registration breakage
+- #32094 — same GPU exit code when in-app browser opens media pages (tracked as BRWPLAT-293)
+- #27828 — Cloudflare Turnstile GPU crash leads to unlaunchable app",open,,2026-07-27T07:19:50Z,2026-07-27T08:41:41Z,,2,1Beyond1,User,NONE,"['bug', 'windows-os', 'app', 'browser']",0,reproducible bug,open unresolved,,,True,,unverified human/community response,unverified human/community response,,,False,True,True,False,False,False,262,0,0,False,False,False,2,2,0,0,2,1,2,2,2,2,0.75,machine provisional; requires rubric review
+35602,https://github.com/openai/codex/issues/35602,[macOS] Heartbeat occurrence consumed during DarkWake after thread/resume timeout; no retry on full wake,"### What version of the Codex App are you using (From ""About Codex"" dialog)?
+
+`26.721.41059` (build `5848`)
+
+### What subscription do you have?
+
+Plus
+
+### What platform is your computer?
+
+```text
+Darwin 25.5.0 arm64 arm
+macOS 26.5.2 (25F84)
+```
+
+### What issue are you seeing?
+
+A recurring heartbeat automation was due while the MacBook was asleep with its lid closed. Codex attempted `thread/resume` during a two-second maintenance DarkWake, but it persisted `last_run_at` and advanced `next_run_at` before the resume completed. The resume timed out while the Mac continued sleeping. The scheduled occurrence was then permanently consumed: no heartbeat turn or automation run was created, and a later full user wake did not retry it.
+
+This is silent data loss for scheduled attention. The automation remains `ACTIVE` and looks as if it ran, but its work never happened.
+
+Verified persisted state after the incident:
+
+```text
+scheduled occurrence: 2026-07-27 05:00:00 UTC
+last_run_at:          2026-07-27 05:06:32 UTC
+next_run_at:          2026-07-28 05:01:30 UTC
+automation_runs rows: 0
+heartbeat turn:       absent from the target thread rollout
+```
+
+The target thread rollout contains no records between `2026-07-25T18:07:38Z` and the later full user session on July 27, so no heartbeat turn was submitted at `last_run_at`.
+
+### What steps can reproduce the bug?
+
+1. Create an active recurring heartbeat automation attached to an existing local thread.
+2. Schedule an occurrence while the MacBook will be asleep with the lid closed.
+3. Leave Codex Desktop running and let macOS enter normal sleep before the occurrence.
+4. Allow a short maintenance DarkWake after the scheduled time.
+5. Keep the Mac asleep long enough for `thread/resume` to time out across later maintenance wakes.
+6. Fully wake the Mac with lid or HID activity.
+7. Inspect `~/.codex/sqlite/codex-dev.db`, the target thread rollout, the Codex Desktop log, and `pmset -g log`.
+
+The observed timeline was:
+
+```text
+05:00:00 UTC  Heartbeat occurrence due
+05:06:32 UTC  Two-second DarkWake begins
+05:06:32 UTC  automations.last_run_at is persisted and next_run_at advances
+05:06:34 UTC  macOS returns to sleep
+05:22:42 UTC  Next DarkWake; Codex logs thread/resume timeout
+05:40:30 UTC  Later DarkWake; late thread/resume response is orphaned
+10:41:29 UTC  Full lid/HID wake
+after wake     No retry, no heartbeat turn, no automation_runs row
+```
+
+Relevant sanitized Codex log entries:
+
+```text
+2026-07-27T05:22:42.724Z warning [automations] Scheduled run failed automationId=<redacted> errorMessage=""Timed out waiting for MCP response to thread/resume""
+2026-07-27T05:40:30.696Z warning [AppServerConnection] response_orphaned ... requestId=thread/resume:<redacted>
+2026-07-27T05:40:30.697Z error [electron-message-handler] No promise for request ID id=thread/resume:<redacted>
+2026-07-27T05:40:30.699Z error [electron-message-handler] Conversation state not found conversationId=<redacted>
+```
+
+Relevant `pmset -g log` entries, local time UTC+02:00:
+
+```text
+2026-07-27 07:06:32 +0200 DarkWake ... rtc/SleepService ... 2 secs
+2026-07-27 07:06:34 +0200 Sleep Entering Sleep state due to 'Sleep Service Back to Sleep'
+2026-07-27 07:22:42 +0200 DarkWake ... rtc/SleepService ... 2 secs
+2026-07-27 07:22:44 +0200 Sleep Entering Sleep state due to 'Sleep Service Back to Sleep'
+2026-07-27 12:41:29 +0200 Wake ... lid ... HID Activity
+```
+
+### What is the expected behavior?
+
+A scheduled occurrence should not be marked as run or advanced beyond recovery until its heartbeat turn has been durably accepted.
+
+If `thread/resume` times out or its response arrives after the requesting promise is gone, Codex should do one of the following:
+
+1. Leave the occurrence due for retry.
+2. Persist a separate failed or pending attempt and retry it on the next meaningful wake.
+3. Roll back the schedule claim when no heartbeat turn exists.
+
+`last_run_at` should not imply execution when there is no corresponding turn or run record. Once dispatch starts during DarkWake, Codex should also hold an appropriate bounded sleep assertion long enough to settle the attempt.
+
+A regression test should cover sleep between claiming a due heartbeat and durably creating or resuming its target turn.
+
+### Additional information
+
+This is related to, but materially different from:
+
+- #34794, where an already-created automation turn is suspended during DarkWake and later resumes after a full wake.
+- #17893, where heartbeat schedules advance without execution, but the reported `last_run_at` remains null.
+
+Here, `last_run_at` was set exactly at DarkWake, `next_run_at` advanced, `thread/resume` later timed out, and the missed occurrence was never retried.
+
+Inspection of the shipped Desktop bundle for this build is consistent with the persisted evidence: the scheduler writes `lastRunAt` and the next scheduled occurrence before it calls the thread resume/start path. A failure in that later path does not restore the due occurrence. I can provide exact local bundle offsets or additional sanitized logs if useful.
+",open,,2026-07-27T11:50:40Z,2026-07-27T12:07:19Z,,1,rpavlovs,User,NONE,"['bug', 'app', 'app-server', 'automations']",0,reproducible bug,open unresolved,,,True,,author-only/no external human response,author-only/no external human response,,,False,False,False,False,False,False,808,5,0,True,False,False,2,2,2,2,2,2,2,2,2,2,1.0,machine provisional; requires rubric review
