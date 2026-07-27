@@ -38,7 +38,7 @@ if let Some(cell_id) = terminal_cell_id(&response) {
 
 A code-mode cell can start nested `exec_command` calls, keep only their output, and discard the returned `session_id` values.
 
-Those commands can remain live after the cell finishes. The unified-exec manager still owns them, but its process entries don't preserve the creator-cell relationship needed to recover their model-visible handles when the terminal response is formatted.
+Those commands can remain live after the cell finishes. The unified-exec manager still owns them, but its process entries don't preserve the creator-cell relationship needed to recover their model-visible handles when the terminal response is formatted. The current unified-exec tool surface exposes `exec_command` and `write_stdin`, but no separate live-session enumeration command.
 
 ## How it works
 
@@ -65,9 +65,9 @@ Output:
 
 ## Display bound
 
-The exploratory prototype caps the visible list at 64 IDs. That equals the manager's nominal process limit, but the manager uses a soft cap and can temporarily exceed it while an exited process is locked during terminal-event publication.
+The simplest correct implementation reports the complete per-cell live list. It is normally around the manager's 64-process soft cap and consists of short numeric IDs, so the model-context cost is small.
 
-The final implementation must surface every matching live ID or provide another model-visible path that enumerates any omitted IDs. The prototype's `(+N more)` suffix and over-limit formatter tests document output policy, but they don't guarantee that every reachable handle remains visible during soft-cap overshoot.
+The exploratory prototype instead caps the visible list at 64. Because the manager can temporarily exceed its soft cap while an exited process is locked during terminal-event publication, the prototype's `(+N more)` path can omit a still-live handle. If a future implementation adds a display bound, it needs another model-visible path to enumerate omitted IDs; none exists today.
 
 ## Scope
 
