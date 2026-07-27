@@ -1,336 +1,217 @@
-# Reviewer brief: compare recent Codex issues and triage outcomes
+# Reviewer brief: iterative Codex issue and triage research
 
-Please conduct a structured compare-and-contrast study of recent `openai/codex` issues. This is an execution brief, not another wording review of [#35613](https://github.com/openai/codex/issues/35613).
+Please conduct an iterative compare-and-contrast study of public `openai/codex` issues. This is a research task, not another wording review of [#35613](https://github.com/openai/codex/issues/35613).
 
-Treat the protocol below as approved unless data access reveals a concrete blocker. When the methodology is feasible, state **Methodology is ready** and continue directly into the survey in the same task. Do not stop after the readiness statement.
+The default workflow is **chat-native qualitative review in batches of five issues**. Do not turn this into a prerequisite 300-row data-collection project. Read a small batch, analyse it closely, save the notes, and repeat.
 
 Do not post comments to #35613 or any related public issue during this research.
 
 ## Purpose
 
-The study should determine:
+Build a grounded understanding of:
 
-- how recent issues are formatted;
-- how often they receive bot, unverified-human/community, or verified-maintainer responses;
-- which report characteristics are associated with useful triage;
-- which apparently strong reports remain unanswered;
-- what kinds of submissions create noise or are difficult to act on;
+- how current Codex issues are written;
+- what makes reports easy or difficult to act on;
+- how bots, community members, and maintainers respond;
+- which strong-looking reports remain unanswered;
+- which weak or incomplete reports still receive attention;
+- how current issue and triage practice differs from older examples;
 - whether #35613 is appropriately scoped and presented for this repository.
 
-Do not assume that an unanswered issue is poor. Maintainer capacity, priority, roadmap fit, timing, duplication, and issue type can all affect the outcome. Use “associated with engagement,” not “caused engagement,” unless a thread supplies direct evidence.
+Do not assume that an unanswered issue is poor. Maintainer capacity, priority, timing, duplication, roadmap fit, product surface, and issue type can all affect the outcome. Use “associated with engagement,” not “caused engagement,” unless the thread supplies direct evidence.
 
-## Data-access preflight
+## Default unit of work: one chat batch
 
-Before sampling, verify that the available data source can provide:
+Review **five issues per batch**. A batch should usually contain:
 
-1. a complete issue frame beyond GitHub Search's 1,000-result cap;
-2. issue title, body, author, creation time, labels, state, state reason, reactions, and closure time;
-3. all issue comments with timestamps, commenter identity, account type, and `author_association` where available;
-4. linked fixes or pull requests and, where available, timeline actions such as labels, assignment, milestones, closure, reopening, locking, and transfer.
+- **three recent issues**, normally created within the last 30 days;
+- **two comparison issues**, normally 30–120 days old.
 
-Comment-level access is required for the engagement classifications and time-to-maintainer-response measurements. Do not substitute comment count for comment content or commenter identity. If full comments cannot be read, return **Methodology needs the following concrete correction**, identify the missing read capability, and request or use an approved read-only source before running the headline response analysis.
+This is an intentional recency weighting, not a probability sample. Current reports receive more weight because templates, product surfaces, models, labels, bots, and maintainer practice can change quickly. Older reports remain useful for observing mature outcomes and avoiding conclusions based only on threads that have had little time to develop.
 
-If comments are readable but some timeline actions are unavailable, continue with the issue study, mark the unavailable fields, and omit or narrow only the affected triage-action metric. Never silently treat unavailable data as absence.
+The 30-day boundary is **not an exclusion rule**. Issues newer than 30 days are valid and important research material. Record their age and avoid interpreting a lack of response as a mature outcome.
 
-## Fixed observation point and saved artifacts
+A user may instead paste five issues directly into the chat. Analyse the supplied batch even when it contains extraneous text or does not match the preferred age mix. Preserve the supplied order unless another ordering materially helps comparison.
 
-Before collecting data, freeze one exact UTC observation timestamp, `T`.
+## Batch selection
 
-Evaluate issue state, comments, labels, assignments, reactions, linked fixes, and closure information as they existed at `T`. Do not mix later observations into the coded dataset.
+When selecting issues rather than receiving them from the user:
 
-Save enough information to reproduce the study:
+1. Include both open and closed issues over successive batches.
+2. Rotate issue types and product surfaces rather than selecting five near-duplicates.
+3. Include ordinary, weak, ambiguous, and high-quality-looking reports—not only memorable successes.
+4. Prefer at least one apparent counterexample per batch when available, such as a strong unanswered report or a weak report that received useful attention.
+5. Exclude pull requests from issue batches. Review PRs in separate batches.
+6. Do not repeatedly sample the same prolific reporter or one narrow label unless the batch is explicitly thematic.
+7. Save the search date, query or browsing route, candidate issue numbers, selected issue numbers, and selection rationale.
 
-- `study-config.json` containing `T`, date bounds, sample sizes, random seeds, sampling algorithm, and coding version;
-- the complete deduplicated mature and freshness frames;
-- the selected issue IDs;
-- the coded issue table;
-- the deep-read selections and stratum assignments;
-- unavailable fields, API limitations, and collection failures.
+This is a transparent purposive sample for landscape mapping. Do not report repository-wide response rates or causal claims from it.
 
-## Cohorts
+## Per-issue review
 
-### Mature issue cohort
+For each issue, record:
 
-Build a frame of all non-PR issues satisfying:
+### Basic facts
 
-- repository: `openai/codex`;
-- `created_at >= 2026-04-01T00:00:00Z`;
-- `created_at <= T - 30 days`;
-- state: open or closed.
+- issue number and canonical URL;
+- title;
+- creation date and age at review;
+- open or closed state and stated closure reason;
+- labels;
+- product surface and execution backend where demonstrated, otherwise `unknown`;
+- issue author association where available;
+- comment count and visible reactions.
 
-Calculate the upper bound from the exact timestamp. If tooling supports only whole dates, use a conservative whole-day cutoff that guarantees 30 complete days of observation.
+### Issue type
 
-Sample exactly 300 issues without replacement when at least 300 are eligible. If fewer are eligible, use the complete frame and report the smaller denominator.
+Assign one primary type and optional secondary tags:
 
-### Freshness cohort
+- reproducible bug;
+- intermittent bug;
+- model-behaviour report;
+- feature request;
+- performance or resource problem;
+- documentation request;
+- support or usage question;
+- security or privacy concern;
+- meta or process issue;
+- unclear or mixed request.
 
-Build a separate frame of all non-PR issues satisfying:
+Duplicate or already-tracked status is an outcome, not an issue type.
 
-- `created_at > T - 30 days`;
-- `created_at <= T`;
-- state: open or closed.
+### Report quality
 
-Sample exactly 50 issues without replacement when at least 50 are eligible. Use this cohort only to identify changes in templates, labels, bots, and triage practice. Do not include it in mature-cohort response rates.
+Score each applicable dimension from 0 to 2. Use `N/A` where a dimension genuinely does not apply.
 
-### Complete-frame construction and deterministic sampling
+1. **Title specificity** — names an observable behaviour or concrete request.
+2. **User impact** — explains what fails or why it matters.
+3. **Actual versus expected behaviour** — both are distinguishable.
+4. **Reproduction** — executable or otherwise credible.
+5. **Environment** — provides the relevant version, platform, configuration, model, or backend.
+6. **Evidence** — logs, outputs, screenshots, artifacts, or source references support the claim.
+7. **Scope** — presents one independently actionable problem.
+8. **Prior-art awareness** — distinguishes relevant reports instead of dumping links; use `N/A` when no relevant prior art is reasonably discoverable.
+9. **Diagnosis discipline** — separates observation, hypothesis, and proposed solution.
+10. **First-screen readability** — the core failure and requested invariant are quickly understandable.
 
-Do not rely on one GitHub Search result set. Construct each complete frame through the paginated Issues API or through date partitions small enough to remain below every retrieval cap. Verify partition counts, subdivide any capped partition, deduplicate by repository and issue number, exclude records containing pull-request metadata, and sort the final frame by issue number.
+Calculate a normalized score over applicable dimensions when useful, but do not let the aggregate number replace the written judgement. Note concrete strengths, weaknesses, and the smallest information improvement that would make the report more actionable.
 
-Use a recorded integer seed and deterministic sampling:
+### Engagement and outcome
 
-1. sort eligible issue numbers ascending;
-2. initialise Python `random.Random(seed)`;
-3. call `sample(issue_numbers, n)` without replacement;
-4. sort selected IDs ascending for storage and review.
+Identify bots before considering association. Treat `OWNER`, `MEMBER`, and `COLLABORATOR` as verified maintainer associations. Treat other humans as unverified human/community unless visible repository-authority evidence supports a maintainer classification. Do not infer authority from tone or apparent employment.
 
-Use separately recorded seeds or a documented deterministic seed derivation for mature, freshness, deep-read, reliability, and PR samples.
+Record engagement separately from outcome.
 
-## Observation windows
+**Engagement:**
 
-Use two engagement views and do not mix them:
+- author-only/no external human response;
+- bot-only activity;
+- unverified human/community response;
+- maintainer acknowledgement;
+- maintainer information request;
+- substantive maintainer response.
 
-- **30-day engagement:** comments and bot activity occurring from issue creation through `created_at + 30 days`. Use this view for response rates, issue-type comparisons, quality-band comparisons, and the main engagement-by-outcome table.
-- **Engagement as of `T`:** all activity visible by the snapshot. Use this only for supplemental current-state descriptions and qualitative case selection.
+Retain multiple event flags when a thread progresses through several stages. Record the highest human-engagement level reached and describe the sequence when it matters.
 
-Record whether the first verified maintainer response occurred after day 30 as `late_maintainer_response`.
+**Outcome:**
 
-Code outcome from the issue's state and evidence as of `T`. When crossing 30-day engagement with current outcome, label the different horizons explicitly: engagement is censored at 30 days; outcome is current at `T`.
+- open unresolved;
+- completed/fixed;
+- duplicate;
+- expected behaviour;
+- unsupported or support redirect;
+- not planned;
+- automated closure;
+- other closure.
 
-## Actor and maintainer identification
+For recent issues, explicitly state that the outcome is immature when the thread has had little observation time. Time to first maintainer response at 24 hours, 7 days, and 30 days may be recorded as descriptive context, but it is not a gate on inclusion.
 
-Identify automated actors before considering repository association. Use account type, a recognised bot identity, or an explicit `[bot]` marker. A bot's association does not make it a human maintainer response.
+### Research value
 
-For humans:
+State why the issue belongs in the landscape map. Examples:
 
-- count `OWNER`, `MEMBER`, or `COLLABORATOR` as verified maintainer associations;
-- treat `CONTRIBUTOR`, `FIRST_TIME_CONTRIBUTOR`, `FIRST_TIMER`, `NONE`, and missing association as unverified human/community unless separate authority evidence exists;
-- allow separate authority evidence only when a visible repository action demonstrates write authority, such as assigning another user, applying or removing labels, setting a milestone, locking, transferring, or closing/reopening an issue the actor did not open;
-- do not treat an author's closure of their own issue as maintainer evidence;
-- record the authority evidence used.
+- representative strong report;
+- representative low-signal report;
+- strong unanswered counterexample;
+- weak report with maintainer attention;
+- well-written duplicate;
+- semantic duplicate-bot error;
+- useful product-surface contrast;
+- useful old-versus-current practice contrast.
 
-Do not infer authority from tone, profile text, apparent employment, code familiarity, or contribution history. Describe verified-maintainer response rates as conservative where private organisation membership or missing association data could hide maintainer status.
+## Batch synthesis
 
-## Response and outcome coding
+After the five issue reviews, return:
 
-Do not combine engagement and disposition into one category. Code them on separate axes and retain event-level flags.
+1. a compact comparison table;
+2. the main patterns visible in this batch;
+3. counterexamples and tensions;
+4. what this batch suggests about #35613, without recommending edits from one batch alone;
+5. what kinds of issues the next batch should include to test or challenge the emerging picture;
+6. confidence and important missing data.
 
-### Engagement axis
+Separate factual observations, interpretation, and uncertainty.
 
-Assign the highest human-engagement level reached within 30 days, and separately the highest level reached by `T`:
+## Saving the work
 
-1. **Author-only/no external human response** — no human comment other than the issue author's own follow-up.
-2. **Unverified human/community response** — at least one external human comment, but no verified maintainer comment.
-3. **Maintainer acknowledgement** — verified maintainer receipt or classification without analysis or a request for information.
-4. **Maintainer information request** — request for reproduction, logs, versions, clarification, or narrower scope.
-5. **Substantive maintainer response** — diagnosis, workaround, source reference, design discussion, confirmation, prioritisation, or concrete next step.
+Store each completed batch in the fork under:
 
-Record bot activity separately for both windows. Retain Boolean flags for community response, acknowledgement, information request, substantive response, and bot response even when the highest category is used in tables.
+`notes/code-mode-orphan-fix/research/batches/batch-NNN.md`
 
-### Outcome axis
+Each file should contain:
 
-Assign one disposition as of `T`:
+- review date;
+- selection method and candidate pool;
+- the five issue numbers;
+- per-issue coding and evidence notes;
+- batch synthesis;
+- new or revised hypotheses;
+- proposed composition of the next batch.
 
-- **open unresolved**;
-- **completed/fixed** — linked fix, merged PR, confirmed release, or closure as completed;
-- **duplicate**;
-- **expected behaviour**;
-- **unsupported or support redirect**;
-- **not planned**;
-- **automated closure** — stale or another automation-driven closure without a substantive disposition;
-- **other closure**.
+Maintain a compact ledger at:
 
-Use explicit issue state, state reason, closing comment, linked PR, or release evidence. Do not infer a fix solely because a similar code change exists elsewhere.
+`notes/code-mode-orphan-fix/research/batches/ledger.csv`
 
-Record labels, assignments, closure, reopening, and linked fixes separately as triage actions. They are not substitutes for a verified maintainer human comment.
+The ledger should contain one row per issue with the batch number, issue number, dates, primary type, quality score or band, engagement, outcome, and a short research-value tag. Do not mirror full public threads into the repository; issue numbers and evidence references are sufficient.
 
-### Timing measures
+## How many issues
 
-Measure from issue creation to the first verified maintainer human comment. Report proportions receiving one within 24 hours, 7 days, and 30 days. Also record time to first visible triage action when timeline data permits.
+There is no default requirement to exceed 300 issues.
 
-For the mature cohort, every issue has a full 30-day observation period. Code no verified maintainer comment within 30 days as a censored non-event for the 30-day rate, not as zero response time. Preserve later responses separately.
+Start with **six batches / 30 issues**. After every second batch, review whether the coding categories or main conclusions are still changing. Continue in batches of five while new major patterns, counterexamples, product surfaces, or triage behaviours are appearing.
 
-## Issue-type controls
+A reasonable qualitative target is **40–80 issues**. Stop when two consecutive diverse batches add no major category or materially change the working conclusions. Record why saturation was judged sufficient.
 
-Assign one primary issue type before inspecting response and outcome variables. Use this precedence when several apply:
-
-1. security or privacy concern;
-2. documentation request;
-3. support or usage question;
-4. feature request;
-5. model-behaviour report;
-6. performance or resource problem;
-7. reproducible bug;
-8. intermittent bug;
-9. meta or process issue;
-10. unclear or mixed request.
-
-Add optional secondary tags such as performance, resource safety, sandbox, model behaviour, regression, or documentation. Duplicate or already-tracked status belongs on the outcome axis.
-
-Issue-type rates are descriptive. Report denominators and confidence intervals where practical, but make no between-type inferential claim from this sample. Do not publish a standalone rate for a primary-type cell with fewer than 20 issues; pool it into a clearly named broader group or mark it sparse. Present issue-type and quality-band rates as separate stratifications unless cross-classified cells are adequately populated.
-
-## Quality scoring
-
-Score all sampled mature issues. This supports cohort-level quality-band rates and avoids selecting strong unanswered reports through subjective pre-judgement.
-
-Where practical, score title and body before viewing comments, labels, reactions, state, closure, linked work, or author identity. Record whether scoring was blinded.
-
-Use the issue version immediately before the first verified maintainer response when edit history permits. Otherwise use the version available at `T`, record whether it was edited after feedback, and flag uncertainty. Do not present an edited-after-response score as an unqualified predictor of engagement.
-
-For every dimension use:
-
-- `0` — absent, materially unclear, or misleading;
-- `1` — present but incomplete, indirect, or difficult to use;
-- `2` — clear, specific, and decision-useful;
-- `N/A` — genuinely inapplicable to that issue type, with a reason.
-
-| Dimension | 0 | 1 | 2 |
-|---|---|---|---|
-| Title specificity | Vague complaint or solution-only title | Names an area or symptom but not a clear observable failure | States a specific observable behaviour or requested change |
-| User impact | No consequence stated | Consequence is implied or generic | Concrete failure, risk, or blocked workflow is explained |
-| Actual versus expected | Not distinguishable | One side is incomplete or scattered | Actual and expected behaviour are both clear |
-| Reproduction | None or not credible | Partial steps, intermittent description, or missing key condition | Minimal executable steps or another credible reproduction path |
-| Environment | Relevant context absent | Some version/platform/configuration data | All environment details needed to interpret the report |
-| Evidence | Assertion only | Limited or weakly connected evidence | Useful logs, outputs, screenshots, artifacts, or source references tied to the claim |
-| Scope | Several unrelated requests or unclear ask | Main problem exists but includes avoidable adjacent scope | One independently actionable problem with boundaries |
-| Prior-art awareness | Relevant links are misleading or undifferentiated | Related work is mentioned without a clear distinction | Relevant prior reports are accurately distinguished; use `N/A` when none is reasonably discoverable |
-| Diagnosis discipline | Speculation presented as established cause | Observation and hypothesis are partly mixed | Observation, hypothesis, limitation, and proposed solution are separated |
-| First-screen readability | Core issue cannot be identified quickly | Core issue is recoverable with substantial reading | Failure, impact, and requested invariant are quickly understandable |
-
-Calculate:
-
-`quality_score = earned_points / (2 * applicable_dimensions)`
-
-Store the normalised score and applicable-dimension count. Fix bands before analysing outcomes:
-
-- high: `>= 0.80`;
-- medium: `>= 0.55` and `< 0.80`;
-- low: `< 0.55`.
-
-Calibrate the rubric on a small subset before full coding. With multiple reviewers, independently double-code at least 10% of the mature sample and report agreement before reconciliation. With one reviewer, randomly select and blindly re-code at least 10% after the first coding pass, preserve both ratings, and report within-rater agreement or disagreement.
-
-Also record body word count, code-block count, external-link count, template usage, proposed-fix/source-analysis presence, fork/prototype presence, post-feedback edits, labels, state, closure reason, reactions, and linked PRs where available. Do not treat length, source analysis, or a prototype as automatically good or bad.
-
-## Low-signal indicators
-
-Record concrete indicators rather than assigning a general “bad issue” label:
-
-- no reproducible behaviour where reproduction is relevant;
-- no actual/expected distinction;
-- unsupported root-cause certainty;
-- multiple unrelated requests;
-- feature request presented as a regression;
-- enormous unfiltered logs;
-- screenshot-only evidence;
-- outdated or unspecified version where relevant;
-- vague title;
-- hostile or accusatory framing;
-- general product support request;
-- duplicate with no material distinction;
-- redesign far broader than the demonstrated failure;
-- external link required to understand the basic report;
-- verbosity that adds no evidence.
-
-## Deep-read sample
-
-Select up to 72 distinct issues from the mature 300 after quality scoring, targeting 12 per stratum. Draw without replacement and use this precedence:
-
-1. **Maintainer-engaged and completed/fixed** — completed/fixed by `T` and a verified maintainer comment by `T`.
-2. **Maintainer-engaged but unresolved** — open unresolved at `T` and a verified maintainer comment by `T`.
-3. **Rejected or redirected** — duplicate, expected behaviour, unsupported/support redirect, not planned, automated closure, or other closure, excluding strata 1 and 2.
-4. **High-quality without maintainer engagement** — no verified maintainer comment by `T` and a high quality score.
-5. **Unverified human/community discussion** — external unverified-human comments by `T`, no verified maintainer comment, excluding stratum 4.
-6. **No human response and little visible interest** — no external human comment by `T`, excluding stratum 4, and no more than one non-author reaction where identity is available; otherwise no more than one total reaction, with the limitation flagged.
-
-When a stratum has more than 12 eligible issues, sample 12 deterministically using a recorded stratum seed. When it has fewer, include all and report the underfill. Do not silently backfill. Record each selected issue's 30-day engagement as well as its at-`T` stratum.
-
-The deep-read sample is qualitative. Do not use its unweighted stratum proportions as cohort response-rate estimates.
-
-## Required counterexamples
-
-Include examples of:
-
-- strong issues with no maintainer response;
-- weak issues that received maintainer attention;
-- well-written duplicates;
-- high-reaction issues that were not acted on;
-- low-reaction issues that led to fixes;
-- bot duplicate suggestions that appear semantically related but technically unrelated.
+Run a larger probability-sampled quantitative study only if the qualitative pass produces a specific question that requires a rate estimate. Keep that as a separate phase with its own sampling protocol.
 
 ## Related-process cluster
 
-Compare these five focal reports by failure layer:
+As a focused thematic batch, compare these five reports by failure layer:
 
-- [#35613](https://github.com/openai/codex/issues/35613) — nested code-mode JavaScript can discard the result containing `session_id` before the handle becomes model-visible; manager entries lack creator-cell provenance for recovery.
-- [#34866](https://github.com/openai/codex/issues/34866) — broader wrapper completion versus nested-process state mismatch.
-- [#33816](https://github.com/openai/codex/issues/33816) — the model receives a live handle, later loses ownership, and attempts a duplicate command.
-- [#35482](https://github.com/openai/codex/issues/35482) — a child process remains active and causes a severe deleted-open-file disk incident; broader process-group, sandbox, cleanup, and resource-safety scope.
-- [#35035](https://github.com/openai/codex/issues/35035) — general task incompleteness and false completion claim; likely semantic duplicate-bot noise rather than the same runtime path.
+- [#35613](https://github.com/openai/codex/issues/35613) — nested JavaScript can discard the result containing `session_id` before the handle becomes model-visible.
+- [#34866](https://github.com/openai/codex/issues/34866) — wrapper completion versus nested-process state mismatch.
+- [#33816](https://github.com/openai/codex/issues/33816) — a handle reaches the model and is later lost model-side.
+- [#35482](https://github.com/openai/codex/issues/35482) — possible process-group, cleanup, sandbox-observability, and resource-safety failure.
+- [#35035](https://github.com/openai/codex/issues/35035) — general task incompleteness and likely semantic duplicate-bot noise.
 
-The cluster map also contains a wake-up-after-exit layer. That layer is deliberately contextual rather than a sixth focal report in this pass. Note it as a possible adjacent scheduling mechanism, but do not expand the five-report comparison unless new evidence or the user requests it.
+For each, identify:
 
-For each focal report, identify:
-
-1. where in the chain the demonstrated failure occurs;
-2. whether a session handle was exposed to JavaScript, exposed to the model, later lost, or never surfaced model-side;
+1. the demonstrated failure point;
+2. whether the handle reached JavaScript, reached the model, was later lost, or never surfaced model-side;
 3. whether manager ownership is demonstrated, contradicted, or unknown;
-4. whether the demonstrated problem is model behaviour, wrapper semantics, process ownership, process-group handling, sandbox observability, cleanup, or resource safety;
-5. product surface and execution backend, using `unknown` where the thread does not establish app/CLI/cloud or local/exec-server execution;
-6. what #35613 could address;
-7. what #35613 definitely would not address;
-8. whether a cross-link comment would add new issue-specific evidence or only noise.
+4. product surface and execution backend, using `unknown` rather than inference;
+5. what #35613 could address;
+6. what it definitely would not address;
+7. whether a public cross-link would add new evidence or only noise.
 
-Keep demonstrated facts separate from plausible relationships. Do not infer that #35482 used nested code-mode dispatch, a discarded handle, or a particular backend unless the thread supplies that evidence.
+The wake-up-after-exit layer remains adjacent context rather than a sixth focal report unless a later batch specifically studies scheduling and notification failures.
 
-Do not post comments to these issues as part of the research.
+## PR research
 
-## Optional pull-request appendix
-
-Keep PRs separate from all issue statistics.
-
-If run, use the same snapshot `T` and build a complete frame of non-draft PRs created from `T - 90 days` through `T`, including open, closed, and merged PRs. Use paginated collection or capped date partitions, deduplicate by PR number, and save the frame.
-
-Target 60 PRs, up to 15 from each mutually exclusive origin stratum:
-
-1. **Maintainer-authored** — author has verified repository authority under the actor rules above.
-2. **Automated** — author is a bot.
-3. **Coordinated external** — affirmative public evidence shows invitation, prior agreement, linked issue assignment, or maintainer-requested work.
-4. **Unknown external** — external human without affirmative public coordination evidence.
-
-Do not label a PR “unsolicited” merely because coordination is not public. When a stratum exceeds 15, sample deterministically without replacement. When it underfills, include all and report the underfill rather than backfilling.
-
-Record merge state, linked issue, review response, time to first verified maintainer review or comment, change size, tests described, and contribution-policy discussion.
-
-## Deliverables
-
-Return:
-
-1. Executive summary.
-2. Methodology, capability preflight, snapshot, sampling procedure, and limitations.
-3. Quantitative 30-day engagement-by-current-outcome table.
-4. Supplemental engagement-as-of-`T` table.
-5. Issue-type distribution.
-6. Mature-cohort 30-day response rates separately by primary issue type and quality band.
-7. Timing to first verified maintainer human comment and first visible triage action where available.
-8. Qualitative taxonomy of actionable and low-signal reports.
-9. Positive, negative, and counterexample cases.
-10. Failure-layer comparison of the five focal reports.
-11. Comparison of #35613 against the fixed rubric.
-12. Publication or follow-up recommendations.
-13. Machine-readable frames, samples, and coded table or CSV.
-14. Optional separate PR appendix.
-
-Report denominators for every rate. Do not use the freshness or deep-read samples as simple random mature-cohort samples. Mark sparse cells and unavailable fields explicitly.
+Keep PRs separate from issue batches. Review PRs in batches of five using the same chat workflow, rotating among maintainer-authored, automated, coordinated external, and unknown external submissions. Do not infer that an external PR was unsolicited merely because public coordination is absent.
 
 ## Execution discipline
 
-Do not recommend edits to #35613 based on one memorable issue. Do not propose additional public comments unless the research identifies new, issue-specific evidence.
+When asked to run the research, begin with a five-issue batch and save the completed notes. Do not stop at another methodology review unless a concrete data-access problem prevents reading the selected issues or comments.
 
-Before data collection, check only for a concrete feasibility or methodological blocker. If none exists:
-
-1. state **Methodology is ready**;
-2. immediately build the frames and run the study;
-3. return the deliverables above.
-
-Return **Methodology needs the following concrete correction** only when a specific blocker would make measurements invalid or irreproducible. Identify the smallest correction, apply it to the working protocol where possible, and continue when feasible rather than turning the task into another wording review.
-
-After completing the research, distinguish factual findings, measured associations, interpretation, uncertainty, and recommended action.
+Do not post public comments as part of the research. Do not recommend changes to #35613 from one memorable comparison. Update conclusions cumulatively as batches accumulate.
