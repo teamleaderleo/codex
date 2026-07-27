@@ -62,8 +62,9 @@ Remote executor: Docker `ubuntu:24.04`
 Results:
 
 - five local acceptance cases passed;
-- four remote-safe Docker cases passed;
-- the host-path survivor case passed locally and was excluded from the Docker filter;
+- four remote-safe Docker cases passed and therefore exercised the exec-server path;
+- the exited-process/survivor case passed locally and was excluded from the Docker filter because it used host-only temporary paths;
+- remote stale-exit behaviour was not exercised by that survivor case;
 - two existing code-mode compatibility tests passed;
 - `git diff --check` passed.
 
@@ -71,11 +72,13 @@ Results:
 
 Create the smaller submission branch directly from then-current upstream `main`. Apply the cleanup items from [review.md](review.md), then run and report every claimed check on one final SHA:
 
-- `just fmt`;
-- `just fix -p codex-core`;
 - focused manager and formatter tests;
 - one primary discarded-handle end-to-end regression;
 - relevant existing compatibility tests;
+- any terminal-outcome cases agreed in the issue;
+- `just test -p codex-core`;
+- `just fix -p codex-core`;
+- `just fmt`;
 - `git diff --check`.
 
 The final PR should contain one compact validation section tied to that final SHA.
