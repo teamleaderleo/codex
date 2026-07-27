@@ -34,10 +34,11 @@ Output:
 - Current head `77e7e314...` adds only target-Windows routing guards to four POSIX-command acceptance cases.
 - A targeted Wine-exec run was attempted on the current code head, but Bazel analysis failed on an unrelated `windows-sandbox-rs` BUILD/macro mismatch before any Rust test was discovered or executed.
 
-The [validation record](validation.md) lists the exact refs, commands, and limitations.
+The [validation record](https://github.com/teamleaderleo/codex/blob/617bc3a81ae9ddf0964bac9ee6c4096c57559b76/notes/code-mode-orphan-fix/publication/validation.md) lists the exact refs, commands, and limitations.
 
 ## Notes
 
+- Current upstream `main` snapshot `95637f70...` still formats completion directly from `RuntimeResponse` and contains no equivalent manager lookup.
 - Process lifetime, automatic cleanup, wake-up behaviour, JavaScript result fields, and public protocol shapes are unchanged.
 - The 64-ID output bound is intentionally independent of the manager's soft process-store capacity.
 - The current base-to-head diff is 903 changed lines because the acceptance module is large. If a smaller review is requested, the production change, focused tests, and primary acceptance reproduction can land first, with the remaining acceptance coverage in a follow-up.
