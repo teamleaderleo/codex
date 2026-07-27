@@ -9,4 +9,4 @@ The focused issue asks two design questions:
 1. Should the warning appear only for successful `Result` responses, or for every terminal outcome, including failed `Result` and `Terminated`?
 2. Is manager-observed liveness acceptable for exec-server-backed processes, or should the broader lifecycle representation proposed here land first?
 
-I have a working prototype with focused manager and formatter tests plus end-to-end regression coverage. If maintainers prefer this narrow compatibility-preserving direction, I would be glad to rebuild it as a smaller invited PR on current `main`.
+A focused prototype covers manager, formatter, and end-to-end regression cases; the new issue links the supporting technical notes.
