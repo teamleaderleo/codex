@@ -7,6 +7,6 @@ One boundary is worth deciding explicitly. Local process handles can expose exit
 The focused issue asks two scope questions:
 
 1. Should live session IDs be shown only when a cell completes successfully, or also when it fails or is terminated?
-2. Should the first version include exec-server-backed sessions, accepting that their exit state can briefly lag, or should it be limited to local sessions?
+2. Is manager-observed liveness acceptable for exec-server-backed processes, given that exit reflection can briefly lag the underlying process?
 
 The [technical deep dive](https://github.com/teamleaderleo/codex/blob/review/code-mode-issue-ready/notes/code-mode-orphan-fix/publication/deep-dive.md) contains the exploratory implementation, test results, code references, limitations, and reasoning behind the proposed scope.
