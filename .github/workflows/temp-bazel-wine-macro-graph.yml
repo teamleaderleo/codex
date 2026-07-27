@@ -91,11 +91,6 @@ jobs:
               --output=transitions \
               --transitions=lite
 
-            echo "=== raw unit-test binary on Windows gnullvm ==="
-            bazel cquery \
-              //codex-rs/windows-sandbox-rs:windows-sandbox-rs-unit-tests-bin \
-              --output=label_kind \
-              --platforms=//:windows_x86_64_gnullvm
           } 2>&1 | tee "$RUNNER_TEMP/bazel-wine-macro-graph.log"
 
       - name: Upload graph log
