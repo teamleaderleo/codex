@@ -6,7 +6,7 @@ The final result can then report `Script completed` without showing the handles 
 
 ## Relationship to #34866
 
-[#34866](https://github.com/openai/codex/issues/34866) covers the broader contradiction between wrapper completion and nested-process state and discusses richer lifecycle representation.
+[#34866](https://github.com/openai/codex/issues/34866) covers the broader mismatch between wrapper completion and nested-process state and discusses richer lifecycle representation.
 
 This report isolates one compatibility-preserving case: recover discarded manager-owned handles in the existing completion status without changing lifecycle policy, JavaScript result fields, or protocol shapes.
 
@@ -19,8 +19,10 @@ This report isolates one compatibility-preserving case: recover discarded manage
 
 ## Important boundary
 
-Local handles can expose process exit directly. Exec-server-backed handles rely on exit already reflected in manager state, so a recently exited remote process may appear until cached state advances.
+Local handles can expose process exit directly. Exec-server-backed handles rely on exit already reflected in manager state, so a recently exited remote process could appear until cached state advances.
 
-## Prototype
+## Exploratory work
 
-A tested prototype demonstrates exact-cell attribution, exited-entry filtering, deterministic formatting, and the discarded-handle end-to-end case. The [technical deep dive](deep-dive.md) records the implementation reasoning, validation boundary, and alternatives considered.
+The [exploratory implementation and tests](https://github.com/teamleaderleo/codex/tree/fix/code-mode-live-session-ids) demonstrate exact-cell attribution, exited-entry filtering, deterministic formatting, and the discarded-handle end-to-end case.
+
+The [technical deep dive](deep-dive.md) records my implementation reasoning, validation boundary, limitations, and alternatives considered.
