@@ -50,6 +50,7 @@ jobs:
           code_head="$(git rev-parse HEAD^)"
           expected_head="77e7e3149df366236db2426596c23ebbe1d6bb48"
           [[ "$code_head" == "$expected_head" ]]
+          [[ "$(uname -m)" == "x86_64" ]]
 
           python3 - <<'PY'
           from pathlib import Path
@@ -65,16 +66,19 @@ jobs:
           PY
 
           bazel test //codex-rs/core:core-all-wine-exec-test \
-            --test_filter='suite::code_mode::orphan_sessions::' \
-            --test_output=all
+            --nocache_test_results \
+            --test_output=all \
+            --test_arg='suite::code_mode::orphan_sessions::' \
+            --test_arg='--nocapture'
 
           git diff --check
           [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]
 
           {
+            printf 'Agent: Agent 69\n'
             printf 'Code head: %s\n' "$code_head"
             printf 'Wine-exec target: //codex-rs/core:core-all-wine-exec-test\n'
-            printf 'Filter: suite::code_mode::orphan_sessions::\n'
+            printf 'Rust test filter: suite::code_mode::orphan_sessions::\n'
             printf 'Target-Windows guards found: 4\n'
             printf 'Local-only survivor guard found: 1\n'
             printf 'git diff --check: passed\n'
