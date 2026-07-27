@@ -18,7 +18,7 @@ Each total is out of 30: clarity, scope discipline, reproduction/current-state v
 
 ## Distribution — 120 issues
 
-**S 13** · **A 21** · **B 26** · **C 27** · **D 19** · **E 7** · **F 7**
+**S 14** · **A 20** · **B 26** · **C 27** · **D 19** · **E 7** · **F 7**
 
 Detailed observations and roasts remain in [`issue-quality-catalog.md`](issue-quality-catalog.md) and [`issue-quality-catalog-pass-002-006.md`](issue-quality-catalog-pass-002-006.md).
 
@@ -68,7 +68,7 @@ Detailed observations and roasts remain in [`issue-quality-catalog.md`](issue-qu
 | [#35610](https://github.com/openai/codex/issues/35610) | 8/30 | F |
 | [#35611](https://github.com/openai/codex/issues/35611) | 24/30 | B |
 | [#35612](https://github.com/openai/codex/issues/35612) | 17/30 | D |
-| [#35613](https://github.com/openai/codex/issues/35613) | 28/30 | A |
+| [#35613](https://github.com/openai/codex/issues/35613) | 30/30 | S |
 | [#35614](https://github.com/openai/codex/issues/35614) | 29/30 | S |
 | [#35615](https://github.com/openai/codex/issues/35615) | 26/30 | B |
 
