@@ -45,9 +45,7 @@ This index ranks the evidence used by the [issue](issue.md), [pull-request draft
 
 ### Aggregate acceptance cases
 
-The current source file contains all five cases and their platform guards:
-
-- [code-mode orphan-session acceptance module](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/suite/code_mode/orphan_sessions.rs)
+- [Current five-case acceptance module](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/suite/code_mode/orphan_sessions.rs)
 
 Case names:
 
@@ -57,22 +55,23 @@ Case names:
 4. `yielded_cell_response_does_not_include_completion_session_warning`
 5. `code_mode_completion_reports_only_sessions_created_by_current_cell`
 
-### Compatibility tests
+### Compatibility and negative reproduction
 
 - [`code_mode_can_run_multiple_yielded_sessions`](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/suite/code_mode.rs#L1858)
 - [`code_mode_wait_can_terminate_and_continue`](https://github.com/teamleaderleo/codex/blob/77e7e3149df366236db2426596c23ebbe1d6bb48/codex-rs/core/tests/suite/code_mode.rs#L2179)
-
-### Negative reproduction
-
 - [Immutable before-state reproduction `7298dcf4`](https://github.com/teamleaderleo/codex/commit/7298dcf44f61164ffc25b8bdf5f136281caeb9f5)
 
-## 3. GitHub Actions and scrubbed validation
+## 3. Execution evidence
 
 - [Focused validation on capped head `eb530466...`, run 30220464228](https://github.com/teamleaderleo/codex/actions/runs/30220464228)
 - [Local and Docker acceptance validation on the pre-decoupling capped workspace, run 30217686056](https://github.com/teamleaderleo/codex/actions/runs/30217686056)
-- [Scrubbed public validation record](validation.md)
+- [Diagnostic Wine workflow head `d8d194c0...`](https://github.com/teamleaderleo/codex/commit/d8d194c0c2822bce0c1a0b7647c1fabc993fd9a6)
+- [Wine attempt environment](https://github.com/teamleaderleo/codex/blob/validation/code-mode-wine-target-guards-results/validation-results/patch1-wine-target-guards/environment.txt)
+- [Wine attempt result](https://github.com/teamleaderleo/codex/blob/validation/code-mode-wine-target-guards-results/validation-results/patch1-wine-target-guards/result.txt)
+- [Wine Bazel-analysis failure excerpt](https://github.com/teamleaderleo/codex/blob/validation/code-mode-wine-target-guards-results/validation-results/patch1-wine-target-guards/summary.txt)
+- [Scrubbed validation record](validation.md)
 
-The Actions runs establish what was executed on their recorded refs. They do not establish a Wine-exec or compatibility pass on current guard-only head `77e7e314...`.
+The Actions runs establish what executed on their recorded refs. The Wine attempt establishes only that the pinned target was blocked before Rust test discovery by an unrelated BUILD/macro mismatch.
 
 ## 4. Repository conventions and review guidance
 
@@ -92,9 +91,18 @@ The Actions runs establish what was executed on their recorded refs. They do not
 | [Code mode on V8 PR #15276](https://github.com/openai/codex/pull/15276) / [commit `e4eedd61`](https://github.com/openai/codex/commit/e4eedd6170580d5b06fb539635a78f261a6b7369) | Rust/V8 code-mode runtime. |
 | [Cell actor PR #28599](https://github.com/openai/codex/pull/28599) / [commit `e2f074e1`](https://github.com/openai/codex/commit/e2f074e16c522bfa55d9bcd344a5ea0ba5a4580f) | Single-owner code-cell lifecycle boundary. |
 
-## 6. Related public issue
+## 6. Related public reports
 
-- [#34866](https://github.com/openai/codex/issues/34866) — reports contradictory wrapper/process completion semantics and explicitly identifies discarded `session_id` or `exit_code` values as one possible consequence. Patch 1 isolates that consequence as a bounded visibility fix rather than implementing the broader lifecycle redesign.
+| Issue | Relationship to Patch 1 |
+|---|---|
+| [#34866](https://github.com/openai/codex/issues/34866) | Broader wrapper/process completion contradiction; explicitly identifies discarded `session_id` or `exit_code` values. |
+| [#33816](https://github.com/openai/codex/issues/33816) | Model-side loss of a yielded session can cause false completion claims and duplicate commands. |
+| [#14731](https://github.com/openai/codex/issues/14731) | Proposes keeping a turn active while unified-exec work remains live. |
+| [#15723](https://github.com/openai/codex/issues/15723) | Reports missing wake-up for completed background subprocesses and subagents. |
+| [#32188](https://github.com/openai/codex/issues/32188) | Requests opt-in event-driven wake-up on background exec completion. |
+| [#13733](https://github.com/openai/codex/issues/13733) | Documents the model-turn and token cost of repeated background-process polling. |
+
+These reports show a broader lifecycle and continuation problem space. Patch 1 remains narrower: it restores handles for exact-cell processes that are already live when the final code-mode result is formatted.
 
 #35482 is intentionally not used as Patch 1 impact evidence. Its central incident and requested remedies concern process-group termination, sandbox inspection, timeouts, and disk backpressure, which this patch does not address.
 
@@ -105,4 +113,4 @@ The Actions runs establish what was executed on their recorded refs. They do not
 - [Pull-request draft](pull-request.md)
 - [Technical deep dive](deep-dive.md)
 
-These documents are synthesis. Their concrete claims should trace back to the commit-pinned code, tests, Actions runs, repository guidance, architectural history, or public issue listed above.
+These documents are synthesis. Their concrete claims should trace back to the commit-pinned code, tests, execution evidence, repository guidance, architectural history, or public issues listed above.
