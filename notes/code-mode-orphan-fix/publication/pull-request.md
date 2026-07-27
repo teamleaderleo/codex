@@ -1,6 +1,6 @@
 # Report live nested session IDs when code-mode cells finish
 
-<!-- Unpublished, invitation-only pull-request draft. Add the issue relationship only after an issue exists and an upstream maintainer invites the contribution. -->
+> Final review draft. Open only after an upstream maintainer invites the contribution.
 
 ## Why
 
@@ -34,7 +34,7 @@ Output:
 - Current head `77e7e314...` adds only target-Windows routing guards to four POSIX-command acceptance cases.
 - A targeted Wine-exec run was attempted on the current code head, but Bazel analysis failed on an unrelated `windows-sandbox-rs` BUILD/macro mismatch before any Rust test was discovered or executed.
 
-The [validation record](https://github.com/teamleaderleo/codex/blob/617bc3a81ae9ddf0964bac9ee6c4096c57559b76/notes/code-mode-orphan-fix/publication/validation.md) lists the exact refs, commands, and limitations.
+The [validation record](https://github.com/teamleaderleo/codex/blob/review/code-mode-final-draft/notes/code-mode-orphan-fix/publication/validation.md) lists the exact refs, commands, and limitations.
 
 ## Notes
 
