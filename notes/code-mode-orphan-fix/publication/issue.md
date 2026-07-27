@@ -1,4 +1,4 @@
-# Code-mode completion drops session IDs for still-live nested commands
+# Code-mode completion can omit IDs for still-live nested exec sessions
 
 Related: [#34866](https://github.com/openai/codex/issues/34866) reports the broader mismatch between wrapper completion and nested-process state, including JavaScript forwarding only `output`. This report isolates one independently fixable case: the final cell response loses model-visible control handles even though the unified-exec manager still owns the live processes.
 
