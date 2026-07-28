@@ -117,20 +117,20 @@ In both runs, checkout and Bazel setup succeeded, but Bazel stopped during analy
 codex_rust_crate() got unexpected keyword argument: binary_test_target_compatible_with
 ```
 
-At `77e7e314`, `codex-rs/windows-sandbox-rs/BUILD.bazel` passes that argument while the `codex_rust_crate` definition in `defs.bzl` does not accept it. That prevents `//codex-rs/windows-sandbox-rs:codex-command-runner` from being declared, cascades into a missing-target error for `core-all-wine-exec-test`, and ends with `No test targets were found`.
+At `77e7e314`, `codex-rs/windows-sandbox-rs/BUILD.bazel` passes that argument while the `codex_rust_crate` definition in `defs.bzl` does not accept it. This call-site/signature mismatch is tracked in [openai/codex#35683](https://github.com/openai/codex/issues/35683). It prevents `//codex-rs/windows-sandbox-rs:codex-command-runner` from being declared, cascades into a missing-target error for `core-all-wine-exec-test`, and ends with `No test targets were found`.
 
-This is a reproducible Bazel build-graph incompatibility in the exact checked-out repository snapshot, not a Patch 1 assertion failure and not evidence about the runtime skip guards. No Rust test process started, so no Patch 1 acceptance test or runtime skip message could execute. Re-running the unchanged target a third time would not add evidence unless the Bazel macro/BUILD mismatch is first corrected or the patch is tested on a repository snapshot where that target analyzes successfully.
+This is a reproducible Bazel build-graph incompatibility in the exact checked-out repository snapshot, not a live-session acceptance-test failure and not evidence about the runtime skip guards. No Rust test process started, so no live-session-handle acceptance test or runtime skip message could execute. Re-running the unchanged target a third time would not add evidence unless the Bazel macro/BUILD mismatch is first corrected or the implementation is tested on a repository snapshot where that target analyzes successfully.
 
-The Patch 1 `orphan_sessions` acceptance cases also have an important target boundary even after the Bazel target becomes runnable:
+The live-session-handle `orphan_sessions` acceptance cases also have an important target boundary even after the Bazel target becomes runnable:
 
 - `code_mode_completion_surfaces_discarded_live_exec_sessions`, `large_emitted_output_does_not_truncate_live_session_warning`, `yielded_cell_response_does_not_include_completion_session_warning`, and `code_mode_completion_reports_only_sessions_created_by_current_cell` return early under Wine via `skip_if_target_windows!` because their commands use POSIX shell syntax that is not valid for the Windows exec target;
 - `code_mode_completion_reports_only_surviving_nested_session` returns early in every remote environment via `skip_if_remote!` because it embeds host `TempDir` PID/release paths that are not shared with Docker or Wine.
 
-Therefore, even a successful full Wine suite would validate the Bazel/Wine harness and broader shared test suite on the implementation head. It would **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
+Therefore, even a successful full Wine suite would validate the Bazel/Wine harness and broader shared test suite on the implementation head. It would **not** mean that the five live-session-handle acceptance scenarios executed their substantive assertions against Windows.
 
-## Harness attempts that are not Patch 1 test failures
+## Harness attempts that are not implementation test failures
 
-Four GitHub Actions attempts failed before producing a Patch 1 product-test result and are not counted as assertion failures:
+Four GitHub Actions attempts failed before producing an implementation test result and are not counted as assertion failures:
 
 - [run 30217238334](https://github.com/teamleaderleo/codex/actions/runs/30217238334): validation harness failed during linker-swap setup;
 - [run 30217425523](https://github.com/teamleaderleo/codex/actions/runs/30217425523): validation harness reached the main step but failed because `uv` was unavailable;
