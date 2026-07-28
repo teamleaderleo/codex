@@ -187,14 +187,14 @@ That distinction explains the skip mechanisms visible in `orphan_sessions.rs`:
 - `skip_if_target_windows!` checks the selected remote execution target at runtime. It does fire in Wine-exec.
 - `skip_if_remote!` fires for both Docker and Wine when a case depends on local-host filesystem topology.
 
-For Patch 1 specifically:
+For the live-session-handle implementation specifically:
 
 - four acceptance cases skip under Wine because their nested commands use POSIX shell syntax;
 - `code_mode_completion_reports_only_surviving_nested_session` skips in every remote environment because its PID/release handshake embeds host `TempDir` paths unavailable to the executor.
 
-Therefore, a successful Wine suite would validate the Bazel/Wine harness and the broader shared `codex-core` suite on the implementation head. It would **not** mean that the five Patch 1 acceptance scenarios executed their substantive assertions against Windows.
+Therefore, a successful Wine suite would validate the Bazel/Wine harness and the broader shared `codex-core` suite on the implementation head. It would **not** mean that the five live-session-handle acceptance scenarios executed their substantive assertions against Windows.
 
-Two public Wine attempts, [30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612) and [30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567), both stopped during Bazel analysis before any test target was constructed. At `77e7e314`, `windows-sandbox-rs/BUILD.bazel` passes `binary_test_target_compatible_with` to `codex_rust_crate`, but the `defs.bzl` macro does not accept that argument. The resulting missing `codex-command-runner` target prevents `core-all-wine-exec-test` from analyzing. This is a reproducible repository build-graph incompatibility at the exact tested snapshot, not a Patch 1 assertion failure; no Rust test process or runtime skip guard ran.
+Two public Wine attempts, [30293323612](https://github.com/teamleaderleo/codex/actions/runs/30293323612) and [30296440567](https://github.com/teamleaderleo/codex/actions/runs/30296440567), both stopped during Bazel analysis before any test target was constructed. At `77e7e314`, `windows-sandbox-rs/BUILD.bazel` passes `binary_test_target_compatible_with` to `codex_rust_crate`, but the `defs.bzl` macro does not accept that argument. This call-site/signature mismatch is tracked in [openai/codex#35683](https://github.com/openai/codex/issues/35683). The resulting missing `codex-command-runner` target prevents `core-all-wine-exec-test` from analyzing. This is a reproducible repository build-graph incompatibility at the exact tested snapshot, not a live-session acceptance-test failure; no Rust test process or runtime skip guard ran.
 
 Repository-native command:
 
