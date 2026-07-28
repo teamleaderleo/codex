@@ -8,7 +8,8 @@ Each new catalogue file covers **exactly 20 unique public issues**. The filename
 
 | Range file | Issues reviewed | Selection mode | Skipped PRs | Notes |
 |---|---:|---|---|---|
-| [`35731-35753.md`](35731-35753.md) | 20 | newest/current snapshot | #35738, #35742, #35744 | First file in the canonical format; includes inline quality scores, implementation value, flags, author map and synthesis. |
+| [`35731-35753.md`](35731-35753.md) | 20 | newest/current snapshot | #35738, #35742, #35744 | Current-snapshot range with inline quality scores, implementation value, flags, author map and synthesis. |
+| [`35380-35399.md`](35380-35399.md) | 20 | historical backfill | none | First canonical historical range below the legacy #35400 boundary; adds self-refuting-report, diagnostic-camouflage and ownership-leap calibration categories. |
 
 ## Coverage map
 
@@ -20,30 +21,31 @@ Each new catalogue file covers **exactly 20 unique public issues**. The filename
 | #35616–#35637 | 20 | [`../issue-quality-catalog.md`](../issue-quality-catalog.md) plus [`../issue-quality-score-ledger.md`](../issue-quality-score-ledger.md) | Legacy format; calibrated ledger is authoritative for scores |
 | #35502–#35615 | 100 | [`../issue-quality-catalog-pass-002-006.md`](../issue-quality-catalog-pass-002-006.md) plus [`../issue-quality-score-ledger.md`](../issue-quality-score-ledger.md) | Legacy format; calibrated ledger is authoritative for scores |
 | #35400–#35501 | 100 | [`../issue-quality-catalog-pass-007-011.md`](../issue-quality-catalog-pass-007-011.md) | Legacy 100-issue file using the current numeric rubric |
+| #35380–#35399 | 20 | [`35380-35399.md`](35380-35399.md) | Canonical historical-backfill format |
 
 ### Known gaps and targeted reviews
 
 - **#35638–#35730** has not been reviewed as one systematic range.
 - #35683 received a targeted deep review because it blocks the Windows/Wine validation path for #35613.
 - #35613 received a targeted implementation and validation audit beyond its catalogue entry.
-- Historical backfill below **#35400** remains open.
+- Historical backfill below **#35380** remains open.
 
 Do not imply continuous coverage across the #35638–#35730 gap.
 
-## Aggregate distribution — 240 systematically reviewed issues
+## Aggregate distribution — 260 systematically reviewed issues
 
 | Band | Count |
 |---|---:|
-| S | 31 |
-| A | 54 |
-| B | 50 |
-| C | 51 |
-| D | 32 |
-| E | 11 |
-| F | 11 |
-| **Total** | **240** |
+| S | 35 |
+| A | 57 |
+| B | 53 |
+| C | 57 |
+| D | 33 |
+| E | 12 |
+| F | 13 |
+| **Total** | **260** |
 
-These counts combine the legacy 220-issue catalogue and the canonical #35731–#35753 range. They describe the reviewed samples only, not the repository-wide issue population.
+These counts combine the legacy 220-issue catalogue and the two canonical 20-issue ranges. They describe the reviewed samples only, not the repository-wide issue population.
 
 ## Canonical range contents
 
@@ -82,7 +84,7 @@ Use this for continuous older coverage:
 - record skipped pull requests;
 - preserve the exact low/high interval in the filename.
 
-The next historical batch begins **below #35400**.
+The next historical batch begins **below #35380**.
 
 ## Cross-cutting files
 
