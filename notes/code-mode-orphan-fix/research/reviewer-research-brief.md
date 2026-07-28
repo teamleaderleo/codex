@@ -1,202 +1,263 @@
-# Reviewer brief: chronological Codex issue-quality catalog
+# Reviewer guide: Codex issue-quality research
 
-Review public `openai/codex` issues to build a cumulative catalogue of report quality, triage friction, implementation value, recurring submission patterns, and useful counterexamples.
+Review public `openai/codex` issues to build a cumulative catalogue of report quality, triage friction, implementation value, recurring submission patterns, author activity and useful counterexamples.
 
-This is an execution task. Do not stop for another methodology review unless the selected public issues cannot be read. Do not post comments or reactions to public issues.
+This is an execution guide. Do not stop for another methodology discussion when the selected public issues can be read. Do not post comments, reactions, reviews, labels or edits to upstream issues or pull requests.
 
-## Default workflow
+Canonical navigation and coverage live in [`issues/README.md`](issues/README.md). Use [`issues/TEMPLATE.md`](issues/TEMPLATE.md) for every new range.
 
-Review **100 unique issues per chat pass**, internally checkpointed as five groups of 20 so grading remains careful.
+## Default unit of work
 
-Use a contiguous chronological range of public issue numbers:
+Review **exactly 20 unique public issues per pass**.
 
-1. start immediately below the most recently completed boundary;
-2. skip pull-request numbers and record them as skipped;
-3. exclude repeated records returned at connector/search boundaries;
-4. read the full issue body before grading;
-5. preserve chronological order within each 20-issue checkpoint;
-6. save the completed pass before continuing.
+One completed pass produces one canonical file:
 
-A user may instead paste a batch directly into chat. Analyse supplied issues in the supplied order even when the material includes extraneous metadata.
+```text
+notes/code-mode-orphan-fix/research/issues/<low>-<high>.md
+```
 
-There is no 30-day inclusion cutoff. Recent issues are valuable for current writing practice; older issues are valuable for mature outcomes. Do not treat same-day silence as evidence about issue quality or maintainer interest.
+The filename uses the inclusive repository-number interval, not a pass number. Pull requests inside the interval are skipped and listed in the header.
+
+Do not combine five ranges into one 100-issue file. Do not update a separate score ledger for new canonical ranges; the range file itself is authoritative.
+
+## Selection modes
+
+### Current/new snapshot
+
+Use when the user asks for recent or newly filed material.
+
+1. Search public `openai/codex` issues by creation time, newest first.
+2. Collect the newest 20 unique issues visible at the snapshot.
+3. Exclude pull requests and overlap with the prior current range.
+4. Record the collection date, low/high issue numbers and skipped PRs.
+5. State any gap between this range and older systematic coverage.
+
+The current boundary is maintained in [`issues/README.md`](issues/README.md).
+
+### Historical backfill
+
+Use when continuing continuous older coverage.
+
+1. Start immediately below the completed historical boundary.
+2. Collect the next 20 unique public issues.
+3. Skip pull requests and record them.
+4. Preserve issue-number order inside the range.
+5. Save the range before starting another.
+
+### User-supplied set
+
+When the user supplies specific issues, review those issues in the supplied order. Clearly label the file as a targeted set rather than pretending it is a contiguous systematic range.
+
+## Source and reading rules
+
+- Use `openai/codex` as the canonical source for issue bodies, state, labels and comments.
+- Read the full current issue body before grading.
+- Search snippets are discovery aids, not sufficient evidence for a score.
+- Read comments only when needed for duplicate distinctions, closure reason, existing behavior, maintainer requests, implementation outcomes or a useful counterexample.
+- Identify bots before classifying engagement.
+- Do not infer maintainer authority from tone, username, employer appearance or technical confidence.
+- Do not mirror complete public issue bodies into the fork.
 
 ## What is being judged
 
-Judge the **submitted report**, not whether the requested feature should ultimately be implemented.
+Judge the submitted report, not whether the requested feature should ultimately be implemented.
 
-Keep separate:
+Keep three lenses separate:
 
-- **writing/evidence quality** — how clearly and credibly the issue establishes its case;
-- **repository actionability** — whether `openai/codex` appears to be the right owner and whether the report creates an efficient next step;
-- **implementation value** — whether linked code, artefacts, source analysis or a fix proposal genuinely reduces the remaining engineering work.
+1. **Issue quality** — clarity, evidence and triage usefulness.
+2. **Repository actionability** — whether `openai/codex` appears to own an efficient next step.
+3. **Implementation value** — whether code, artifacts or source analysis materially reduce remaining engineering work.
 
-A polished issue can still score poorly when it is a literal duplicate, asks for existing behaviour, belongs to another product or support channel, or replaces a bounded issue with a broad architecture programme.
+A polished issue can still score poorly when it is a literal duplicate, requests existing behavior, belongs to support or another product, or substitutes a broad architecture programme for one bounded issue.
 
-Implementation value is independent of issue quality. A weakly framed issue may carry excellent tested code; a strong issue may include a misleading or incomplete proposed fix.
+## Issue-quality score: 30 points
 
-## 30-point scoring rubric
+Score six dimensions from **0 to 5**.
 
-Score six dimensions from **0 to 5**. The total out of 30 is the primary issue-quality result.
+1. **Clarity** — title and opening identify an observable failure or concrete request.
+2. **Scope discipline** — one independently actionable problem without avoidable bundling.
+3. **Reproduction/current-state verification** — credible trigger and controls, or a demonstrated current-versus-desired feature gap.
+4. **Evidence** — logs, outputs, screenshots, measurements, source anchors or controls proportional to the claim.
+5. **Context** — relevant version, platform, model/backend, configuration, prior art and privacy-safe identifiers.
+6. **Actionability/diagnosis discipline** — observations, hypotheses and proposals are separated; owner and next step are reasonably clear.
 
-1. **Clarity** — the title and opening identify the observable failure or concrete request.
-2. **Scope discipline** — one independently actionable problem; no avoidable bundling or umbrella design.
-3. **Reproduction or current-state verification** — a bug has a credible trigger/control; a feature request establishes current versus desired behaviour and a real use case.
-4. **Evidence** — logs, outputs, screenshots, measurements, source anchors, controls, or other support proportional to the claim.
-5. **Context** — relevant version, platform, model/backend, configuration, prior art, and privacy-safe identifiers.
-6. **Actionability and diagnosis discipline** — observations, hypotheses, and proposed solutions are separated; the likely repository owner and next step are reasonably clear.
+Do not reward length, code blocks, source inspection, a prototype or polished formatting automatically.
 
-Do not reward length, source inspection, code suggestions, a prototype, or polished formatting automatically.
-
-### Grade bands
+### Bands
 
 | Band | Score | Meaning |
 |---|---:|---|
 | **S** | 29–30 | Exceptional exemplar; essentially no material triage defect |
 | **A** | 27–28 | Excellent; immediately actionable with only minor defects |
 | **B** | 24–26 | Strong; actionable but meaningfully improvable |
-| **C** | 20–23 | Usable or mixed; notable missing evidence, scope cost, or owner uncertainty |
+| **C** | 20–23 | Usable or mixed; notable evidence, scope or owner gaps |
 | **D** | 15–19 | Weak/costly; substantial reconstruction or narrowing required |
-| **E** | 10–14 | Severely deficient, duplicate, or badly mis-scoped |
-| **F** | 0–9 | Non-report, near-content-free complaint, or unusable submission |
+| **E** | 10–14 | Severely deficient, duplicate or badly mis-scoped |
+| **F** | 0–9 | Non-report, near-content-free complaint or unusable submission |
 
-Do not force a curve. **S must remain rare**, and A is not the default label for every actionable report.
+Do not force a curve. Record scores as `26/30 · B`. Show a six-component breakdown only for disputed grades, close calls or deliberate calibration examples.
 
-Record catalogue rows as, for example, `26/30 · B`. The number is primary; the letter is only a summary. Show component scores only for close calls, disputed grades, or deep-dive examples.
+### Calibration
 
-### Calibration rules
-
-- A literal duplicate that adds no material evidence normally cannot exceed **E**.
+- A literal duplicate adding no material evidence normally cannot exceed **E**.
 - A support-only or clearly wrong-owner request normally cannot exceed **D** unless it identifies a concrete repository change.
-- A report with no bounded symptom/request and no usable reproduction/current-state verification normally cannot exceed **E**.
-- Hostile language is not an automatic cap when the technical report remains strong, but hostility that replaces facts lowers clarity and actionability.
-- Excessive detail lowers the score only when it materially impedes scope, first-screen comprehension, or next-step identification.
+- A report with no bounded symptom/request and no usable verification normally cannot exceed **E**.
+- Hostility is not an automatic cap, but hostility replacing facts lowers clarity and actionability.
+- Excess detail loses points only when it materially impedes first-screen comprehension, scope or the next step.
+- An unresolved policy choice does not lower a score when the minimum demonstrated defect remains independently actionable.
+- Do not deduct points merely to leave room below perfection. A defensible `5+5+5+5+5+5` is **30/30**.
 
 ## Implementation-value lens
 
-Apply this lens only when an issue contains linked code or artefacts, an explicit implementation proposal, source-level fix analysis, or an exact prior implementation. Do not add `0/5` noise to routine issues.
+Apply only when the issue contains linked code or artifacts, an explicit source-level proposal, a validated local implementation, or an exact prior implementation. Routine issues remain unmarked rather than receiving `0/5` noise.
 
 | Value | Meaning |
 |---:|---|
-| **5/5** | Inspectable tested implementation, or an exact previously merged fix that can be reapplied; substantial maintainer time plausibly saved. |
-| **4/5** | Patch-ready proposal or claimed validated branch with exact source locations, invariants and tests; integration review remains. |
-| **3/5** | Useful diagnosis and credible fix direction, but meaningful design, assembly or validation work remains. |
-| **2/5** | Partial or speculative implementation idea; may save search time but not coding time. |
-| **1/5** | Solution-shaped prose or technically questionable suggestion that may distract more than help. |
+| **5/5** | Inspectable tested implementation or exact known-good merged fix; substantial maintainer time saved |
+| **4/5** | Patch-ready proposal or validated but unlinked/uninspected implementation with exact locations, invariants and tests |
+| **3/5** | Useful diagnosis and credible direction, but meaningful design, assembly or validation remains |
+| **2/5** | Partial/speculative idea that may save search time but little coding time |
+| **1/5** | Solution-shaped prose or questionable correction that may distract |
 
-Record an implementation type:
+Types:
 
-- **WORKING** — linked code, commit, branch or completed artefact;
-- **KNOWN-GOOD** — exact prior merged implementation for the same regression;
-- **PATCH-READY** — change points, semantics and tests are bounded even though code is not supplied;
-- **DIAGNOSTIC** — source analysis locates the work, but the correction remains incomplete;
-- **SOLUTIONEERING** — implementation language outruns the evidence or leaves the core design unresolved.
+- **WORKING** — linked code, commit, branch or completed artifact.
+- **KNOWN-GOOD** — exact prior merged implementation for the same regression.
+- **PATCH-READY** — no inspectable submitted patch, but change points, semantics and tests are bounded.
+- **DIAGNOSTIC** — source analysis locates the work but leaves meaningful correction design.
+- **SOLUTIONEERING** — implementation language outruns evidence or leaves the core decision unresolved.
 
-Judge implementation usefulness by what remains for a maintainer, not by how much code-looking material appears in the issue.
+Judge what remains for a maintainer. Strong signals include before/after tests, narrow diffs, compatibility defaults, cleanup/concurrency semantics, validation commands and exact prior art.
 
-Strong positive evidence includes:
+Lower value for hypothetical reproduction, arbitrary constants, incomplete failure semantics, partial success without contract, broad architecture substitution, or code that does not satisfy the stated expected behavior.
 
-- an inspectable focused diff;
-- tests that fail before and pass after;
-- compatibility/default behaviour made explicit;
-- failure, retry, cleanup and concurrency semantics;
-- a narrow set of touched files;
-- a known-good prior merged change;
-- validation commands and results.
+Keep implementation value independent of the `/30` score. Example:
 
-Lower the value when:
+```text
+18/30 · D · implementation 5/5 WORKING
+```
 
-- the reproducer is hypothetical;
-- constants or limits are arbitrary;
-- the proposed code does not satisfy the stated expected behaviour;
-- the patch returns partial success without defining semantics;
-- a broad architecture is substituted for one mergeable change;
-- source anchors are used to project confidence rather than establish a real invariant.
+The curated cross-range calibration file is [`issue-implementation-value.md`](issue-implementation-value.md). New range files remain authoritative for their own inline values.
 
-Keep the implementation value separate from the 30-point issue score. Record it inline only when applicable, for example:
+## Highlight flags
 
-`18/30 · D · implementation 5/5 WORKING`
+Flags do not change scores.
 
-Maintain the detailed backfill and calibration examples at:
+- **ULTRA** — exceptional exemplar, normally an S report.
+- **INTERESTING** — unusual technical pattern, useful counterexample or instructive anti-pattern.
+- **ENTERTAINING** — memorable, strange or spectacular; not a quality endorsement.
 
-`notes/code-mode-orphan-fix/research/issue-implementation-value.md`
+There is no quota. Do not force a flag onto routine strong issues. Every flag needs a one-line reason in the highlights section.
 
-## Per-issue catalogue entry
+## Canonical per-issue row
 
 Record:
 
+- creation time in UTC;
 - issue number and canonical URL;
-- creation time;
-- title and primary type;
-- open/closed state and explicit reason when visible;
-- score out of 30 and band;
+- public author handle;
+- concise title;
+- primary type;
+- score, band and flags;
+- implementation value/type only when applicable;
 - strongest useful feature;
-- main defect or triage cost;
-- one short catalogue tag;
-- implementation type and value only when the issue materially contains one.
+- main defect or triage cost.
 
-Use these primary types:
+Primary types:
 
 - reproducible bug;
 - intermittent bug;
-- model-behaviour report;
-- performance or resource problem;
+- model-behavior report;
+- performance/resource problem;
 - feature request;
 - documentation request;
-- support or usage question;
-- security or privacy concern;
-- meta or process issue;
-- unclear or mixed request.
+- support/usage question;
+- security/privacy concern;
+- meta/process issue;
+- unclear/mixed request.
 
-Duplicate status is an outcome or catalogue flag, not an issue type.
+Duplicate status is an outcome/flag, not a primary type.
 
-## Comments and outcomes
+## Author activity map
 
-The main catalogue concerns issue-body quality. Do not fetch every comment thread by default.
+Every canonical range includes an author map.
 
-Read comments when needed to determine closure reason, literal or semantic duplication, existing functionality, a maintainer information request, implementation acceptance/rejection, or a useful quality/outcome counterexample.
+- Use only the public handle and submissions observed in the reviewed range.
+- State surfaces, technical focus and demonstrated submission pattern.
+- Give more attention to repeated authors, because multiple submissions support stronger pattern statements.
+- For a single submission, describe only that submission.
+- Do not infer real identity, employer, coordination, use of AI, motives, expertise or bad faith.
+- Do not describe near-simultaneous reports as coordinated without direct evidence.
+- A future global author index should be built only from canonical range maps, not by guessing from legacy prose.
 
-Identify bots before classifying human engagement. Do not infer maintainer authority from tone, username, apparent employer, or technical confidence. Keep engagement and outcome separate.
+## Comments, duplicates and outcomes
 
-## Pass synthesis
+Do not fetch every comment thread by default.
 
-After each 100-issue pass, record:
+Read comments when necessary to determine:
 
-1. score and band distribution;
-2. median and notable score clusters;
-3. recurring forms of strong reporting;
-4. recurring forms of avoidable triage cost;
-5. literal duplicates, wrong-owner requests, and already-supported behaviour;
-6. cases where writing quality and repository actionability diverge;
-7. tested implementations and high-value patch-ready proposals;
-8. cases where implementation value diverges sharply from issue quality;
-9. code-shaped suggestions that are incomplete or misleading;
-10. new catalogue categories or revisions;
-11. whether the pass changes any conclusion about #35613;
-12. the exact next chronological boundary.
+- literal versus merely related duplication;
+- already-supported behavior;
+- closure reason;
+- maintainer request for information;
+- implementation acceptance/rejection;
+- useful divergence between issue quality and outcome.
 
-Do not present chronological-pass counts as repository-wide population estimates.
+A bot duplicate suggestion is not a duplicate finding. Compare the actual failure layer, trigger and requested invariant.
 
-## Storage
+Keep issue quality, engagement and outcome separate. Same-day silence is not negative evidence.
 
-Primary qualitative observations:
+## Range synthesis
 
-`notes/code-mode-orphan-fix/research/issue-quality-catalog*.md`
+Each 20-issue file records:
 
-Primary calibrated scores:
+1. distribution, median and optional mean;
+2. strongest reporting structures;
+3. recurring triage costs;
+4. implementations and patch-ready proposals;
+5. issue-quality/implementation-value inversions;
+6. duplicates, existing behavior and owner ambiguity;
+7. author patterns supported by the range;
+8. new categories or rubric revisions;
+9. whether the range changes the assessment of #35613;
+10. exact current and historical next boundaries.
 
-`notes/code-mode-orphan-fix/research/issue-quality-score-ledger.md`
+Do not present range rates as repository-wide population estimates.
 
-Implementation-value calibration and ranked contributions:
+## Storage and legacy material
 
-`notes/code-mode-orphan-fix/research/issue-implementation-value.md`
+Canonical new files:
 
-Do not mirror full public issue bodies into the fork.
+```text
+notes/code-mode-orphan-fix/research/issues/<low>-<high>.md
+```
+
+Canonical index:
+
+```text
+notes/code-mode-orphan-fix/research/issues/README.md
+```
+
+Legacy catalogue files remain historical snapshots. Do not migrate all old material during a normal 20-issue pass. Migrate one old 20-issue range at a time only when requested.
+
+## GitHub links and notifications
+
+Ordinary public issue/PR links inside committed repository Markdown files do **not** create upstream issue timeline events or notify participants. The repository files remain public and discoverable.
+
+Do not assume the same for issue/PR bodies, comments, reviews or commit messages associated with upstream work; those can create cross-references or notifications.
+
+This research does not post upstream references, comments, reactions, labels or edits unless the user explicitly requests a separate public action.
+
+## Repository write safety
+
+- Work only on the authorized fork branch.
+- Before replacing or deleting an existing file, fetch its current blob SHA.
+- Do not use issues as temporary storage.
+- Do not create workflows or dispatch automation for this research.
+- Preserve public links but never include private logs, tokens, account identifiers or personal paths.
 
 ## Relation to #35613
 
-Use the catalogue to test whether #35613 is unusually strong, weak, overlong, mis-scoped, likely to be confused with nearby reports, or unusually valuable as an implementation contribution.
+Use the catalogue to test whether #35613 is unusually strong, overlong, mis-scoped, confused with adjacent lifecycle reports, or unusually valuable as an implementation contribution.
 
-Do not recommend broadening #35613 merely because other issues are broad. Its relevant comparison remains whether it states one demonstrated failure layer, separates observation from hypothesis, distinguishes related reports, gives maintainers a bounded next step, and reduces implementation uncertainty without pretending the exploratory prototype is already production-ready.
-
-Do not post cross-links or edits to public issues as part of this research.
+Do not broaden #35613 merely because other reports are broad. Its comparator remains whether it states one demonstrated failure layer, separates observation from hypothesis, distinguishes related reports, gives maintainers a bounded next step and reduces implementation uncertainty.
