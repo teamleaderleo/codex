@@ -7,6 +7,7 @@ on:
       - codex-rs/core/src/session/**
       - codex-rs/core/src/tools/**
       - .github/fieldwork/83_dispatch_apply.py
+      - .github/fieldwork/83_dispatch_persistence_fix.py
       - .github/workflows/fieldwork-83-dispatch-receipt.yml
 
 permissions:
@@ -28,7 +29,9 @@ jobs:
         with:
           toolchain: 1.95.0
       - name: Apply bounded source candidate
-        run: python3 .github/fieldwork/83_dispatch_apply.py
+        run: |
+          python3 .github/fieldwork/83_dispatch_apply.py
+          python3 .github/fieldwork/83_dispatch_persistence_fix.py
       - name: Format
         run: cargo fmt --all
         working-directory: codex-rs
@@ -42,6 +45,7 @@ jobs:
       - name: Commit validated source
         run: |
           rm .github/fieldwork/83_dispatch_apply.py
+          rm .github/fieldwork/83_dispatch_persistence_fix.py
           rm .github/workflows/fieldwork-83-dispatch-receipt.yml
           rmdir .github/fieldwork 2>/dev/null || true
           git config user.name "teamleaderleo"
