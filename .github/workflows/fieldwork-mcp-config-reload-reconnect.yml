@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fieldwork/31-mcp-config-reload-reconnect
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
