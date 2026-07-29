@@ -1,0 +1,23 @@
+name: Fieldwork MCP timeout cancellation probe
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-5989-base
+    paths:
+      - codex-rs/rmcp-client/**
+      - .github/workflows/fieldwork-mcp-timeout-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Codex rmcp timeout ownership probe
+        working-directory: codex-rs
+        run: cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
