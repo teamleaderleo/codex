@@ -15,6 +15,7 @@ mod tool_config;
 mod tool_definition;
 mod tool_discovery;
 mod tool_executor;
+mod tool_operation;
 mod tool_output;
 mod tool_payload;
 mod tool_search;
@@ -96,6 +97,10 @@ pub use tool_discovery::filter_request_plugin_install_discoverable_tools_for_cli
 pub use tool_executor::ToolExecutor;
 pub use tool_executor::ToolExecutorFuture;
 pub use tool_executor::ToolExposure;
+pub use tool_operation::ToolOperationEffect;
+pub use tool_operation::ToolOperationReceipt;
+pub use tool_operation::ToolOperationResultState;
+pub use tool_operation::ToolOperationTerminalState;
 pub use tool_output::JsonToolOutput;
 pub use tool_output::ToolOutput;
 pub use tool_payload::ToolPayload;
