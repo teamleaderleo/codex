@@ -31,7 +31,7 @@ jobs:
           if [ -f codex-rs/core/src/state/turn_operation_receipt_tests.rs ]; then
             git revert -m 1 --no-edit 555332c9c4b92fe7426777297428a04dd11e605f
           fi
-      - name: Attach session owner and retarget lifecycle
+      - name: Attach canonical owner to SessionState
         shell: python
         run: |
           from pathlib import Path
@@ -64,63 +64,6 @@ jobs:
               'mod token_budget;\n',
               'mod token_budget;\nmod tool_operation;\n',
           )
-
-          lifecycle = Path('codex-rs/core/src/tools/lifecycle.rs')
-          text = lifecycle.read_text(encoding='utf-8')
-          old_start = '''    if let Some(turn_state) = matching_active_turn_state(
-              invocation.session.as_ref(),
-              invocation.turn.as_ref(),
-          )
-          .await
-          {
-              turn_state.lock().await.begin_tool_operation(
-                  invocation.call_id.clone(),
-                  ToolOperationEffect::PotentialMutation,
-              );
-          }
-          '''
-          new_start = '''    invocation
-              .session
-              .begin_tool_operation_receipt(
-                  invocation.call_id.clone(),
-                  ToolOperationEffect::PotentialMutation,
-              )
-              .await;
-          '''
-          if text.count(old_start) != 1:
-              raise SystemExit('lifecycle start anchor mismatch')
-          text = text.replace(old_start, new_start, 1)
-
-          old_finish = '''    if let Some(turn_state) = matching_active_turn_state(session, turn).await {
-              turn_state
-                  .lock()
-                  .await
-                  .record_tool_operation_terminal(call_id, receipt_terminal_state(outcome));
-          }
-          '''
-          new_finish = '''    session
-              .record_tool_operation_terminal(call_id, receipt_terminal_state(outcome))
-              .await;
-          '''
-          if text.count(old_finish) != 1:
-              raise SystemExit('lifecycle finish anchor mismatch')
-          text = text.replace(old_finish, new_finish, 1)
-
-          old_helper = '''async fn matching_active_turn_state(
-              session: &Session,
-              turn: &TurnContext,
-          ) -> Option<std::sync::Arc<tokio::sync::Mutex<crate::state::TurnState>>> {
-              let active_turn = session.active_turn.lock().await;
-              active_turn.as_ref().and_then(|active_turn| {
-                  let task = active_turn.task.as_ref()?;
-                  (task.turn_context.sub_id == turn.sub_id).then(|| active_turn.turn_state.clone())
-              })
-          }
-
-          '''
-          if text.count(old_helper) != 1:
-              raise SystemExit('lifecycle helper anchor mismatch')
-          lifecycle.write_text(text.replace(old_helper, '', 1), encoding='utf-8')
 
           Path('.github/workflows/fieldwork-83-session-receipts-integrated.yml').unlink()
       - name: Install pinned Rust toolchain
