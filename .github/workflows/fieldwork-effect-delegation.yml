@@ -1,9 +1,11 @@
 name: Fieldwork operation effect delegation
 
 on:
-  push:
-    branches:
-      - fieldwork/83-effect-delegation
+  pull_request:
+    paths:
+      - codex-rs/core/src/tools/registry.rs
+      - codex-rs/core/src/tools/registry_tests.rs
+      - .github/workflows/fieldwork-effect-delegation.yml
 
 permissions:
   contents: write
