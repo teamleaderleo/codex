@@ -12,6 +12,9 @@ concurrency:
   group: fieldwork-85-deferred-exposure
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   apply-and-validate:
     if: github.actor != 'github-actions[bot]'
