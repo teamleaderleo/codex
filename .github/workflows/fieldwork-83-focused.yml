@@ -1,0 +1,25 @@
+name: Fieldwork 83 focused receipt tests
+
+on:
+  push:
+    branches:
+      - fieldwork/83-compaction-mutation-identity
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receipt-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Show pinned Rust toolchain
+        run: rustc --version && cargo --version
+      - name: Run focused receipt and executor tests
+        run: cargo test -p codex-tools tool_operation --locked
