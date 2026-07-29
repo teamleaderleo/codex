@@ -20,19 +20,22 @@ jobs:
       - name: Tidy asserted test literal
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           path = Path("codex-rs/core/src/unified_exec/async_watcher_tests.rs")
           text = path.read_text()
-          old = '''        let chunk = format!(
-              "chunk-{index:04}
-          "
+          pattern = re.compile(
+              r'        let chunk = format!\(\n'
+              r'            "chunk-\{index:04\}\n"\n'
+              r'        \)\n'
+              r'        \.into_bytes\(\);'
           )
-          .into_bytes();'''
-          new = '''        let chunk = format!("chunk-{index:04}\\n").into_bytes();'''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected one multiline test literal, found {text.count(old)}")
-          path.write_text(text.replace(old, new))
+          replacement = r'        let chunk = format!("chunk-{index:04}\n").into_bytes();'
+          text, count = pattern.subn(lambda _: replacement, text)
+          if count != 1:
+              raise SystemExit(f"expected one multiline test literal, found {count}")
+          path.write_text(text)
           PY
 
       - name: Format Rust
