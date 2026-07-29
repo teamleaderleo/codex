@@ -76,3 +76,7 @@ pub trait ToolExecutor<Invocation>: Send + Sync {
 
     fn handle(&self, invocation: Invocation) -> ToolExecutorFuture<'_>;
 }
+
+#[cfg(test)]
+#[path = "tool_executor_tests.rs"]
+mod tests;
