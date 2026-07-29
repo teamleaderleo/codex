@@ -6,6 +6,7 @@ on:
       - fieldwork/upstream-5989-base
     paths:
       - codex-rs/rmcp-client/**
+      - fieldwork/patches/mcp-timeout/**
       - .github/workflows/fieldwork-mcp-timeout-probe.yml
   workflow_dispatch:
 
@@ -13,13 +14,29 @@ permissions:
   contents: read
 
 jobs:
-  probe:
+  baseline:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Run Codex rmcp timeout ownership probes
+      - name: Run current Codex timeout controls
         working-directory: codex-rs
+        run: |
+          cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_elicitation_probe -- --nocapture
+
+  native-sdk-timeout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply SDK-native timeout candidate
+        run: git apply fieldwork/patches/mcp-timeout/native-sdk-timeout.patch
+      - name: Run candidate behavior controls
+        working-directory: codex-rs
+        env:
+          FIELDWORK_EXPECT_MCP_CANCEL: "1"
+          FIELDWORK_EXPECT_ELICITATION_TIMEOUT: "1"
         run: |
           cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_elicitation_probe -- --nocapture
