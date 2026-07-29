@@ -1,6 +1,10 @@
 name: Fieldwork 83 focused receipt tests
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/fieldwork-83-focused.yml
+      - codex-rs/tools/**
   push:
     branches:
       - fieldwork/83-compaction-mutation-identity
