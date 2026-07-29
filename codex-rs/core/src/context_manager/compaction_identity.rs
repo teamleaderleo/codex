@@ -48,9 +48,7 @@ struct CallKey {
 /// outputs in a cloned model-facing view. Compaction must inspect raw history
 /// instead so it never converts an ambiguous execution state into an authoritative
 /// replacement checkpoint.
-pub(crate) fn validate_compaction_call_output_identity(
-    items: &[ResponseItem],
-) -> CodexResult<()> {
+pub(crate) fn validate_compaction_call_output_identity(items: &[ResponseItem]) -> CodexResult<()> {
     let defects = compaction_identity_defects(items);
     if defects.is_empty() {
         return Ok(());
@@ -130,7 +128,11 @@ fn compaction_identity_defects(items: &[ResponseItem]) -> Vec<CompactionIdentity
         }
     }
 
-    let mut keys = calls.keys().chain(outputs.keys()).cloned().collect::<Vec<_>>();
+    let mut keys = calls
+        .keys()
+        .chain(outputs.keys())
+        .cloned()
+        .collect::<Vec<_>>();
     keys.sort();
     keys.dedup();
 
