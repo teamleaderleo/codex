@@ -1,5 +1,6 @@
 use crate::FunctionCallError;
 use crate::ToolName;
+use crate::ToolOperationEffect;
 use crate::ToolOutput;
 use crate::ToolSearchInfo;
 use crate::ToolSpec;
@@ -54,6 +55,14 @@ pub trait ToolExecutor<Invocation>: Send + Sync {
 
     fn exposure(&self) -> ToolExposure {
         ToolExposure::Direct
+    }
+
+    /// Classifies whether replaying the operation can repeat an external effect.
+    ///
+    /// Unknown and client-executed runtimes remain conservative until they
+    /// explicitly opt into [`ToolOperationEffect::ReadOnly`].
+    fn operation_effect(&self) -> ToolOperationEffect {
+        ToolOperationEffect::PotentialMutation
     }
 
     fn search_info(&self) -> Option<ToolSearchInfo> {
