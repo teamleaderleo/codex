@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: fieldwork-83-selected-effect-source-publication
+  cancel-in-progress: true
+
 jobs:
   patch-test-commit:
     if: github.actor != 'github-actions[bot]'
@@ -54,6 +58,7 @@ jobs:
           for temporary in [
               '.github/workflows/fieldwork-83-selected-effect-source.yml',
               '.github/workflows/fieldwork-83-selected-effect-source-v2.yml',
+              '.github/workflows/fieldwork-83-selected-effect-repair.yml',
               '.github/workflows/fieldwork-83-selected-effect-pr.yml',
               '.fieldwork-83-selected-effect-trigger',
           ]:
