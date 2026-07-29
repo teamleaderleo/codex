@@ -35,15 +35,15 @@ jobs:
         run: |
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
-      - name: Map uncertain outcomes to ambiguous
+      - name: Fail closed on uncertain outcomes
         if: steps.source.outputs.ready == 'true'
         shell: python
         run: |
           from pathlib import Path
           from textwrap import dedent
 
-          path = Path('codex-rs/core/src/tools/lifecycle.rs')
-          text = path.read_text(encoding='utf-8')
+          lifecycle = Path('codex-rs/core/src/tools/lifecycle.rs')
+          text = lifecycle.read_text(encoding='utf-8')
           old_mapping = dedent('''\
           fn receipt_terminal_state(outcome: ToolCallOutcome) -> ToolOperationTerminalState {
               match outcome {
@@ -141,7 +141,43 @@ jobs:
               text = text.replace(old_tests, new_tests, 1)
           elif new_tests not in text:
               raise SystemExit('terminal test anchor mismatch')
-          path.write_text(text, encoding='utf-8')
+          lifecycle.write_text(text, encoding='utf-8')
+
+          operation = Path('codex-rs/tools/src/tool_operation.rs')
+          text = operation.read_text(encoding='utf-8')
+          old_ready = dedent('''\
+                          ToolOperationTerminalState::Completed
+                              | ToolOperationTerminalState::Failed
+                              | ToolOperationTerminalState::Aborted
+                      ) && self.result_state == ToolOperationResultState::Persisted
+          ''')
+          new_ready = dedent('''\
+                          ToolOperationTerminalState::Completed
+                              | ToolOperationTerminalState::Failed
+                      ) && self.result_state == ToolOperationResultState::Persisted
+          ''')
+          if old_ready in text:
+              text = text.replace(old_ready, new_ready, 1)
+          elif new_ready not in text:
+              raise SystemExit('compaction readiness anchor mismatch')
+          operation.write_text(text, encoding='utf-8')
+
+          operation_tests = Path('codex-rs/tools/src/tool_operation_tests.rs')
+          text = operation_tests.read_text(encoding='utf-8')
+          addition = dedent('''\
+
+          #[test]
+          fn aborted_potential_mutation_requires_reconciliation_before_compaction() {
+              let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+              receipt.record_terminal_outcome(ToolOperationTerminalState::Aborted);
+              receipt.record_result_persisted();
+
+              assert!(!receipt.is_compaction_ready());
+          }
+          ''')
+          if 'aborted_potential_mutation_requires_reconciliation_before_compaction' not in text:
+              text += addition
+          operation_tests.write_text(text, encoding='utf-8')
 
           for temporary in [
               '.fieldwork-83-selected-effect-trigger',
@@ -161,9 +197,10 @@ jobs:
       - name: Format and run focused tests
         if: steps.source.outputs.ready == 'true'
         run: |
-          rustfmt --edition 2024 codex-rs/core/src/tools/lifecycle.rs codex-rs/core/src/tools/registry.rs codex-rs/core/src/tools/registry_tests.rs
-          rustfmt --edition 2024 --check codex-rs/core/src/tools/lifecycle.rs codex-rs/core/src/tools/registry.rs codex-rs/core/src/tools/registry_tests.rs
+          rustfmt --edition 2024 codex-rs/core/src/tools/lifecycle.rs codex-rs/core/src/tools/registry.rs codex-rs/core/src/tools/registry_tests.rs codex-rs/tools/src/tool_operation.rs codex-rs/tools/src/tool_operation_tests.rs
+          rustfmt --edition 2024 --check codex-rs/core/src/tools/lifecycle.rs codex-rs/core/src/tools/registry.rs codex-rs/core/src/tools/registry_tests.rs codex-rs/tools/src/tool_operation.rs codex-rs/tools/src/tool_operation_tests.rs
           cd codex-rs
+          cargo test -p codex-tools --locked
           cargo test -p codex-core --lib receipt_before_dispatch --locked
           cargo test -p codex-core --lib dispatch_notifies_tool_lifecycle_contributors --locked
           cargo test -p codex-core --lib tools::lifecycle::tests --locked
