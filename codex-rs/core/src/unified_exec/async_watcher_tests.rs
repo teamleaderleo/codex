@@ -1,5 +1,14 @@
 use std::sync::Arc;
 
+use codex_protocol::items::CommandExecutionStatus;
+use codex_protocol::items::TurnItem;
+use codex_protocol::protocol::Event;
+use codex_protocol::protocol::EventMsg;
+use codex_sandboxing::SandboxType;
+use pretty_assertions::assert_eq;
+use tokio::time::Duration;
+use tokio::time::Instant;
+
 use super::TRAILING_OUTPUT_GRACE;
 use super::reconcile_transcript;
 use super::spawn_exit_watcher;
@@ -10,15 +19,6 @@ use crate::unified_exec::UnifiedExecContext;
 use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
 use crate::unified_exec::process::NoopSpawnLifecycle;
 use crate::unified_exec::process::UnifiedExecProcess;
-use codex_protocol::items::CommandExecutionStatus;
-use codex_protocol::items::TurnItem;
-use codex_protocol::protocol::Event;
-use codex_protocol::protocol::EventMsg;
-use codex_sandboxing::SandboxType;
-
-use pretty_assertions::assert_eq;
-use tokio::time::Duration;
-use tokio::time::Instant;
 
 struct StreamingOutputHarness {
     process: Arc<UnifiedExecProcess>,
@@ -143,11 +143,7 @@ async fn reconcile_transcript_replaces_partial_stream_with_authoritative_output(
     let completion_buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
 
     for index in 0..128 {
-        let chunk = format!(
-            "chunk-{index:04}
-"
-        )
-        .into_bytes();
+        let chunk = format!("chunk-{index:04}\n").into_bytes();
         completion_buffer.lock().await.push_chunk(chunk.clone());
         if index >= 64 {
             transcript.lock().await.push_chunk(chunk);
