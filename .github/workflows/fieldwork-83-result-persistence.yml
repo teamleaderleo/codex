@@ -26,7 +26,7 @@ jobs:
           components: rustfmt
       - name: Apply reviewed source slice
         run: |
-          git apply <<'PATCH'
+          git apply --recount <<'PATCH'
           diff --git a/codex-rs/core/src/session/mod.rs b/codex-rs/core/src/session/mod.rs
           --- a/codex-rs/core/src/session/mod.rs
           +++ b/codex-rs/core/src/session/mod.rs
