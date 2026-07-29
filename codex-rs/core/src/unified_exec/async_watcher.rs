@@ -37,15 +37,16 @@ pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 /// process arbitrarily large delta payloads.
 const UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES: usize = 8192;
 
-/// Spawn a background task that continuously reads from the PTY, appends to the
-/// shared transcript, and emits ExecCommandOutputDelta events on UTF‑8
-/// boundaries.
+/// Spawn a background task that emits best-effort ExecCommandOutputDelta events
+/// on UTF-8 boundaries. Before signaling that output is drained, transfer the
+/// producer-owned authoritative transcript to the command completion path.
 pub(crate) fn start_streaming_output(
     process: &UnifiedExecProcess,
     context: &UnifiedExecContext,
     transcript: Arc<Mutex<HeadTailBuffer>>,
 ) {
     let mut receiver = process.output_receiver();
+    let completion_buffer = process.completion_buffer();
     let output_drained = process.output_drained_notify();
     let exit_token = process.cancellation_token();
     let OutputHandles {
@@ -110,7 +111,6 @@ pub(crate) fn start_streaming_output(
 
                     process_chunk(
                         &mut pending,
-                        &transcript,
                         &call_id,
                         &session_ref,
                         &turn_ref,
@@ -138,7 +138,6 @@ pub(crate) fn start_streaming_output(
 
                 process_chunk(
                     &mut pending,
-                    &transcript,
                     &call_id,
                     &session_ref,
                     &turn_ref,
@@ -148,6 +147,7 @@ pub(crate) fn start_streaming_output(
                 .await;
             }
         }
+        reconcile_transcript(&transcript, &completion_buffer).await;
         output_drained.notify_one();
     });
 }
@@ -219,9 +219,16 @@ pub(crate) fn spawn_exit_watcher(
     });
 }
 
+async fn reconcile_transcript(
+    transcript: &Arc<Mutex<HeadTailBuffer>>,
+    completion_buffer: &Arc<Mutex<HeadTailBuffer>>,
+) {
+    let authoritative = completion_buffer.lock().await.drain();
+    *transcript.lock().await = authoritative;
+}
+
 async fn process_chunk(
     pending: &mut Vec<u8>,
-    transcript: &Arc<Mutex<HeadTailBuffer>>,
     call_id: &str,
     session_ref: &Arc<Session>,
     turn_ref: &Arc<TurnContext>,
@@ -230,11 +237,6 @@ async fn process_chunk(
 ) {
     pending.extend_from_slice(&chunk);
     while let Some(prefix) = split_valid_utf8_prefix(pending) {
-        {
-            let mut guard = transcript.lock().await;
-            guard.push_chunk(prefix.to_vec());
-        }
-
         if *emitted_deltas >= MAX_EXEC_OUTPUT_DELTAS_PER_CALL {
             continue;
         }
@@ -251,9 +253,9 @@ async fn process_chunk(
     }
 }
 
-/// Emit an ExecCommandEnd event for a unified exec session, using the transcript
-/// as the primary source of aggregated_output and falling back to the provided
-/// text when the transcript is empty.
+/// Emit an ExecCommandEnd event for a unified exec session. A non-empty fallback
+/// is the authoritative output collected by the synchronous command path;
+/// background completions use the producer-owned transcript transferred at close.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn emit_exec_end_for_unified_exec(
     session_ref: Arc<Session>,
@@ -388,6 +390,10 @@ async fn resolve_aggregated_output(
     transcript: &Arc<Mutex<HeadTailBuffer>>,
     fallback: String,
 ) -> String {
+    if !fallback.is_empty() {
+        return fallback;
+    }
+
     let guard = transcript.lock().await;
     if guard.retained_bytes() == 0 {
         return fallback;

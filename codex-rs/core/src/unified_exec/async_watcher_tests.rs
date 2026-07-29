@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::TRAILING_OUTPUT_GRACE;
+use super::reconcile_transcript;
 use super::spawn_exit_watcher;
 use super::split_valid_utf8_prefix_with_max;
 use super::start_streaming_output;
@@ -28,7 +29,7 @@ struct StreamingOutputHarness {
     rx_event: async_channel::Receiver<Event>,
 }
 
-async fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {
+async fn unstarted_streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {
     let (writer_tx, _writer_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(1);
     let (stdout_tx, stdout_rx) = tokio::sync::broadcast::channel::<Vec<u8>>(8);
     let (exit_tx, exit_rx) = tokio::sync::oneshot::channel::<i32>();
@@ -50,7 +51,6 @@ async fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {
     let (session, turn, rx_event) = make_session_and_context_with_rx().await;
     let context = UnifiedExecContext::new(session, turn, "streaming-output-test".to_string());
     let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
-    start_streaming_output(&process, &context, Arc::clone(&transcript));
 
     Ok(StreamingOutputHarness {
         process,
@@ -60,6 +60,108 @@ async fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {
         context,
         rx_event,
     })
+}
+
+async fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {
+    let harness = unstarted_streaming_output_harness().await?;
+    start_streaming_output(
+        &harness.process,
+        &harness.context,
+        Arc::clone(&harness.transcript),
+    );
+    Ok(harness)
+}
+
+#[tokio::test]
+async fn completed_item_includes_output_emitted_before_subscription() -> anyhow::Result<()> {
+    let StreamingOutputHarness {
+        process,
+        stdout_tx,
+        exit_tx,
+        transcript,
+        context,
+        rx_event,
+    } = unstarted_streaming_output_harness().await?;
+    let expected = b"EARLY-OUTPUT-MARKER".to_vec();
+    stdout_tx.send(expected.clone()).expect("send early output");
+
+    let output_buffer = process.output_handles().output_buffer;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if output_buffer.lock().await.total_bytes() == expected.len() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+
+    start_streaming_output(&process, &context, Arc::clone(&transcript));
+    #[allow(deprecated)]
+    let cwd = context.turn.cwd.clone().into();
+    spawn_exit_watcher(
+        Arc::clone(&process),
+        Arc::clone(&context.session),
+        Arc::clone(&context.turn),
+        context.call_id,
+        vec!["proof".to_string()],
+        cwd,
+        /*process_id*/ 123,
+        /*plugin_attribution*/ None,
+        transcript,
+        Instant::now(),
+        /*network_denial_monitor*/ None,
+    );
+    exit_tx.send(0).expect("send exit");
+    drop(stdout_tx);
+
+    let event = rx_event.recv().await.expect("command end event");
+    let EventMsg::ItemCompleted(completed) = event.msg else {
+        panic!("expected ItemCompleted");
+    };
+    let TurnItem::CommandExecution(item) = completed.item else {
+        panic!("expected CommandExecution");
+    };
+    assert_eq!(
+        (
+            item.status,
+            item.exit_code,
+            item.aggregated_output.as_deref()
+        ),
+        (
+            CommandExecutionStatus::Completed,
+            Some(0),
+            Some("EARLY-OUTPUT-MARKER")
+        )
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn reconcile_transcript_replaces_partial_stream_with_authoritative_output() {
+    let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
+    let completion_buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
+
+    for index in 0..128 {
+        let chunk = format!(
+            "chunk-{index:04}
+"
+        )
+        .into_bytes();
+        completion_buffer.lock().await.push_chunk(chunk.clone());
+        if index >= 64 {
+            transcript.lock().await.push_chunk(chunk);
+        }
+    }
+    let expected = completion_buffer
+        .lock()
+        .await
+        .to_bytes_with_omission_marker();
+
+    reconcile_transcript(&transcript, &completion_buffer).await;
+    let actual = transcript.lock().await.to_bytes_with_omission_marker();
+    assert_eq!(actual, expected);
+    assert_eq!(completion_buffer.lock().await.total_bytes(), 0);
 }
 
 #[tokio::test]
