@@ -33,7 +33,9 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
       - name: Apply bounded planner candidate
-        run: python3 .github/fieldwork/85_apply_deferred_invariant.py
+        run: |
+          python3 .github/fieldwork/85_apply_deferred_invariant.py
+          python3 .github/fieldwork/85_fix_code_mode_assertion.py
       - name: Format
         run: |
           cargo fmt --all
@@ -47,6 +49,7 @@ jobs:
       - name: Commit validated source
         run: |
           rm .github/fieldwork/85_apply_deferred_invariant.py
+          rm .github/fieldwork/85_fix_code_mode_assertion.py
           rm .github/fieldwork/85_trigger.txt
           rm .github/workflows/fieldwork-85-deferred-exposure.yml
           rmdir .github/fieldwork 2>/dev/null || true
