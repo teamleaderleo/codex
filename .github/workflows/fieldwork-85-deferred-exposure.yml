@@ -47,6 +47,7 @@ jobs:
       - name: Commit validated source
         run: |
           rm .github/fieldwork/85_apply_deferred_invariant.py
+          rm .github/fieldwork/85_trigger.txt
           rm .github/workflows/fieldwork-85-deferred-exposure.yml
           rmdir .github/fieldwork 2>/dev/null || true
           git config user.name fieldwork-ci
