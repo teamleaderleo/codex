@@ -1,0 +1,20 @@
+name: fieldwork-83-direct-append-evidence-cancel
+
+on:
+  push:
+    branches:
+      - fieldwork/83-direct-append-evidence
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-83-direct-append-evidence
+  cancel-in-progress: true
+
+jobs:
+  superseded:
+    if: ${{ false }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo superseded by commit-error-v2
