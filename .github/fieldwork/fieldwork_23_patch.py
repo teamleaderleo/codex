@@ -90,7 +90,11 @@ replace(
     watcher,
     "                        &mut pending,\n                        &transcript,\n                        &call_id,",
     "                        &mut pending,\n                        &call_id,",
-    count=2,
+)
+replace(
+    watcher,
+    "                    &mut pending,\n                    &transcript,\n                    &call_id,",
+    "                    &mut pending,\n                    &call_id,",
 )
 replace(
     watcher,
