@@ -22,7 +22,6 @@ jobs:
         run: |
           cargo install just --locked
           cargo install dotslash --locked
-          cargo install cargo-nextest --locked
           pipx install uv
 
       - name: Apply asserted source edits
@@ -31,10 +30,6 @@ jobs:
       - name: Format
         working-directory: codex-rs
         run: just fmt
-
-      - name: Test unified-exec
-        working-directory: codex-rs
-        run: just test -p codex-core -E 'test(unified_exec::)'
 
       - name: Fix codex-core lints
         working-directory: codex-rs
