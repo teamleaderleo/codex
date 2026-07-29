@@ -32,10 +32,7 @@ fn duplicate_result_blocks_potential_mutation_compaction() {
     receipt.record_result_persisted();
 
     assert!(!receipt.is_compaction_ready());
-    assert_eq!(
-        receipt.result_state,
-        ToolOperationResultState::Ambiguous
-    );
+    assert_eq!(receipt.result_state, ToolOperationResultState::Ambiguous);
 }
 
 #[test]
