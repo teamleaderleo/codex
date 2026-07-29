@@ -76,7 +76,10 @@ fn rejects_duplicate_output() {
     ]);
 
     assert_eq!(defects.len(), 1);
-    assert_eq!(defects[0].kind, CompactionIdentityDefectKind::DuplicateOutput);
+    assert_eq!(
+        defects[0].kind,
+        CompactionIdentityDefectKind::DuplicateOutput
+    );
 }
 
 #[test]
@@ -93,10 +96,8 @@ fn rejects_duplicate_call() {
 
 #[test]
 fn rejects_output_before_call() {
-    let defects = compaction_identity_defects(&[
-        function_output("call-1"),
-        function_call("call-1"),
-    ]);
+    let defects =
+        compaction_identity_defects(&[function_output("call-1"), function_call("call-1")]);
 
     assert_eq!(defects.len(), 1);
     assert_eq!(
