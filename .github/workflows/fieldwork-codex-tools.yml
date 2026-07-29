@@ -1,9 +1,10 @@
 name: fieldwork-codex-tools
 
 on:
-  push:
-    branches:
-      - research/83-operation-effect-receipt
+  pull_request:
+    paths:
+      - codex-rs/tools/**
+      - .github/workflows/fieldwork-codex-tools.yml
 
 permissions:
   contents: read
