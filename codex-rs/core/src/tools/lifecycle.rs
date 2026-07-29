@@ -3,6 +3,7 @@ use codex_extension_api::ToolCallSource as ExtensionToolCallSource;
 use codex_extension_api::ToolFinishInput;
 use codex_extension_api::ToolStartInput;
 use codex_tools::ToolName;
+use codex_tools::ToolOperationTerminalState;
 
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
@@ -68,6 +69,19 @@ async fn notify_tool_finish_parts(
     source: ToolCallSource,
     outcome: ToolCallOutcome,
 ) {
+    if matches!(&source, ToolCallSource::Direct) {
+        let terminal_state = match &outcome {
+            ToolCallOutcome::Completed { .. } => ToolOperationTerminalState::Completed,
+            ToolCallOutcome::Failed { .. } | ToolCallOutcome::Blocked => {
+                ToolOperationTerminalState::Failed
+            }
+            ToolCallOutcome::Aborted => ToolOperationTerminalState::Aborted,
+        };
+        session
+            .record_tool_operation_terminal(call_id, terminal_state)
+            .await;
+    }
+
     for contributor in session.services.extensions.tool_lifecycle_contributors() {
         contributor
             .on_tool_finish(ToolFinishInput {

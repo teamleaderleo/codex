@@ -16,6 +16,7 @@ use crate::sandbox_tags::permission_profile_policy_tag;
 use crate::sandbox_tags::permission_profile_sandbox_tag;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -35,6 +36,7 @@ use codex_rollout::state_db;
 use codex_shell_command::parse_command::parse_shell_script;
 use codex_tools::ToolName;
 use codex_tools::ToolOperationEffect;
+use codex_tools::ToolOperationTerminalState;
 use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
@@ -269,7 +271,7 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
         self.exposure
     }
 
-    fn operation_effect(&self) -> ToolOperationEffect {
+    fn operation_effect(&self) -> codex_tools::ToolOperationEffect {
         self.handler.operation_effect()
     }
 
@@ -469,6 +471,22 @@ impl ToolRegistry {
         let tool = match self.tool(&tool_name) {
             Some(tool) => tool,
             None => {
+                if matches!(&invocation.source, ToolCallSource::Direct) {
+                    invocation
+                        .session
+                        .start_tool_operation_receipt(
+                            &call_id_owned,
+                            ToolOperationEffect::PotentialMutation,
+                        )
+                        .await;
+                    invocation
+                        .session
+                        .record_tool_operation_terminal(
+                            &call_id_owned,
+                            ToolOperationTerminalState::Failed,
+                        )
+                        .await;
+                }
                 let message = unsupported_tool_call_message(&invocation.payload, &tool_name);
                 let log_payload = invocation.payload.log_payload();
                 otel.tool_result_with_tags(
@@ -486,6 +504,13 @@ impl ToolRegistry {
                 return Err(err);
             }
         };
+
+        if matches!(&invocation.source, ToolCallSource::Direct) {
+            invocation
+                .session
+                .start_tool_operation_receipt(&call_id_owned, tool.operation_effect())
+                .await;
+        }
 
         let telemetry_tags = tool.telemetry_tags(&invocation).await;
         let mut tool_result_tags =
@@ -512,6 +537,15 @@ impl ToolRegistry {
                 &tool_result_tags,
                 &extra_trace_fields,
             );
+            if matches!(&invocation.source, ToolCallSource::Direct) {
+                invocation
+                    .session
+                    .record_tool_operation_terminal(
+                        &call_id_owned,
+                        ToolOperationTerminalState::Failed,
+                    )
+                    .await;
+            }
             let err = FunctionCallError::Fatal(message);
             dispatch_trace.record_failed(&err);
             return Err(err);

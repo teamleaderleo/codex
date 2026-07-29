@@ -222,6 +222,7 @@ pub(crate) mod session;
 pub(crate) mod step_context;
 pub(crate) mod time_reminder;
 mod token_budget;
+mod tool_operation;
 pub(crate) mod turn;
 pub(crate) mod turn_context;
 mod world_state;
@@ -2978,7 +2979,7 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         items: &[ResponseItem],
-    ) {
+    ) -> bool {
         let items = self.prepare_conversation_items_for_history(turn_context, items);
         let items = items.as_ref();
         {
@@ -2989,8 +2990,9 @@ impl Session {
                 turn_context.model_info.truncation_policy.into(),
             );
         }
-        self.persist_rollout_response_items(items).await;
+        let result_persisted = self.persist_rollout_response_items(items).await;
         self.send_raw_response_items(turn_context, items).await;
+        result_persisted
     }
 
     pub(crate) async fn record_step_world_state_if_changed(
@@ -3233,13 +3235,13 @@ impl Session {
         }
     }
 
-    async fn persist_rollout_response_items(&self, items: &[ResponseItem]) {
+    async fn persist_rollout_response_items(&self, items: &[ResponseItem]) -> bool {
         let rollout_items: Vec<RolloutItem> = items
             .iter()
             .cloned()
             .map(RolloutItem::ResponseItem)
             .collect();
-        self.persist_rollout_items(&rollout_items).await;
+        self.persist_rollout_items_checked(&rollout_items).await
     }
 
     pub fn enabled(&self, feature: Feature) -> bool {
@@ -3608,11 +3610,21 @@ impl Session {
 
     #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]
     pub(crate) async fn persist_rollout_items(&self, items: &[RolloutItem]) {
-        if let Some(live_thread) = self.live_thread()
-            && let Err(e) = live_thread.append_items(items).await
-        {
+        let _ = self.persist_rollout_items_checked(items).await;
+    }
+
+    /// Persists rollout items and reports whether they reached the authoritative
+    /// history for this session lifetime. Ephemeral sessions intentionally use
+    /// in-memory history as their complete lifetime.
+    async fn persist_rollout_items_checked(&self, items: &[RolloutItem]) -> bool {
+        let Some(live_thread) = self.live_thread() else {
+            return true;
+        };
+        if let Err(e) = live_thread.append_items(items).await {
             error!("failed to record rollout items: {e:#}");
+            return false;
         }
+        true
     }
 
     pub(crate) async fn clone_history(&self) -> ContextManager {
