@@ -7,6 +7,7 @@ on:
     paths:
       - .fieldwork-83-selected-effect-trigger
       - .github/workflows/fieldwork-83-selected-effect-source.yml
+      - .github/workflows/fieldwork-83-selected-effect-source-v2.yml
       - .github/workflows/fieldwork-83-selected-effect-pr.yml
       - codex-rs/core/src/tools/lifecycle.rs
       - codex-rs/core/src/tools/registry.rs
@@ -24,7 +25,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-      - name: Apply exact source candidate
+      - name: Apply corrected source candidate
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -42,6 +43,17 @@ jobs:
           Path('/tmp/fieldwork-83-selected-effect.py').write_text(script + '\n')
           PY
           python3 /tmp/fieldwork-83-selected-effect.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('codex-rs/core/src/tools/registry_tests.rs')
+          text = path.read_text()
+          old = '.await\n        .expect_err('
+          new = '.await\n        .err()\n        .expect('
+          if text.count(old) != 2:
+              raise SystemExit(f'expected two error assertions, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
