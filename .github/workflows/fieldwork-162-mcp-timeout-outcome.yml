@@ -63,6 +63,7 @@ jobs:
         run: git diff --check
       - name: Publish source-only head
         run: |
+          rm .fieldwork-162-mcp-timeout-outcome
           rm .github/fieldwork/162_apply_mcp_timeout_outcome.py
           rm .github/workflows/fieldwork-162-mcp-timeout-outcome.yml
           rm .github/workflows/fieldwork-162-mcp-timeout-outcome-pr.yml
