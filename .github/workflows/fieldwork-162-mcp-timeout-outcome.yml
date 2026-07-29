@@ -28,7 +28,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
       - name: Apply bounded internal outcome slice
-        run: python3 .github/fieldwork/162_apply_mcp_timeout_outcome.py
+        run: |
+          python3 .github/fieldwork/162_apply_mcp_timeout_outcome.py
+          python3 .github/fieldwork/162_add_timeout_handoff_test.py
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
@@ -65,6 +67,7 @@ jobs:
         run: |
           rm .fieldwork-162-mcp-timeout-outcome
           rm .github/fieldwork/162_apply_mcp_timeout_outcome.py
+          rm .github/fieldwork/162_add_timeout_handoff_test.py
           rm .github/workflows/fieldwork-162-mcp-timeout-outcome.yml
           rm .github/workflows/fieldwork-162-mcp-timeout-outcome-pr.yml
           rmdir .github/fieldwork 2>/dev/null || true
