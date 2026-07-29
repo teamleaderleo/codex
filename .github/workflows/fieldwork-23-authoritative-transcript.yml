@@ -18,8 +18,11 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Install just
-        run: cargo install just --locked
+      - name: Install repository tools
+        run: |
+          cargo install just --locked
+          cargo install dotslash --locked
+          pipx install uv
 
       - name: Apply asserted source edits
         run: python3 .github/fieldwork/fieldwork_23_patch.py
