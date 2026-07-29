@@ -15,6 +15,9 @@ use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_rmcp_client::ElicitationResponse;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
+use codex_tools::ToolOperationEffect;
+use codex_tools::ToolOperationReceipt;
+use codex_tools::ToolOperationTerminalState;
 use rmcp::model::RequestId;
 use tokio::sync::oneshot;
 
@@ -92,6 +95,7 @@ pub(crate) struct TurnState {
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
     mcp_tool_approval_metadata: HashMap<String, McpToolApprovalMetadata>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
+    tool_operation_receipts: HashMap<String, ToolOperationReceipt>,
     pub(crate) pending_input: TurnInputQueue,
     mailbox_delivery_phase: MailboxDeliveryPhase,
     granted_permissions_by_environment_id: HashMap<String, AdditionalPermissionProfile>,
@@ -256,4 +260,60 @@ impl TurnState {
     pub(crate) fn strict_auto_review_enabled(&self) -> bool {
         self.strict_auto_review_enabled
     }
+
+    /// Starts one turn-scoped receipt when the corresponding call item is durable.
+    /// A repeated call identity becomes conservatively mutating and ambiguous instead of
+    /// replacing prior state.
+    pub(crate) fn begin_tool_operation(
+        &mut self,
+        call_id: String,
+        effect: ToolOperationEffect,
+    ) {
+        match self.tool_operation_receipts.entry(call_id) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(ToolOperationReceipt::pending(effect));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let receipt = entry.get_mut();
+                receipt.effect = ToolOperationEffect::PotentialMutation;
+                receipt.record_result_ambiguous();
+            }
+        }
+    }
+
+    pub(crate) fn record_tool_operation_terminal(
+        &mut self,
+        call_id: &str,
+        terminal_state: ToolOperationTerminalState,
+    ) {
+        self.tool_operation_receipts
+            .entry(call_id.to_string())
+            .or_insert_with(|| ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation))
+            .record_terminal_outcome(terminal_state);
+    }
+
+    pub(crate) fn record_tool_operation_result_persisted(&mut self, call_id: &str) {
+        self.tool_operation_receipts
+            .entry(call_id.to_string())
+            .or_insert_with(|| ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation))
+            .record_result_persisted();
+    }
+
+    pub(crate) fn tool_operation_receipt(
+        &self,
+        call_id: &str,
+    ) -> Option<ToolOperationReceipt> {
+        self.tool_operation_receipts.get(call_id).copied()
+    }
+
+    pub(crate) fn has_unreconciled_potential_mutation(&self) -> bool {
+        self.tool_operation_receipts.values().any(|receipt| {
+            receipt.effect == ToolOperationEffect::PotentialMutation
+                && !receipt.is_compaction_ready()
+        })
+    }
 }
+
+#[cfg(test)]
+#[path = "turn_operation_receipt_tests.rs"]
+mod turn_operation_receipt_tests;
