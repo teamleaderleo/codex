@@ -1,11 +1,9 @@
-diff --git a/codex-rs/rmcp-client/src/rmcp_client.rs b/codex-rs/rmcp-client/src/rmcp_client.rs
 --- a/codex-rs/rmcp-client/src/rmcp_client.rs
 +++ b/codex-rs/rmcp-client/src/rmcp_client.rs
-@@ -728,37 +728,111 @@ impl RmcpClient {
-         let mut rmcp_params = CallToolRequestParams::new(name);
+@@ -727,41 +727,124 @@
          rmcp_params.arguments = arguments;
          let requested_modern = self.protocol_mode == McpProtocolMode::V20260728;
--        let result = self
+         let result = self
 -            .run_service_operation("tools/call", timeout, move |service| {
 -                let mut rmcp_params = rmcp_params.clone();
 -                let meta = meta.clone();
@@ -38,14 +36,12 @@ diff --git a/codex-rs/rmcp-client/src/rmcp_client.rs b/codex-rs/rmcp-client/src/
 -                }
 -                .boxed()
 -            })
--            .await?;
-+        let result = self
 +            .run_tool_call_operation(rmcp_params, meta, timeout, requested_modern)
-+            .await?;
+             .await?;
          self.persist_oauth_tokens().await;
          Ok(result)
      }
-+
+ 
 +    async fn run_tool_call_operation(
 +        &self,
 +        rmcp_params: CallToolRequestParams,
@@ -159,6 +155,5 @@ diff --git a/codex-rs/rmcp-client/src/rmcp_client.rs b/codex-rs/rmcp-client/src/
 +            )),
 +        }
 +    }
- 
++
      pub async fn send_custom_notification(
-         &self,
