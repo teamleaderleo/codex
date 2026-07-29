@@ -34,6 +34,7 @@ use codex_protocol::protocol::EventMsg;
 use codex_rollout::state_db;
 use codex_shell_command::parse_command::parse_shell_script;
 use codex_tools::ToolName;
+use codex_tools::ToolOperationEffect;
 use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
@@ -266,6 +267,10 @@ impl ToolExecutor<ToolInvocation> for ExposureOverride {
 
     fn exposure(&self) -> ToolExposure {
         self.exposure
+    }
+
+    fn operation_effect(&self) -> ToolOperationEffect {
+        self.handler.operation_effect()
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
