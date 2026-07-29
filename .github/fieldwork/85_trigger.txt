@@ -1,1 +1,1 @@
-trigger focused Campaign #85 validation
+trigger focused Campaign #85 validation after validation-base registration
