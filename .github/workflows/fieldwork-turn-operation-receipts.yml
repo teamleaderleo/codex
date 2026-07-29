@@ -13,7 +13,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: codex-rs
@@ -27,4 +27,4 @@ jobs:
         with:
           toolchain: 1.95.0
       - name: Compile and run turn receipt tests
-        run: cargo test -p codex-core turn_operation_receipt --locked
+        run: cargo test -p codex-core --lib turn_operation_receipt --locked
