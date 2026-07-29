@@ -24,9 +24,18 @@ jobs:
           persist-credentials: false
       - name: Apply production-path transition tests
         run: |
-          sed -n '/          from pathlib import Path/,/          Path(".github\/workflows\/fieldwork-83-result-transition-tests.yml").unlink()/p' \
-            .github/workflows/fieldwork-83-result-transition-tests.yml \
-            | sed 's/^          //' > /tmp/fieldwork-83-result-transition.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/fieldwork-83-result-transition-tests.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(source) if line.strip() == 'from pathlib import Path')
+          stop = next(
+              i for i, line in enumerate(source[start:], start)
+              if line.strip() == "Path('.github/workflows/fieldwork-83-result-transition-tests.yml').unlink()"
+          )
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in source[start:stop + 1])
+          Path('/tmp/fieldwork-83-result-transition.py').write_text(script + '\n')
+          PY
           python3 /tmp/fieldwork-83-result-transition.py
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
