@@ -37,23 +37,23 @@ jobs:
 
           turn = Path('codex-rs/core/src/session/turn.rs')
           text = turn.read_text(encoding='utf-8')
-          old = dedent('''\
-                          if let Some(call_id) = call_id {
-                              if result_persisted {
-                                  sess.record_tool_operation_result_persisted(&call_id).await;
-                              } else {
-                                  sess.record_tool_operation_result_ambiguous(&call_id).await;
-                              }
-                          }
-          ''')
-          new = dedent('''\
-                          record_direct_tool_result_persistence(
-                              sess.as_ref(),
-                              call_id.as_deref(),
-                              result_persisted,
-                          )
-                          .await;
-          ''')
+          old = (
+              "                if let Some(call_id) = call_id {\n"
+              "                    if result_persisted {\n"
+              "                        sess.record_tool_operation_result_persisted(&call_id).await;\n"
+              "                    } else {\n"
+              "                        sess.record_tool_operation_result_ambiguous(&call_id).await;\n"
+              "                    }\n"
+              "                }\n"
+          )
+          new = (
+              "                record_direct_tool_result_persistence(\n"
+              "                    sess.as_ref(),\n"
+              "                    call_id.as_deref(),\n"
+              "                    result_persisted,\n"
+              "                )\n"
+              "                .await;\n"
+          )
           if 'record_direct_tool_result_persistence(' not in text:
               if text.count(old) != 1:
                   raise SystemExit('direct result transition anchor mismatch')
