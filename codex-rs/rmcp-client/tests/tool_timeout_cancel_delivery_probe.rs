@@ -159,8 +159,15 @@ async fn cancellation_delivery_stall_does_not_silently_extend_the_tool_deadline(
     );
     tokio::pin!(call);
 
-    tokio::time::timeout(Duration::from_secs(1), state.tool_seen.notified()).await?;
-    let observed = tokio::time::timeout(RETURN_BOUND, &mut call).await;
+    // Poll the call while waiting for the raw server to confirm receipt. Merely
+    // constructing the future would not send the request.
+    let observed = tokio::time::timeout(RETURN_BOUND, async {
+        tokio::select! {
+            result = &mut call => result,
+            () = state.tool_seen.notified() => (&mut call).await,
+        }
+    })
+    .await;
 
     let expect_call_stall = std::env::var_os("FIELDWORK_EXPECT_CANCEL_SEND_STALL").is_some();
     let expect_bounded_cancel = std::env::var_os("FIELDWORK_EXPECT_BOUNDED_CANCEL").is_some();
