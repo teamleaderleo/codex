@@ -1,9 +1,15 @@
 name: Fieldwork 83 direct result transition tests
 
 on:
-  push:
+  pull_request:
     branches:
-      - fieldwork/83-result-persistence-compaction-gate
+      - main
+    paths:
+      - .fieldwork-83-result-transition-trigger
+      - .github/workflows/fieldwork-83-result-transition-tests.yml
+      - codex-rs/core/src/session/mod.rs
+      - codex-rs/core/src/session/turn.rs
+      - codex-rs/core/src/session/turn_tests.rs
 
 permissions:
   contents: write
@@ -27,30 +33,34 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          from textwrap import dedent
 
           turn = Path('codex-rs/core/src/session/turn.rs')
           text = turn.read_text(encoding='utf-8')
-          old = '''                if let Some(call_id) = call_id {
-                      if result_persisted {
-                          sess.record_tool_operation_result_persisted(&call_id).await;
-                      } else {
-                          sess.record_tool_operation_result_ambiguous(&call_id).await;
-                      }
-                  }
-          '''
-          new = '''                record_direct_tool_result_persistence(
-                      sess.as_ref(),
-                      call_id.as_deref(),
-                      result_persisted,
-                  )
-                  .await;
-          '''
-          if text.count(old) != 1:
-              raise SystemExit('direct result transition anchor mismatch')
-          text = text.replace(old, new, 1)
+          old = dedent('''\
+                          if let Some(call_id) = call_id {
+                              if result_persisted {
+                                  sess.record_tool_operation_result_persisted(&call_id).await;
+                              } else {
+                                  sess.record_tool_operation_result_ambiguous(&call_id).await;
+                              }
+                          }
+          ''')
+          new = dedent('''\
+                          record_direct_tool_result_persistence(
+                              sess.as_ref(),
+                              call_id.as_deref(),
+                              result_persisted,
+                          )
+                          .await;
+          ''')
+          if 'record_direct_tool_result_persistence(' not in text:
+              if text.count(old) != 1:
+                  raise SystemExit('direct result transition anchor mismatch')
+              text = text.replace(old, new, 1)
 
           marker = '\nfn assign_missing_streamed_response_item_id('
-          helper = '''
+          helper = dedent('''\
 
           async fn record_direct_tool_result_persistence(
               sess: &Session,
@@ -66,13 +76,11 @@ jobs:
                   sess.record_tool_operation_result_ambiguous(call_id).await;
               }
           }
-          '''
-          if helper.strip() in text:
-              pass
-          elif text.count(marker) == 1:
+          ''')
+          if 'async fn record_direct_tool_result_persistence' not in text:
+              if text.count(marker) != 1:
+                  raise SystemExit('helper insertion anchor mismatch')
               text = text.replace(marker, helper + marker, 1)
-          else:
-              raise SystemExit('helper insertion anchor mismatch')
           turn.write_text(text, encoding='utf-8')
 
           tests = Path('codex-rs/core/src/session/turn_tests.rs')
@@ -89,7 +97,7 @@ jobs:
                   raise SystemExit('test import anchor mismatch')
               text = text.replace(import_anchor, imports, 1)
 
-          addition = r'''
+          addition = dedent(r'''
 
           fn direct_function_result(call_id: &str) -> ResponseInputItem {
               ResponseInputItem::FunctionCallOutput {
@@ -210,21 +218,17 @@ jobs:
                   .await
                   .expect("late result should create a conservative receipt");
               assert_eq!(receipt.effect, ToolOperationEffect::PotentialMutation);
-              assert_eq!(
-                  receipt.terminal_state,
-                  ToolOperationTerminalState::Pending
-              );
+              assert_eq!(receipt.terminal_state, ToolOperationTerminalState::Pending);
               assert_eq!(receipt.result_state, ToolOperationResultState::Persisted);
               assert!(session.has_unreconciled_potential_mutation().await);
           }
-          '''
+          ''')
           if 'direct_tool_result_persistence_marks_success_after_authoritative_append' not in text:
               text += addition
           tests.write_text(text, encoding='utf-8')
 
           Path('.github/workflows/fieldwork-83-result-transition-tests.yml').unlink()
-      - name: Remove unrelated formatting-only change
-        run: git checkout origin/main -- codex-rs/tools/src/tool_operation_tests.rs
+          Path('.fieldwork-83-result-transition-trigger').unlink(missing_ok=True)
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
