@@ -20,6 +20,7 @@ fn complete_potential_mutation_receipt_is_retained() {
             },
         )])
     );
+    assert!(!receipts.coverage_lost());
 }
 
 #[test]
@@ -82,4 +83,24 @@ fn failed_persistence_marks_result_ambiguous() {
         ToolOperationResultState::Ambiguous
     );
     assert!(!receipts.snapshot()["call-1"].is_compaction_ready());
+}
+
+#[test]
+fn overflow_sets_coverage_lost_without_evicting_retained_receipts() {
+    let mut receipts = ToolOperationReceipts::default();
+    for index in 0..MAX_RETAINED_TOOL_OPERATION_RECEIPTS {
+        receipts.start(
+            &format!("call-{index}"),
+            ToolOperationEffect::PotentialMutation,
+        );
+    }
+
+    receipts.start("overflow", ToolOperationEffect::PotentialMutation);
+    receipts.record_terminal("unknown-after-overflow", ToolOperationTerminalState::Completed);
+
+    let snapshot = receipts.snapshot();
+    assert_eq!(snapshot.len(), MAX_RETAINED_TOOL_OPERATION_RECEIPTS);
+    assert!(!snapshot.contains_key("overflow"));
+    assert!(!snapshot.contains_key("unknown-after-overflow"));
+    assert!(receipts.coverage_lost());
 }
