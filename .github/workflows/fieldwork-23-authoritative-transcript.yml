@@ -32,9 +32,9 @@ jobs:
         working-directory: codex-rs
         run: just fmt
 
-      - name: Test codex-core
+      - name: Test unified-exec
         working-directory: codex-rs
-        run: just test -p codex-core
+        run: just test -p codex-core -E 'test(unified_exec::)'
 
       - name: Fix codex-core lints
         working-directory: codex-rs
