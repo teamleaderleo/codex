@@ -97,6 +97,7 @@ pub use tool_discovery::filter_request_plugin_install_discoverable_tools_for_cli
 pub use tool_executor::ToolExecutor;
 pub use tool_executor::ToolExecutorFuture;
 pub use tool_executor::ToolExposure;
+pub use tool_operation::TOOL_OPERATION_RECEIPT_VERSION;
 pub use tool_operation::ToolOperationEffect;
 pub use tool_operation::ToolOperationReceipt;
 pub use tool_operation::ToolOperationResultState;
