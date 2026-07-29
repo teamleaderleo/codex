@@ -1,0 +1,22 @@
+diff --git a/codex-rs/rmcp-client/src/rmcp_client.rs b/codex-rs/rmcp-client/src/rmcp_client.rs
+--- a/codex-rs/rmcp-client/src/rmcp_client.rs
++++ b/codex-rs/rmcp-client/src/rmcp_client.rs
+@@ -728,9 +728,10 @@ impl RmcpClient {
+         let mut rmcp_params = CallToolRequestParams::new(name);
+         rmcp_params.arguments = arguments;
+         let requested_modern = self.protocol_mode == McpProtocolMode::V20260728;
++        let operation_timeout = requested_modern.then_some(timeout).flatten();
+         let result = self
+-            .run_service_operation("tools/call", timeout, move |service| {
++            .run_service_operation("tools/call", operation_timeout, move |service| {
+                 let mut rmcp_params = rmcp_params.clone();
+                 let meta = meta.clone();
+                 async move {
+@@ -746,6 +747,7 @@ impl RmcpClient {
+                     }
+                     let mut options = rmcp::service::PeerRequestOptions::no_options();
+                     options.meta = meta;
++                    options.timeout = timeout;
+                     let result = service
+                         .peer()
+                         .send_request_with_option(
