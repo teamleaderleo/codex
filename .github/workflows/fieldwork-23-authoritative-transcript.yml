@@ -43,11 +43,6 @@ jobs:
           process = "codex-rs/core/src/unified_exec/process.rs"
           replace(
               process,
-              "pub(crate) struct OutputHandles {\n    pub(crate) output_buffer: OutputBuffer,",
-              "pub(crate) struct OutputHandles {\n    pub(crate) output_buffer: OutputBuffer,\n    pub(crate) completion_buffer: OutputBuffer,",
-          )
-          replace(
-              process,
               "    output_tx: broadcast::Sender<Vec<u8>>,\n    output_buffer: OutputBuffer,",
               "    output_tx: broadcast::Sender<Vec<u8>>,\n    output_buffer: OutputBuffer,\n    completion_buffer: OutputBuffer,",
           )
@@ -63,8 +58,8 @@ jobs:
           )
           replace(
               process,
-              "            output_buffer: Arc::clone(&self.output_buffer),\n            output_notify: Arc::clone(&self.output_notify),",
-              "            output_buffer: Arc::clone(&self.output_buffer),\n            completion_buffer: Arc::clone(&self.completion_buffer),\n            output_notify: Arc::clone(&self.output_notify),",
+              "    pub(super) fn output_receiver(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {",
+              "    pub(super) fn completion_buffer(&self) -> OutputBuffer {\n        Arc::clone(&self.completion_buffer)\n    }\n\n    pub(super) fn output_receiver(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {",
           )
           replace(
               process,
@@ -73,8 +68,13 @@ jobs:
           )
           replace(
               process,
-              "        let OutputHandles {\n            output_buffer,\n            output_notify,",
-              "        let OutputHandles {\n            output_buffer,\n            completion_buffer,\n            output_notify,",
+              "        managed.output_task = Some(Self::spawn_exec_server_output_task(\n            started,\n            output_handles,\n            managed.output_tx.clone(),",
+              "        managed.output_task = Some(Self::spawn_exec_server_output_task(\n            started,\n            output_handles,\n            Arc::clone(&managed.completion_buffer),\n            managed.output_tx.clone(),",
+          )
+          replace(
+              process,
+              "    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        output_tx: broadcast::Sender<Vec<u8>>,",
+              "    async fn record_output_chunk(\n        output_buffer: &OutputBuffer,\n        completion_buffer: &OutputBuffer,\n        chunk: &[u8],\n    ) {\n        output_buffer.lock().await.push_chunk(chunk.to_vec());\n        completion_buffer\n            .lock()\n            .await\n            .push_chunk(chunk.to_vec());\n    }\n\n    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        completion_buffer: OutputBuffer,\n        output_tx: broadcast::Sender<Vec<u8>>,",
           )
           replace(
               process,
@@ -92,11 +92,6 @@ jobs:
               "                        let mut guard = buffer.lock().await;\n                        guard.push_chunk(chunk.clone());\n                        drop(guard);\n                        let _ = output_tx.send(chunk);",
               "                        Self::record_output_chunk(&buffer, &completion_buffer, &chunk)\n                            .await;\n                        let _ = output_tx.send(chunk);",
           )
-          replace(
-              process,
-              "    fn spawn_exec_server_output_task(\n",
-              "    async fn record_output_chunk(\n        output_buffer: &OutputBuffer,\n        completion_buffer: &OutputBuffer,\n        chunk: &[u8],\n    ) {\n        output_buffer.lock().await.push_chunk(chunk.to_vec());\n        completion_buffer\n            .lock()\n            .await\n            .push_chunk(chunk.to_vec());\n    }\n\n    fn spawn_exec_server_output_task(\n",
-          )
 
           watcher = "codex-rs/core/src/unified_exec/async_watcher.rs"
           replace(
@@ -106,8 +101,8 @@ jobs:
           )
           replace(
               watcher,
-              "    let OutputHandles {\n        output_closed,\n        output_closed_notify,",
-              "    let OutputHandles {\n        completion_buffer,\n        output_closed,\n        output_closed_notify,",
+              "    let mut receiver = process.output_receiver();\n    let output_drained = process.output_drained_notify();",
+              "    let mut receiver = process.output_receiver();\n    let completion_buffer = process.completion_buffer();\n    let output_drained = process.output_drained_notify();",
           )
           replace(
               watcher,
@@ -149,7 +144,7 @@ jobs:
           replace(
               tests,
               "}\n\n#[tokio::test]\nasync fn streaming_output_finishes_on_close_without_waiting_for_grace()",
-              "}\n\nasync fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {\n    let harness = unstarted_streaming_output_harness().await?;\n    start_streaming_output(\n        &harness.process,\n        &harness.context,\n        Arc::clone(&harness.transcript),\n    );\n    Ok(harness)\n}\n\n#[tokio::test]\nasync fn streaming_output_reconciles_output_emitted_before_subscription() -> anyhow::Result<()> {\n    let StreamingOutputHarness {\n        process,\n        stdout_tx,\n        exit_tx,\n        transcript,\n        context,\n        ..\n    } = unstarted_streaming_output_harness().await?;\n    let expected = b\"EARLY-OUTPUT-MARKER\".to_vec();\n    stdout_tx.send(expected.clone()).expect(\"send early output\");\n\n    let output_buffer = process.output_handles().output_buffer;\n    tokio::time::timeout(Duration::from_secs(1), async {\n        loop {\n            if output_buffer.lock().await.total_bytes() == expected.len() {\n                break;\n            }\n            tokio::task::yield_now().await;\n        }\n    })\n    .await?;\n\n    start_streaming_output(&process, &context, Arc::clone(&transcript));\n    let output_drained = process.output_drained_notify();\n    let drained = output_drained.notified();\n    tokio::pin!(drained);\n    exit_tx.send(0).expect(\"send exit\");\n    drop(stdout_tx);\n    (&mut drained).await;\n\n    assert_eq!(transcript.lock().await.to_bytes(), expected);\n    Ok(())\n}\n\n#[tokio::test]\nasync fn reconcile_transcript_replaces_partial_stream_with_authoritative_output() {\n    let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));\n    let completion_buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));\n\n    for index in 0..128 {\n        let chunk = format!(\"chunk-{index:04}\\n\").into_bytes();\n        completion_buffer.lock().await.push_chunk(chunk.clone());\n        if index >= 64 {\n            transcript.lock().await.push_chunk(chunk);\n        }\n    }\n\n    reconcile_transcript(&transcript, &completion_buffer).await;\n    let actual = transcript.lock().await.clone();\n    let expected = completion_buffer.lock().await.clone();\n    assert_eq!(actual, expected);\n}\n\n#[tokio::test]\nasync fn streaming_output_finishes_on_close_without_waiting_for_grace()",
+              "}\n\nasync fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {\n    let harness = unstarted_streaming_output_harness().await?;\n    start_streaming_output(\n        &harness.process,\n        &harness.context,\n        Arc::clone(&harness.transcript),\n    );\n    Ok(harness)\n}\n\n#[tokio::test]\nasync fn completed_item_includes_output_emitted_before_subscription() -> anyhow::Result<()> {\n    let StreamingOutputHarness {\n        process,\n        stdout_tx,\n        exit_tx,\n        transcript,\n        context,\n        rx_event,\n    } = unstarted_streaming_output_harness().await?;\n    let expected = b\"EARLY-OUTPUT-MARKER\".to_vec();\n    stdout_tx.send(expected.clone()).expect(\"send early output\");\n\n    let output_buffer = process.output_handles().output_buffer;\n    tokio::time::timeout(Duration::from_secs(1), async {\n        loop {\n            if output_buffer.lock().await.total_bytes() == expected.len() {\n                break;\n            }\n            tokio::task::yield_now().await;\n        }\n    })\n    .await?;\n\n    start_streaming_output(&process, &context, Arc::clone(&transcript));\n    #[allow(deprecated)]\n    let cwd = context.turn.cwd.clone().into();\n    spawn_exit_watcher(\n        Arc::clone(&process),\n        Arc::clone(&context.session),\n        Arc::clone(&context.turn),\n        context.call_id,\n        vec![\"proof\".to_string()],\n        cwd,\n        /*process_id*/ 123,\n        /*plugin_attribution*/ None,\n        transcript,\n        Instant::now(),\n        /*network_denial_monitor*/ None,\n    );\n    exit_tx.send(0).expect(\"send exit\");\n    drop(stdout_tx);\n\n    let event = rx_event.recv().await.expect(\"command end event\");\n    let EventMsg::ItemCompleted(completed) = event.msg else {\n        panic!(\"expected ItemCompleted\");\n    };\n    let TurnItem::CommandExecution(item) = completed.item else {\n        panic!(\"expected CommandExecution\");\n    };\n    assert_eq!(\n        (item.status, item.exit_code, item.aggregated_output.as_deref()),\n        (\n            CommandExecutionStatus::Completed,\n            Some(0),\n            Some(\"EARLY-OUTPUT-MARKER\")\n        )\n    );\n    Ok(())\n}\n\n#[tokio::test]\nasync fn reconcile_transcript_replaces_partial_stream_with_authoritative_output() {\n    let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));\n    let completion_buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));\n\n    for index in 0..128 {\n        let chunk = format!(\"chunk-{index:04}\\n\").into_bytes();\n        completion_buffer.lock().await.push_chunk(chunk.clone());\n        if index >= 64 {\n            transcript.lock().await.push_chunk(chunk);\n        }\n    }\n\n    reconcile_transcript(&transcript, &completion_buffer).await;\n    let actual = transcript.lock().await.clone();\n    let expected = completion_buffer.lock().await.clone();\n    assert_eq!(actual, expected);\n}\n\n#[tokio::test]\nasync fn streaming_output_finishes_on_close_without_waiting_for_grace()",
           )
           PY
 
