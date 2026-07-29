@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - .fieldwork-83-direct-append-evidence
+      - .github/fieldwork/83_add_append_recovery_test.py
       - .github/workflows/fieldwork-83-direct-append-evidence.yml
       - .github/workflows/fieldwork-83-direct-append-evidence-pr.yml
       - codex-rs/thread-store/src/in_memory.rs
@@ -17,7 +18,7 @@ permissions:
 
 concurrency:
   group: fieldwork-83-direct-append-evidence-pr
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   test-and-publish:
@@ -47,6 +48,7 @@ jobs:
           Path('/tmp/fieldwork-83-direct-append-evidence.py').write_text(script + '\n')
           PY
           python3 /tmp/fieldwork-83-direct-append-evidence.py
+          python3 .github/fieldwork/83_add_append_recovery_test.py
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
@@ -64,8 +66,10 @@ jobs:
       - name: Publish validated source-only head
         run: |
           rm -f .fieldwork-83-direct-append-evidence
+          rm -f .github/fieldwork/83_add_append_recovery_test.py
           rm -f .github/workflows/fieldwork-83-direct-append-evidence.yml
           rm -f .github/workflows/fieldwork-83-direct-append-evidence-pr.yml
+          rmdir .github/fieldwork 2>/dev/null || true
           git add -A
           git commit -m 'core: test direct result persistence through live append'
           git push origin HEAD:fieldwork/83-direct-append-evidence
