@@ -56,21 +56,11 @@ jobs:
 
           path = Path('codex-rs/core/src/tools/registry_tests.rs')
           text = path.read_text()
-          replacements = {
-              '''                  .await
-                  .expect_err("unsupported tool should fail");''': '''                  .await
-                  .err()
-                  .expect("unsupported tool should fail");''',
-              '''                  .await
-                  .expect_err("incompatible payload should fail");''': '''                  .await
-                  .err()
-                  .expect("incompatible payload should fail");''',
-          }
-          for old, new in replacements.items():
-              if text.count(old) != 1:
-                  raise SystemExit(f'assertion anchor mismatch: {old!r}')
-              text = text.replace(old, new, 1)
-          path.write_text(text)
+          old = '.await\n        .expect_err('
+          new = '.await\n        .err()\n        .expect('
+          if text.count(old) != 2:
+              raise SystemExit(f'expected two error assertions, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
           PY
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
