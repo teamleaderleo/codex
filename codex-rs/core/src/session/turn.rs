@@ -1966,13 +1966,12 @@ async fn drain_in_flight(
                 let result_persisted = sess
                     .record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
                     .await;
-                if let Some(call_id) = call_id {
-                    if result_persisted {
-                        sess.record_tool_operation_result_persisted(&call_id).await;
-                    } else {
-                        sess.record_tool_operation_result_ambiguous(&call_id).await;
-                    }
-                }
+                record_direct_tool_result_persistence(
+                    sess.as_ref(),
+                    call_id.as_deref(),
+                    result_persisted,
+                )
+                .await;
                 mark_thread_memory_mode_polluted_if_external_context(
                     sess.as_ref(),
                     turn_context.as_ref(),
@@ -1997,6 +1996,21 @@ fn response_input_tool_call_id(item: &ResponseInputItem) -> Option<&str> {
             call_id, execution, ..
         } if execution == "client" => Some(call_id),
         ResponseInputItem::Message { .. } | ResponseInputItem::ToolSearchOutput { .. } => None,
+    }
+}
+
+async fn record_direct_tool_result_persistence(
+    sess: &Session,
+    call_id: Option<&str>,
+    result_persisted: bool,
+) {
+    let Some(call_id) = call_id else {
+        return;
+    };
+    if result_persisted {
+        sess.record_tool_operation_result_persisted(call_id).await;
+    } else {
+        sess.record_tool_operation_result_ambiguous(call_id).await;
     }
 }
 
