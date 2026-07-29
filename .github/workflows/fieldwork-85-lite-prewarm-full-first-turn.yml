@@ -42,6 +42,9 @@ jobs:
       - name: Test Responses Lite first generated request
         working-directory: codex-rs
         run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked
+      - name: Test Responses Lite generated-response reuse
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn --locked
       - name: Preserve non-Lite prewarm reuse
         working-directory: codex-rs
         run: cargo test -p codex-core --test all responses_websocket_request_prewarm_reuses_connection --locked
@@ -54,6 +57,6 @@ jobs:
           rmdir .github/fieldwork 2>/dev/null || true
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
-          git add codex-rs/core/src/client.rs codex-rs/core/tests/suite/agent_websocket.rs .github
+          git add codex-rs/core/src/client.rs codex-rs/core/tests/suite/agent_websocket.rs codex-rs/core/tests/suite/client_websockets.rs .github
           git commit -m 'core: send full first Responses Lite turn after prewarm'
           git push origin HEAD:fieldwork/85-lite-prewarm-full-first-turn
