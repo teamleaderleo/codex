@@ -7,7 +7,6 @@ pub(crate) mod hook_names;
 pub(crate) mod hosted_spec;
 pub(crate) mod lifecycle;
 pub(crate) mod network_approval;
-pub(crate) mod operation_receipt;
 pub(crate) mod orchestrator;
 pub(crate) mod parallel;
 pub(crate) mod registry;
@@ -108,6 +107,7 @@ pub fn format_exec_output_str(
     truncation_policy: TruncationPolicy,
 ) -> String {
     let content = build_content_with_timeout(exec_output);
+
     // Truncate for model consumption before serialization.
     formatted_truncate_text(&content, truncation_policy)
 }
