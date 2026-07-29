@@ -1,6 +1,9 @@
 name: fieldwork-134-mcp-timeout-cancellation
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - fieldwork/134-mcp-timeout-cancellation
