@@ -22,6 +22,7 @@ jobs:
         run: |
           cargo install just --locked
           cargo install dotslash --locked
+          cargo install cargo-nextest --locked
           pipx install uv
 
       - name: Apply asserted source edits
