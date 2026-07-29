@@ -13,11 +13,13 @@ use futures::future::BoxFuture;
 use rmcp::ErrorData as McpError;
 use rmcp::ServerHandler;
 use rmcp::ServiceExt;
-use rmcp::elicit_safe;
 use rmcp::model::CallToolRequestParams;
 use rmcp::model::CallToolResult;
 use rmcp::model::ClientCapabilities;
+use rmcp::model::ClientResult;
 use rmcp::model::ContentBlock;
+use rmcp::model::ElicitRequest;
+use rmcp::model::ElicitRequestParams;
 use rmcp::model::ElicitationCapability;
 use rmcp::model::FormElicitationCapability;
 use rmcp::model::Implementation;
@@ -25,23 +27,14 @@ use rmcp::model::InitializeRequestParams;
 use rmcp::model::ProtocolVersion;
 use rmcp::model::ServerCapabilities;
 use rmcp::model::ServerInfo;
-use rmcp::schemars::JsonSchema;
+use rmcp::model::ServerRequest;
 use rmcp::service::RequestContext;
 use rmcp::service::RoleServer;
-use serde::Deserialize;
-use serde::Serialize;
 use serde_json::json;
 use tokio::io::DuplexStream;
 
 const TOOL_TIMEOUT: Duration = Duration::from_millis(100);
 const USER_RESPONSE_DELAY: Duration = Duration::from_millis(250);
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-struct ProbeApproval {
-    approved: bool,
-}
-
-elicit_safe!(ProbeApproval);
 
 #[derive(Clone, Default)]
 struct ElicitationProbeState {
@@ -71,9 +64,18 @@ impl ServerHandler for ElicitationProbeServer {
             ));
         }
 
-        let elicitation = context
-            .peer
-            .elicit::<ProbeApproval>("Approve the delayed mutation".to_string());
+        let elicitation = context.peer.send_request(ServerRequest::ElicitRequest(
+            ElicitRequest::new(ElicitRequestParams::FormElicitationParams {
+                meta: None,
+                message: "Approve the delayed mutation".to_string(),
+                requested_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {"approved": {"type": "boolean"}},
+                    "required": ["approved"]
+                }))
+                .expect("valid elicitation schema"),
+            }),
+        ));
         tokio::pin!(elicitation);
 
         tokio::select! {
@@ -87,7 +89,20 @@ impl ServerHandler for ElicitationProbeServer {
                 let response = response.map_err(|error| {
                     McpError::internal_error(format!("elicitation failed: {error}"), None)
                 })?;
-                if response.is_none_or(|approval| approval.approved) {
+                let ClientResult::ElicitResult(response) = response else {
+                    return Err(McpError::internal_error(
+                        "unexpected elicitation response type".to_string(),
+                        None,
+                    ));
+                };
+                let approved = response.action == ElicitationAction::Accept
+                    && response
+                        .content
+                        .as_ref()
+                        .and_then(|content| content.get("approved"))
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true);
+                if approved {
                     self.state
                         .side_effect_completed
                         .store(true, Ordering::SeqCst);
