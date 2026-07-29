@@ -1,21 +1,9 @@
 name: fieldwork-83-direct-append-commit-error-v2
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
-    paths:
-      - .fieldwork-83-direct-append-evidence
-      - .github/fieldwork/83_add_append_recovery_test.py
-      - .github/fieldwork/83_add_commit_error_control.py
-      - .github/workflows/fieldwork-83-direct-append-evidence.yml
-      - .github/workflows/fieldwork-83-direct-append-evidence-pr.yml
-      - .github/workflows/fieldwork-83-direct-append-evidence-cancel.yml
-      - .github/workflows/fieldwork-83-direct-append-commit-error.yml
-      - .github/workflows/fieldwork-83-direct-append-commit-error-v2.yml
-      - codex-rs/thread-store/src/in_memory.rs
-      - codex-rs/core/src/session/turn.rs
-      - codex-rs/core/src/session/turn_tests.rs
+      - fieldwork/83-direct-append-evidence
 
 permissions:
   contents: write
@@ -26,6 +14,7 @@ concurrency:
 
 jobs:
   test-and-publish:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
