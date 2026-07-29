@@ -18,8 +18,8 @@ jobs:
         working-directory: codex-rs
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Show pinned Rust toolchain
         run: rustc --version && cargo --version
-      - name: Run focused receipt and executor tests
-        run: cargo test -p codex-tools tool_operation --locked
+      - name: Run codex-tools tests
+        run: cargo test -p codex-tools --locked
