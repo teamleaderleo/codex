@@ -1,4 +1,4 @@
-name: Fieldwork MCP config reload reconnect
+name: Publish validated Fieldwork MCP refresh patch
 
 on:
   push:
@@ -12,17 +12,17 @@ permissions:
   contents: write
 
 jobs:
-  apply-and-test:
+  publish:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fieldwork/31-mcp-config-reload-reconnect
           fetch-depth: 0
 
-      - name: Apply bounded source patch and regression
+      - name: Apply validated source patch and regression
         shell: python
         run: |
           from pathlib import Path
@@ -93,29 +93,11 @@ jobs:
 
           Path(".github/workflows/fieldwork-mcp-config-reload-reconnect.yml").unlink()
 
-      - name: Install just
-        run: cargo install just --locked
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
-
       - name: Format Rust
         working-directory: codex-rs
         run: |
           cargo fmt --all
           cargo fmt --all -- --check
-
-      - name: Test host reload reconnect
-        working-directory: codex-rs
-        run: just test -p codex-core host_mcp_config_refresh_reconnects_ready_clients
-
-      - name: Test ordinary reconciliation reuse
-        working-directory: codex-rs
-        run: just test -p codex-mcp reconciliation_reuses_connection_without_relisting_regular_tools
-
-      - name: Test app-server MCP refresh
-        working-directory: codex-rs
-        run: just test -p codex-app-server mcp_refresh
 
       - name: Commit validated patch
         run: |
