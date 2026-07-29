@@ -85,3 +85,45 @@ async fn plan_mode_uses_contributed_turn_item_for_last_agent_message() {
         Some("plan contributed assistant text")
     );
 }
+
+#[test]
+fn response_input_tool_call_id_tracks_direct_tool_results() {
+    let function = ResponseInputItem::FunctionCallOutput {
+        call_id: "function-call".to_string(),
+        output: codex_protocol::models::FunctionCallOutputPayload::from_text("ok".to_string()),
+    };
+    let custom = ResponseInputItem::CustomToolCallOutput {
+        call_id: "custom-call".to_string(),
+        name: Some("custom".to_string()),
+        output: codex_protocol::models::FunctionCallOutputPayload::from_text("ok".to_string()),
+    };
+    let client_search = ResponseInputItem::ToolSearchOutput {
+        call_id: "search-call".to_string(),
+        status: "completed".to_string(),
+        execution: "client".to_string(),
+        tools: Vec::new(),
+    };
+    let server_search = ResponseInputItem::ToolSearchOutput {
+        call_id: "server-search".to_string(),
+        status: "completed".to_string(),
+        execution: "server".to_string(),
+        tools: Vec::new(),
+    };
+    let message = ResponseInputItem::Message {
+        role: "assistant".to_string(),
+        content: Vec::new(),
+        phase: None,
+    };
+
+    assert_eq!(
+        response_input_tool_call_id(&function),
+        Some("function-call")
+    );
+    assert_eq!(response_input_tool_call_id(&custom), Some("custom-call"));
+    assert_eq!(
+        response_input_tool_call_id(&client_search),
+        Some("search-call")
+    );
+    assert_eq!(response_input_tool_call_id(&server_search), None);
+    assert_eq!(response_input_tool_call_id(&message), None);
+}

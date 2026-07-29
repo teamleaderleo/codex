@@ -44,7 +44,10 @@ fn conflicting_terminal_outcomes_block_potential_mutation_compaction() {
     receipt.record_result_persisted();
 
     assert!(!receipt.is_compaction_ready());
-    assert_eq!(receipt.terminal_state, ToolOperationTerminalState::Ambiguous);
+    assert_eq!(
+        receipt.terminal_state,
+        ToolOperationTerminalState::Ambiguous
+    );
 }
 
 #[test]
