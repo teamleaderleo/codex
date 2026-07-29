@@ -24,11 +24,7 @@ jobs:
 
           path = Path("codex-rs/core/src/unified_exec/async_watcher.rs")
           text = path.read_text()
-          old = '''    if !fallback.is_empty() {
-              return fallback;
-          }
-
-          '''
+          old = "    if !fallback.is_empty() {\n        return fallback;\n    }\n\n"
           if text.count(old) != 1:
               raise SystemExit(f"expected one fallback-priority block, found {text.count(old)}")
           path.write_text(text.replace(old, ""))
