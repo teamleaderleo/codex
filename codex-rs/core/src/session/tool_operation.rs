@@ -52,4 +52,12 @@ impl Session {
     ) -> BTreeMap<String, ToolOperationReceipt> {
         self.state.lock().await.tool_operation_receipts.snapshot()
     }
+
+    pub(crate) async fn tool_operation_receipt_coverage_lost(&self) -> bool {
+        self.state
+            .lock()
+            .await
+            .tool_operation_receipts
+            .coverage_lost()
+    }
 }
