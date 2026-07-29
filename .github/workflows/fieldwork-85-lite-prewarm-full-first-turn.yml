@@ -54,6 +54,7 @@ jobs:
         run: |
           rm .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           rm .github/workflows/fieldwork-85-lite-prewarm-full-first-turn.yml
+          rm .github/workflows/fieldwork-85-lite-prewarm-full-first-turn-pr.yml
           rmdir .github/fieldwork 2>/dev/null || true
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
