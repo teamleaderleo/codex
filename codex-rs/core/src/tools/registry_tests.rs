@@ -481,3 +481,48 @@ fn test_invocation(
         },
     }
 }
+
+struct ReadOnlyEffectHandler {
+    tool_name: codex_tools::ToolName,
+}
+
+impl ToolExecutor<ToolInvocation> for ReadOnlyEffectHandler {
+    fn tool_name(&self) -> codex_tools::ToolName {
+        self.tool_name.clone()
+    }
+
+    fn spec(&self) -> codex_tools::ToolSpec {
+        test_spec(&self.tool_name)
+    }
+
+    fn operation_effect(&self) -> codex_tools::ToolOperationEffect {
+        codex_tools::ToolOperationEffect::ReadOnly
+    }
+
+    fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+        Box::pin(async {
+            Ok(
+                Box::new(crate::tools::context::FunctionToolOutput::from_text(
+                    "ok".to_string(),
+                    Some(true),
+                )) as Box<dyn crate::tools::context::ToolOutput>,
+            )
+        })
+    }
+}
+
+impl CoreToolRuntime for ReadOnlyEffectHandler {}
+
+#[test]
+fn exposure_override_preserves_operation_effect() {
+    let handler = Arc::new(ReadOnlyEffectHandler {
+        tool_name: codex_tools::ToolName::plain("read_only"),
+    }) as Arc<dyn CoreToolRuntime>;
+
+    let overridden = override_tool_exposure(handler, ToolExposure::Hidden);
+
+    assert_eq!(
+        overridden.operation_effect(),
+        codex_tools::ToolOperationEffect::ReadOnly
+    );
+}

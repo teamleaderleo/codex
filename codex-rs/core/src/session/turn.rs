@@ -1961,9 +1961,18 @@ async fn drain_in_flight(
     while let Some(res) = in_flight.next().await {
         match res {
             Ok(response_input) => {
+                let call_id = response_input_tool_call_id(&response_input).map(str::to_string);
                 let response_item = response_input.into();
-                sess.record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
+                let result_persisted = sess
+                    .record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
                     .await;
+                if let Some(call_id) = call_id {
+                    if result_persisted {
+                        sess.record_tool_operation_result_persisted(&call_id).await;
+                    } else {
+                        sess.record_tool_operation_result_ambiguous(&call_id).await;
+                    }
+                }
                 mark_thread_memory_mode_polluted_if_external_context(
                     sess.as_ref(),
                     turn_context.as_ref(),
@@ -1977,6 +1986,16 @@ async fn drain_in_flight(
         }
     }
     Ok(())
+}
+
+fn response_input_tool_call_id(item: &ResponseInputItem) -> Option<&str> {
+    match item {
+        ResponseInputItem::FunctionCallOutput { call_id, .. }
+        | ResponseInputItem::McpToolCallOutput { call_id, .. }
+        | ResponseInputItem::CustomToolCallOutput { call_id, .. }
+        | ResponseInputItem::ToolSearchOutput { call_id, .. } => Some(call_id),
+        ResponseInputItem::Message { .. } => None,
+    }
 }
 
 fn assign_missing_streamed_response_item_id(
