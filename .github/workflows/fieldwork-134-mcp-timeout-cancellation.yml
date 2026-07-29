@@ -1,0 +1,51 @@
+name: fieldwork-134-mcp-timeout-cancellation
+
+on:
+  push:
+    branches:
+      - fieldwork/134-mcp-timeout-cancellation
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-134-mcp-timeout-cancellation
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: fieldwork/134-mcp-timeout-cancellation
+          fetch-depth: 0
+
+      - name: Apply exact source candidate
+        run: python3 .fieldwork-134-apply.py
+
+      - name: Format and run focused tests
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test -p codex-rmcp-client --lib cancellation_delivery_classification_is_typed --locked
+          cargo test -p codex-rmcp-client --lib mcp_tool_call_timeout_sends_cancellation_and_remains_ambiguous --locked
+          cargo test -p codex-rmcp-client --lib active_time_timeout_pauses_while_elicitation_is_pending --locked
+          git diff --check
+
+      - name: Commit validated source and remove bootstrap
+        env:
+          BRANCH: fieldwork/134-mcp-timeout-cancellation
+        run: |
+          set -euo pipefail
+          rm .fieldwork-134-apply.py
+          rm .github/workflows/fieldwork-134-mcp-timeout-cancellation.yml
+          git add codex-rs/rmcp-client/src/lib.rs codex-rs/rmcp-client/src/rmcp_client.rs
+          git add -u .fieldwork-134-apply.py .github/workflows/fieldwork-134-mcp-timeout-cancellation.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fieldwork: cancel timed out MCP tool requests"
+          git push origin "HEAD:${BRANCH}"
