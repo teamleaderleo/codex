@@ -65,6 +65,7 @@ jobs:
         run: |
           rm .github/fieldwork/162_apply_mcp_timeout_outcome.py
           rm .github/workflows/fieldwork-162-mcp-timeout-outcome.yml
+          rm .github/workflows/fieldwork-162-mcp-timeout-outcome-pr.yml
           rmdir .github/fieldwork 2>/dev/null || true
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
