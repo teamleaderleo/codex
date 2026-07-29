@@ -95,7 +95,7 @@ impl ToolOperationReceipt {
     ///
     /// Read-only calls do not require a durable result to protect external state. Potential
     /// mutations require one unambiguous terminal outcome and one persisted result.
-    pub fn is_compaction_ready(self) -> bool {
+    pub fn is_compaction_ready(&self) -> bool {
         match self.effect {
             ToolOperationEffect::ReadOnly => true,
             ToolOperationEffect::PotentialMutation => {
