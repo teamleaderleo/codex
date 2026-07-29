@@ -205,9 +205,34 @@ fn build_tool_specs_and_registry(
     let mut planned_tools = PlannedTools::default();
     add_tool_sources(&context, &mut planned_tools);
     apply_direct_model_only_namespace_overrides(turn_context, &mut planned_tools);
+    normalize_unloadable_deferred_tools(turn_context, &mut planned_tools);
     append_tool_search_executor(&context, &mut planned_tools);
     prepend_code_mode_executors(&context, &mut planned_tools);
     build_model_visible_specs_and_registry(turn_context, planned_tools)
+}
+
+fn normalize_unloadable_deferred_tools(
+    turn_context: &TurnContext,
+    planned_tools: &mut PlannedTools,
+) {
+    if matches!(
+        effective_tool_mode(turn_context),
+        ToolMode::CodeMode | ToolMode::CodeModeOnly
+    ) {
+        return;
+    }
+
+    let search_enabled = search_tool_enabled(turn_context);
+    for runtime in &mut planned_tools.runtimes {
+        if runtime.exposure() != ToolExposure::Deferred {
+            continue;
+        }
+
+        let has_executable_loader = search_enabled && runtime.search_info().is_some();
+        if !has_executable_loader {
+            *runtime = override_tool_exposure(Arc::clone(runtime), ToolExposure::Direct);
+        }
+    }
 }
 
 fn apply_direct_model_only_namespace_overrides(
