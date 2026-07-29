@@ -184,27 +184,25 @@ def pause_aware_bounded_cancel(text: str) -> str:
 '''
     new = '''                Err(()) => {
                     let service_cancellation = service.cancellation_token();
-                    tokio::spawn(async move {
-                        let cancellation = handle.cancel(Some(format!(
-                            "timed out awaiting tools/call after {duration:.0?}"
-                        )));
-                        match tokio::time::timeout(Duration::from_millis(100), cancellation).await {
-                            Ok(Ok(())) => {}
-                            Ok(Err(error)) => {
-                                warn!(
-                                    error = %error,
-                                    "failed to cancel timed out MCP tools/call; closing transport"
-                                );
-                                service_cancellation.cancel();
-                            }
-                            Err(_) => {
-                                warn!(
-                                    "timed out delivering MCP tools/call cancellation; closing transport"
-                                );
-                                service_cancellation.cancel();
-                            }
+                    let cancellation = handle.cancel(Some(format!(
+                        "timed out awaiting tools/call after {duration:.0?}"
+                    )));
+                    match tokio::time::timeout(Duration::from_millis(100), cancellation).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            warn!(
+                                error = %error,
+                                "failed to cancel timed out MCP tools/call; closing transport"
+                            );
+                            service_cancellation.cancel();
                         }
-                    });
+                        Err(_) => {
+                            warn!(
+                                "timed out delivering MCP tools/call cancellation; closing transport"
+                            );
+                            service_cancellation.cancel();
+                        }
+                    }
                     return Err(ClientOperationError::Timeout {
                         label: "tools/call".to_string(),
                         duration,
