@@ -1,0 +1,179 @@
+name: Fieldwork 83 terminal certainty
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-83-terminal-certainty.yml
+      - codex-rs/core/src/tools/lifecycle.rs
+      - codex-rs/tools/src/tool_operation.rs
+      - codex-rs/tools/src/tool_operation_tests.rs
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out candidate branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-terminal-certainty
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Apply terminal-certainty source slice
+        shell: python
+        run: |
+          from pathlib import Path
+          from textwrap import dedent
+
+          lifecycle = Path('codex-rs/core/src/tools/lifecycle.rs')
+          text = lifecycle.read_text(encoding='utf-8')
+          old_mapping = dedent('''\
+          fn receipt_terminal_state(outcome: ToolCallOutcome) -> ToolOperationTerminalState {
+              match outcome {
+                  ToolCallOutcome::Completed { .. } => ToolOperationTerminalState::Completed,
+                  ToolCallOutcome::Blocked | ToolCallOutcome::Failed { .. } => {
+                      ToolOperationTerminalState::Failed
+                  }
+                  ToolCallOutcome::Aborted => ToolOperationTerminalState::Aborted,
+              }
+          }
+          ''')
+          new_mapping = dedent('''\
+          fn receipt_terminal_state(outcome: ToolCallOutcome) -> ToolOperationTerminalState {
+              match outcome {
+                  ToolCallOutcome::Completed { .. } => ToolOperationTerminalState::Completed,
+                  ToolCallOutcome::Blocked
+                  | ToolCallOutcome::Failed {
+                      handler_executed: false,
+                  } => ToolOperationTerminalState::Failed,
+                  ToolCallOutcome::Failed {
+                      handler_executed: true,
+                  }
+                  | ToolCallOutcome::Aborted => ToolOperationTerminalState::Ambiguous,
+              }
+          }
+          ''')
+          if text.count(old_mapping) != 1:
+              raise SystemExit('terminal mapping anchor mismatch')
+          text = text.replace(old_mapping, new_mapping, 1)
+
+          old_tests = dedent('''\
+              #[test]
+              fn maps_blocked_and_failed_to_failed() {
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Blocked),
+                      ToolOperationTerminalState::Failed
+                  );
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Failed {
+                          handler_executed: false,
+                      }),
+                      ToolOperationTerminalState::Failed
+                  );
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Failed {
+                          handler_executed: true,
+                      }),
+                      ToolOperationTerminalState::Failed
+                  );
+              }
+
+              #[test]
+              fn maps_cancellation_to_aborted() {
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Aborted),
+                      ToolOperationTerminalState::Aborted
+                  );
+              }
+          ''')
+          new_tests = dedent('''\
+              #[test]
+              fn maps_blocked_and_pre_execution_failure_to_failed() {
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Blocked),
+                      ToolOperationTerminalState::Failed
+                  );
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Failed {
+                          handler_executed: false,
+                      }),
+                      ToolOperationTerminalState::Failed
+                  );
+              }
+
+              #[test]
+              fn maps_handler_executed_failure_to_ambiguous() {
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Failed {
+                          handler_executed: true,
+                      }),
+                      ToolOperationTerminalState::Ambiguous
+                  );
+              }
+
+              #[test]
+              fn maps_unconfirmed_cancellation_to_ambiguous() {
+                  assert_eq!(
+                      receipt_terminal_state(ToolCallOutcome::Aborted),
+                      ToolOperationTerminalState::Ambiguous
+                  );
+              }
+          ''')
+          if text.count(old_tests) != 1:
+              raise SystemExit('terminal test anchor mismatch')
+          lifecycle.write_text(text.replace(old_tests, new_tests, 1), encoding='utf-8')
+
+          operation = Path('codex-rs/tools/src/tool_operation.rs')
+          text = operation.read_text(encoding='utf-8')
+          aborted_ready = '                        | ToolOperationTerminalState::Aborted\n'
+          if text.count(aborted_ready) != 1:
+              raise SystemExit('aborted readiness anchor mismatch')
+          operation.write_text(text.replace(aborted_ready, '', 1), encoding='utf-8')
+
+          tests = Path('codex-rs/tools/src/tool_operation_tests.rs')
+          text = tests.read_text(encoding='utf-8')
+          addition = dedent('''\
+
+          #[test]
+          fn aborted_potential_mutation_requires_reconciliation_before_compaction() {
+              let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+              receipt.record_terminal_outcome(ToolOperationTerminalState::Aborted);
+              receipt.record_result_persisted();
+
+              assert!(!receipt.is_compaction_ready());
+          }
+          ''')
+          if 'aborted_potential_mutation_requires_reconciliation_before_compaction' in text:
+              raise SystemExit('aborted readiness test already exists')
+          tests.write_text(text + addition, encoding='utf-8')
+
+          Path('.github/workflows/fieldwork-83-terminal-certainty.yml').unlink()
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Format and run focused tests
+        run: |
+          rustfmt --edition 2024 codex-rs/core/src/tools/lifecycle.rs codex-rs/tools/src/tool_operation.rs codex-rs/tools/src/tool_operation_tests.rs
+          rustfmt --edition 2024 --check codex-rs/core/src/tools/lifecycle.rs codex-rs/tools/src/tool_operation.rs codex-rs/tools/src/tool_operation_tests.rs
+          cd codex-rs
+          cargo test -p codex-tools --locked
+          cargo test -p codex-core --lib tools::lifecycle::tests --locked
+      - name: Verify patch hygiene
+        run: git diff --check
+      - name: Publish validated source-only head
+        run: |
+          git add -A
+          git commit -m 'core: treat uncertain tool outcomes as ambiguous'
+          git push origin HEAD:fieldwork/83-terminal-certainty
