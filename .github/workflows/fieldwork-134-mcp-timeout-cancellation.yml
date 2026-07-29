@@ -42,9 +42,10 @@ jobs:
         run: |
           set -euo pipefail
           rm .fieldwork-134-apply.py
+          rm .fieldwork-134-trigger
           rm .github/workflows/fieldwork-134-mcp-timeout-cancellation.yml
           git add codex-rs/rmcp-client/src/lib.rs codex-rs/rmcp-client/src/rmcp_client.rs
-          git add -u .fieldwork-134-apply.py .github/workflows/fieldwork-134-mcp-timeout-cancellation.yml
+          git add -u .fieldwork-134-apply.py .fieldwork-134-trigger .github/workflows/fieldwork-134-mcp-timeout-cancellation.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "fieldwork: cancel timed out MCP tool requests"
