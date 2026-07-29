@@ -313,4 +313,4 @@ impl TurnState {
 
 #[cfg(test)]
 #[path = "turn_operation_receipt_tests.rs"]
-mod tests;
+mod turn_operation_receipt_tests;
