@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 
 use codex_tools::ToolOperationEffect;
 use codex_tools::ToolOperationReceipt;
@@ -20,21 +19,20 @@ pub(crate) struct ToolOperationReceipts {
 
 impl ToolOperationReceipts {
     pub(crate) fn begin(&mut self, call_id: String, effect: ToolOperationEffect) {
-        match self.receipts.entry(call_id) {
-            Entry::Occupied(mut entry) => {
-                let receipt = entry.get_mut();
-                receipt.effect = ToolOperationEffect::PotentialMutation;
-                receipt.record_terminal_outcome(ToolOperationTerminalState::Ambiguous);
-                receipt.record_result_ambiguous();
-            }
-            Entry::Vacant(entry) => {
-                if self.coverage_lost || self.receipts.len() >= MAX_RETAINED_TOOL_OPERATION_RECEIPTS {
-                    self.coverage_lost = true;
-                    return;
-                }
-                entry.insert(ToolOperationReceipt::pending(effect));
-            }
+        if let Some(receipt) = self.receipts.get_mut(&call_id) {
+            receipt.effect = ToolOperationEffect::PotentialMutation;
+            receipt.record_terminal_outcome(ToolOperationTerminalState::Ambiguous);
+            receipt.record_result_ambiguous();
+            return;
         }
+
+        if self.coverage_lost || self.receipts.len() >= MAX_RETAINED_TOOL_OPERATION_RECEIPTS {
+            self.coverage_lost = true;
+            return;
+        }
+
+        self.receipts
+            .insert(call_id, ToolOperationReceipt::pending(effect));
     }
 
     pub(crate) fn record_terminal(
