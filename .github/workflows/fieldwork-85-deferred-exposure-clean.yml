@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - fieldwork/85-deferred-exposure-clean
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-85-deferred-exposure-clean.yml
+      - codex-rs/core/src/tools/spec_plan.rs
+      - codex-rs/core/src/tools/spec_plan_tests.rs
 
 permissions:
   contents: write
