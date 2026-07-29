@@ -3,6 +3,7 @@
 Status: experiment in `teamleaderleo/codex#22`
 
 Source pin: `openai/codex@5989dcc470695fc3f25a7eb3e90c014ef56d7d2a`
+Exact owned base: `fieldwork/upstream-5989-base-clean`
 Dependency: `rmcp = 3.0.0`
 Fieldwork candidate: `teamleaderleo/fieldwork#134`
 Upstream contact: not authorized
@@ -207,7 +208,15 @@ Decision: potential SDK campaign, outside the current no-upstream scope.
 | --- | --- | --- | --- | --- |
 | Current Codex | no | no | yes | yes |
 | SDK-native timeout | expected yes | expected yes | no | SDK-dependent |
-| Pause-aware explicit cancel | expected yes | expected yes | yes | not yet; current patch awaits cancel |
+| Pause-aware explicit cancel | expected yes | expected yes | yes | not yet; current candidate awaits cancel |
+
+## Experiment mechanics checkpoint
+
+The first candidate run did not test behavior: both candidate files were truncated unified diffs and `git apply` rejected them as corrupt. That is a harness defect, not a candidate result.
+
+The branch now uses `fieldwork/patches/mcp-timeout/apply_candidate.py`, which transforms the exact pinned source using verified anchors for each candidate. Formatting and `git diff --check` run before behavior tests. The PR base was also recreated directly at `5989dcc470695fc3f25a7eb3e90c014ef56d7d2a` after the earlier base branch drifted.
+
+Do not compare candidate outcomes until a run passes source transformation and reaches all three behavior controls.
 
 ## Recommended direction before production code
 
