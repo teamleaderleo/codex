@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - .fieldwork-162-mcp-timeout-outcome
       - .github/fieldwork/162_apply_mcp_timeout_outcome.py
       - .github/workflows/fieldwork-162-mcp-timeout-outcome.yml
       - .github/workflows/fieldwork-162-mcp-timeout-outcome-pr.yml
