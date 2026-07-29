@@ -10,6 +10,7 @@ on:
       - .github/workflows/fieldwork-85-lite-prewarm-full-first-turn-pr.yml
       - codex-rs/core/src/client.rs
       - codex-rs/core/tests/suite/agent_websocket.rs
+      - codex-rs/core/tests/suite/client_websockets.rs
 
 permissions:
   contents: read
@@ -42,6 +43,7 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
           cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked
+          cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn --locked
           cargo test -p codex-core --test all responses_websocket_request_prewarm_reuses_connection --locked
       - name: Check patch hygiene
         run: git diff --check
