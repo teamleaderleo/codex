@@ -1,0 +1,247 @@
+name: Fieldwork 83 direct result transition tests
+
+on:
+  push:
+    branches:
+      - fieldwork/83-result-persistence-compaction-gate
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out candidate branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-result-persistence-compaction-gate
+          fetch-depth: 0
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Add production-path transition tests
+        shell: python
+        run: |
+          from pathlib import Path
+
+          turn = Path('codex-rs/core/src/session/turn.rs')
+          text = turn.read_text(encoding='utf-8')
+          old = '''                if let Some(call_id) = call_id {
+                      if result_persisted {
+                          sess.record_tool_operation_result_persisted(&call_id).await;
+                      } else {
+                          sess.record_tool_operation_result_ambiguous(&call_id).await;
+                      }
+                  }
+          '''
+          new = '''                record_direct_tool_result_persistence(
+                      sess.as_ref(),
+                      call_id.as_deref(),
+                      result_persisted,
+                  )
+                  .await;
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('direct result transition anchor mismatch')
+          text = text.replace(old, new, 1)
+
+          marker = '\nfn assign_missing_streamed_response_item_id('
+          helper = '''
+
+          async fn record_direct_tool_result_persistence(
+              sess: &Session,
+              call_id: Option<&str>,
+              result_persisted: bool,
+          ) {
+              let Some(call_id) = call_id else {
+                  return;
+              };
+              if result_persisted {
+                  sess.record_tool_operation_result_persisted(call_id).await;
+              } else {
+                  sess.record_tool_operation_result_ambiguous(call_id).await;
+              }
+          }
+          '''
+          if helper.strip() in text:
+              pass
+          elif text.count(marker) == 1:
+              text = text.replace(marker, helper + marker, 1)
+          else:
+              raise SystemExit('helper insertion anchor mismatch')
+          turn.write_text(text, encoding='utf-8')
+
+          tests = Path('codex-rs/core/src/session/turn_tests.rs')
+          text = tests.read_text(encoding='utf-8')
+          import_anchor = 'use codex_protocol::items::AgentMessageContent;\n'
+          imports = (
+              'use codex_protocol::items::AgentMessageContent;\n'
+              'use codex_tools::ToolOperationEffect;\n'
+              'use codex_tools::ToolOperationResultState;\n'
+              'use codex_tools::ToolOperationTerminalState;\n'
+          )
+          if 'use codex_tools::ToolOperationEffect;' not in text:
+              if text.count(import_anchor) != 1:
+                  raise SystemExit('test import anchor mismatch')
+              text = text.replace(import_anchor, imports, 1)
+
+          addition = r'''
+
+          fn direct_function_result(call_id: &str) -> ResponseInputItem {
+              ResponseInputItem::FunctionCallOutput {
+                  call_id: call_id.to_string(),
+                  output: codex_protocol::models::FunctionCallOutputPayload::from_text(
+                      "ok".to_string(),
+                  ),
+              }
+          }
+
+          #[tokio::test]
+          async fn direct_tool_result_persistence_marks_success_after_authoritative_append() {
+              let (session, _) = crate::session::tests::make_session_and_context().await;
+              session
+                  .begin_tool_operation_receipt(
+                      "call-success".to_string(),
+                      ToolOperationEffect::PotentialMutation,
+                  )
+                  .await;
+              session
+                  .record_tool_operation_terminal(
+                      "call-success",
+                      ToolOperationTerminalState::Completed,
+                  )
+                  .await;
+              let result = direct_function_result("call-success");
+
+              record_direct_tool_result_persistence(
+                  &session,
+                  response_input_tool_call_id(&result),
+                  true,
+              )
+              .await;
+
+              let receipt = session
+                  .tool_operation_receipt("call-success")
+                  .await
+                  .expect("receipt should exist");
+              assert_eq!(receipt.result_state, ToolOperationResultState::Persisted);
+              assert!(!session.has_unreconciled_potential_mutation().await);
+          }
+
+          #[tokio::test]
+          async fn direct_tool_result_persistence_marks_append_failure_ambiguous() {
+              let (session, _) = crate::session::tests::make_session_and_context().await;
+              session
+                  .begin_tool_operation_receipt(
+                      "call-failure".to_string(),
+                      ToolOperationEffect::PotentialMutation,
+                  )
+                  .await;
+              session
+                  .record_tool_operation_terminal(
+                      "call-failure",
+                      ToolOperationTerminalState::Completed,
+                  )
+                  .await;
+              let result = direct_function_result("call-failure");
+
+              record_direct_tool_result_persistence(
+                  &session,
+                  response_input_tool_call_id(&result),
+                  false,
+              )
+              .await;
+
+              let receipt = session
+                  .tool_operation_receipt("call-failure")
+                  .await
+                  .expect("receipt should exist");
+              assert_eq!(receipt.result_state, ToolOperationResultState::Ambiguous);
+              assert!(session.has_unreconciled_potential_mutation().await);
+          }
+
+          #[tokio::test]
+          async fn direct_tool_result_persistence_marks_duplicate_observation_ambiguous() {
+              let (session, _) = crate::session::tests::make_session_and_context().await;
+              session
+                  .begin_tool_operation_receipt(
+                      "call-duplicate".to_string(),
+                      ToolOperationEffect::PotentialMutation,
+                  )
+                  .await;
+              session
+                  .record_tool_operation_terminal(
+                      "call-duplicate",
+                      ToolOperationTerminalState::Completed,
+                  )
+                  .await;
+              let result = direct_function_result("call-duplicate");
+              let call_id = response_input_tool_call_id(&result);
+
+              record_direct_tool_result_persistence(&session, call_id, true).await;
+              record_direct_tool_result_persistence(&session, call_id, true).await;
+
+              let receipt = session
+                  .tool_operation_receipt("call-duplicate")
+                  .await
+                  .expect("receipt should exist");
+              assert_eq!(receipt.result_state, ToolOperationResultState::Ambiguous);
+              assert!(session.has_unreconciled_potential_mutation().await);
+          }
+
+          #[tokio::test]
+          async fn direct_tool_result_persistence_without_begin_stays_unreconciled() {
+              let (session, _) = crate::session::tests::make_session_and_context().await;
+              let result = direct_function_result("call-missing-begin");
+
+              record_direct_tool_result_persistence(
+                  &session,
+                  response_input_tool_call_id(&result),
+                  true,
+              )
+              .await;
+
+              let receipt = session
+                  .tool_operation_receipt("call-missing-begin")
+                  .await
+                  .expect("late result should create a conservative receipt");
+              assert_eq!(receipt.effect, ToolOperationEffect::PotentialMutation);
+              assert_eq!(
+                  receipt.terminal_state,
+                  ToolOperationTerminalState::Pending
+              );
+              assert_eq!(receipt.result_state, ToolOperationResultState::Persisted);
+              assert!(session.has_unreconciled_potential_mutation().await);
+          }
+          '''
+          if 'direct_tool_result_persistence_marks_success_after_authoritative_append' not in text:
+              text += addition
+          tests.write_text(text, encoding='utf-8')
+
+          Path('.github/workflows/fieldwork-83-result-transition-tests.yml').unlink()
+      - name: Remove unrelated formatting-only change
+        run: git checkout origin/main -- codex-rs/tools/src/tool_operation_tests.rs
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Format and run focused tests
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test -p codex-core --lib direct_tool_result_persistence --locked
+          cargo test -p codex-core --lib response_input_tool_call_id --locked
+          cargo test -p codex-core --lib tool_operation_receipts --locked
+      - name: Verify patch hygiene
+        run: git diff --check
+      - name: Commit validated source
+        run: |
+          git add -A
+          git commit -m 'core: test direct tool result receipt transitions'
+          git push origin HEAD:fieldwork/83-result-persistence-compaction-gate
