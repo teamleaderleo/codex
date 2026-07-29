@@ -14,7 +14,7 @@ def native_sdk_timeout(text: str) -> str:
     start = text.index(START)
     persist = text.index(PERSIST, start)
     old = text[start:persist]
-    if "run_service_operation(\"tools/call\", timeout" not in old:
+    if 'run_service_operation("tools/call", timeout' not in old:
         raise SystemExit("native candidate anchor no longer matches legacy call path")
     new = old.replace(
         START,
@@ -36,7 +36,7 @@ def pause_aware_explicit_cancel(text: str) -> str:
     start = text.index(START)
     next_method = text.index(NEXT_METHOD, start)
     old = text[start:next_method]
-    if "run_service_operation(\"tools/call\", timeout" not in old:
+    if 'run_service_operation("tools/call", timeout' not in old:
         raise SystemExit("pause-aware candidate anchor no longer matches legacy call path")
 
     new = '''        let requested_modern = self.protocol_mode == McpProtocolMode::V20260728;
@@ -165,16 +165,76 @@ def pause_aware_explicit_cancel(text: str) -> str:
     return text[:start] + new + text[next_method:]
 
 
+def pause_aware_bounded_cancel(text: str) -> str:
+    updated = pause_aware_explicit_cancel(text)
+    old = '''                Err(()) => {
+                    if let Err(error) = handle
+                        .cancel(Some(format!(
+                            "timed out awaiting tools/call after {duration:.0?}"
+                        )))
+                        .await
+                    {
+                        warn!(error = %error, "failed to cancel timed out MCP tools/call");
+                    }
+                    return Err(ClientOperationError::Timeout {
+                        label: "tools/call".to_string(),
+                        duration,
+                    });
+                }
+'''
+    new = '''                Err(()) => {
+                    let service_cancellation = service.cancellation_token();
+                    tokio::spawn(async move {
+                        let cancellation = handle.cancel(Some(format!(
+                            "timed out awaiting tools/call after {duration:.0?}"
+                        )));
+                        match tokio::time::timeout(Duration::from_millis(100), cancellation).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(error)) => {
+                                warn!(
+                                    error = %error,
+                                    "failed to cancel timed out MCP tools/call; closing transport"
+                                );
+                                service_cancellation.cancel();
+                            }
+                            Err(_) => {
+                                warn!(
+                                    "timed out delivering MCP tools/call cancellation; closing transport"
+                                );
+                                service_cancellation.cancel();
+                            }
+                        }
+                    });
+                    return Err(ClientOperationError::Timeout {
+                        label: "tools/call".to_string(),
+                        duration,
+                    });
+                }
+'''
+    if old not in updated:
+        raise SystemExit("bounded cancellation anchor no longer matches explicit candidate")
+    return updated.replace(old, new, 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("candidate", choices=["native-sdk-timeout", "pause-aware-explicit-cancel"])
+    parser.add_argument(
+        "candidate",
+        choices=[
+            "native-sdk-timeout",
+            "pause-aware-explicit-cancel",
+            "pause-aware-bounded-cancel",
+        ],
+    )
     args = parser.parse_args()
 
     text = TARGET.read_text(encoding="utf-8")
     if args.candidate == "native-sdk-timeout":
         updated = native_sdk_timeout(text)
-    else:
+    elif args.candidate == "pause-aware-explicit-cancel":
         updated = pause_aware_explicit_cancel(text)
+    else:
+        updated = pause_aware_bounded_cancel(text)
     TARGET.write_text(updated, encoding="utf-8")
 
 
