@@ -1,0 +1,70 @@
+name: Fieldwork 83 session receipt owner
+
+on:
+  push:
+    branches:
+      - fieldwork/83-session-receipt-owner
+
+permissions:
+  contents: write
+
+jobs:
+  attach-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-session-receipt-owner
+          fetch-depth: 0
+      - name: Attach owner to SessionState
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('codex-rs/core/src/state/session.rs')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'use super::AdditionalContextStore;\n',
+                  'use super::AdditionalContextStore;\nuse super::ToolOperationReceipts;\n',
+              ),
+              (
+                  '    pub(crate) history: ContextManager,\n    pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,\n',
+                  '    pub(crate) history: ContextManager,\n    pub(crate) tool_operation_receipts: ToolOperationReceipts,\n    pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,\n',
+              ),
+              (
+                  '            history,\n            latest_rate_limits: None,\n',
+                  '            history,\n            tool_operation_receipts: ToolOperationReceipts::default(),\n            latest_rate_limits: None,\n',
+              ),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'anchor mismatch: {old!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding='utf-8')
+          Path('.github/workflows/fieldwork-83-session-receipt-owner.yml').unlink()
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Format and test
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test -p codex-core --lib tool_operation_receipts --locked
+      - name: Verify diff hygiene
+        run: git diff --check
+      - name: Commit validated source
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git add codex-rs/core/src/state .github/workflows/fieldwork-83-session-receipt-owner.yml
+          git commit -m 'core: own bounded tool operation receipts in session state'
+          git push origin HEAD:fieldwork/83-session-receipt-owner
