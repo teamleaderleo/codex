@@ -2,6 +2,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use codex_core_plugins::PluginCommandAttribution;
+use codex_protocol::exec_output::ExecToolCallOutput;
+use codex_protocol::exec_output::StreamOutput;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
+use codex_protocol::protocol::ExecCommandSource;
+use codex_protocol::protocol::ExecOutputStream;
+use codex_utils_path_uri::PathUri;
 use tokio::sync::Mutex;
 use tokio::time::Duration;
 use tokio::time::Instant;
@@ -18,14 +26,6 @@ use crate::tools::events::ToolEventCtx;
 use crate::tools::events::ToolEventFailure;
 use crate::tools::events::ToolEventStage;
 use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
-use codex_core_plugins::PluginCommandAttribution;
-use codex_protocol::exec_output::ExecToolCallOutput;
-use codex_protocol::exec_output::StreamOutput;
-use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
-use codex_protocol::protocol::ExecCommandSource;
-use codex_protocol::protocol::ExecOutputStream;
-use codex_utils_path_uri::PathUri;
 
 pub(crate) const TRAILING_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 
@@ -390,10 +390,6 @@ async fn resolve_aggregated_output(
     transcript: &Arc<Mutex<HeadTailBuffer>>,
     fallback: String,
 ) -> String {
-    if !fallback.is_empty() {
-        return fallback;
-    }
-
     let guard = transcript.lock().await;
     if guard.retained_bytes() == 0 {
         return fallback;
