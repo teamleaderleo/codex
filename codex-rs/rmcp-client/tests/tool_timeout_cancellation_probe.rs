@@ -140,7 +140,7 @@ async fn initialized_client(state: ProbeState) -> anyhow::Result<RmcpClient> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn codex_timeout_drops_the_wait_but_does_not_cancel_the_legacy_request() -> anyhow::Result<()> {
+async fn codex_tool_timeout_cancellation_probe() -> anyhow::Result<()> {
     let state = ProbeState::default();
     let client = initialized_client(state.clone()).await?;
 
@@ -152,23 +152,28 @@ async fn codex_timeout_drops_the_wait_but_does_not_cancel_the_legacy_request() -
             Some(CLIENT_TIMEOUT),
         )
         .await
-        .expect_err("the Codex-owned timeout should expire first");
+        .expect_err("the configured timeout should expire first");
 
     assert!(
-        error.to_string().contains("timed out awaiting tools/call"),
+        error.to_string().contains("timed out awaiting tools/call")
+            || error.to_string().contains("request timeout"),
         "unexpected timeout error: {error:#}"
     );
 
     tokio::time::timeout(Duration::from_secs(1), state.started.notified()).await?;
     tokio::time::sleep(SERVER_WORK + Duration::from_millis(40)).await;
 
-    assert!(
-        !state.cancellation_observed.load(Ordering::SeqCst),
-        "current Codex timeout unexpectedly sent MCP cancellation"
+    let expect_cancellation = std::env::var_os("FIELDWORK_EXPECT_MCP_CANCEL").is_some();
+    let cancellation_observed = state.cancellation_observed.load(Ordering::SeqCst);
+    let side_effect_completed = state.side_effect_completed.load(Ordering::SeqCst);
+
+    assert_eq!(
+        cancellation_observed, expect_cancellation,
+        "cancellation observation did not match the selected implementation"
     );
-    assert!(
-        state.side_effect_completed.load(Ordering::SeqCst),
-        "the server-side operation should continue after the caller timeout"
+    assert_eq!(
+        side_effect_completed, !expect_cancellation,
+        "server-side completion did not match the selected implementation"
     );
 
     let follow_up = client
