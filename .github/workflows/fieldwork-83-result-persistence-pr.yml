@@ -30,7 +30,7 @@ jobs:
           components: rustfmt
       - name: Apply reviewed source slice
         run: |
-          sed -n "/          git apply <<'PATCH'/,/          PATCH/p" \
+          sed -n "/          git apply --recount <<'PATCH'/,/          PATCH/p" \
             .github/workflows/fieldwork-83-result-persistence.yml \
             | sed 's/^          //' > /tmp/fieldwork-83-apply.sh
           bash /tmp/fieldwork-83-apply.sh
