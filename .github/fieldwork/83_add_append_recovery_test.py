@@ -2,8 +2,24 @@ from pathlib import Path
 
 path = Path("codex-rs/core/src/session/turn_tests.rs")
 text = path.read_text(encoding="utf-8")
-test_name = "direct_tool_result_persistence_recovers_after_one_shot_append_failure"
 
+success_anchor = '''    assert!(has_persisted_function_result(
+        &persisted.items,
+        "call-success",
+    ));
+'''
+success_replacement = success_anchor + '''    assert!(has_in_memory_function_result(
+        session.clone_history().await.raw_items(),
+        "call-success",
+    ));
+'''
+if text.count(success_anchor) != 1:
+    raise SystemExit(
+        f"expected one successful append assertion anchor, found {text.count(success_anchor)}"
+    )
+text = text.replace(success_anchor, success_replacement, 1)
+
+test_name = "direct_tool_result_persistence_recovers_after_one_shot_append_failure"
 if test_name in text:
     raise SystemExit(f"{test_name} already exists")
 
@@ -89,6 +105,16 @@ async fn direct_tool_result_persistence_recovers_after_one_shot_append_failure()
     ));
     assert!(has_persisted_function_result(
         &persisted.items,
+        "call-after-failure",
+    ));
+
+    let in_memory = session.clone_history().await;
+    assert!(has_in_memory_function_result(
+        in_memory.raw_items(),
+        "call-first-failure",
+    ));
+    assert!(has_in_memory_function_result(
+        in_memory.raw_items(),
         "call-after-failure",
     ));
 }
