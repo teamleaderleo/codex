@@ -94,6 +94,23 @@ fn repeated_begin_marks_call_identity_ambiguous() {
 }
 
 #[test]
+fn repeated_begin_escalates_read_only_identity_to_potential_mutation() {
+    let mut state = TurnState::default();
+    state.begin_tool_operation("call-1".to_string(), ToolOperationEffect::ReadOnly);
+    state.begin_tool_operation(
+        "call-1".to_string(),
+        ToolOperationEffect::PotentialMutation,
+    );
+
+    let receipt = state
+        .tool_operation_receipt("call-1")
+        .expect("receipt should exist");
+    assert_eq!(receipt.effect, ToolOperationEffect::PotentialMutation);
+    assert_eq!(receipt.result_state, ToolOperationResultState::Ambiguous);
+    assert!(state.has_unreconciled_potential_mutation());
+}
+
+#[test]
 fn missing_begin_defaults_to_potential_mutation() {
     let mut state = TurnState::default();
     state.record_tool_operation_terminal("late-call", ToolOperationTerminalState::Completed);
