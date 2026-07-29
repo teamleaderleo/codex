@@ -4,10 +4,7 @@ use codex_tools::ToolOperationResultState;
 #[test]
 fn potential_mutation_reconciles_after_terminal_and_result() {
     let mut receipts = ToolOperationReceipts::default();
-    receipts.begin(
-        "call-1".to_string(),
-        ToolOperationEffect::PotentialMutation,
-    );
+    receipts.begin("call-1".to_string(), ToolOperationEffect::PotentialMutation);
     assert!(receipts.has_unreconciled_potential_mutation());
 
     receipts.record_terminal("call-1", ToolOperationTerminalState::Completed);
@@ -20,10 +17,7 @@ fn potential_mutation_reconciles_after_terminal_and_result() {
 #[test]
 fn persistence_before_terminal_reconciles_when_terminal_arrives() {
     let mut receipts = ToolOperationReceipts::default();
-    receipts.begin(
-        "call-1".to_string(),
-        ToolOperationEffect::PotentialMutation,
-    );
+    receipts.begin("call-1".to_string(), ToolOperationEffect::PotentialMutation);
     receipts.record_result_persisted("call-1");
     assert!(receipts.has_unreconciled_potential_mutation());
 
@@ -34,10 +28,7 @@ fn persistence_before_terminal_reconciles_when_terminal_arrives() {
 #[test]
 fn duplicate_persistence_remains_ambiguous() {
     let mut receipts = ToolOperationReceipts::default();
-    receipts.begin(
-        "call-1".to_string(),
-        ToolOperationEffect::PotentialMutation,
-    );
+    receipts.begin("call-1".to_string(), ToolOperationEffect::PotentialMutation);
     receipts.record_terminal("call-1", ToolOperationTerminalState::Completed);
     receipts.record_result_persisted("call-1");
     receipts.record_result_persisted("call-1");
@@ -50,10 +41,7 @@ fn duplicate_persistence_remains_ambiguous() {
 #[test]
 fn conflicting_terminal_outcomes_remain_ambiguous() {
     let mut receipts = ToolOperationReceipts::default();
-    receipts.begin(
-        "call-1".to_string(),
-        ToolOperationEffect::PotentialMutation,
-    );
+    receipts.begin("call-1".to_string(), ToolOperationEffect::PotentialMutation);
     receipts.record_terminal("call-1", ToolOperationTerminalState::Completed);
     receipts.record_terminal("call-1", ToolOperationTerminalState::Aborted);
     receipts.record_result_persisted("call-1");
@@ -70,10 +58,7 @@ fn conflicting_terminal_outcomes_remain_ambiguous() {
 fn repeated_begin_escalates_effect_and_marks_identity_ambiguous() {
     let mut receipts = ToolOperationReceipts::default();
     receipts.begin("call-1".to_string(), ToolOperationEffect::ReadOnly);
-    receipts.begin(
-        "call-1".to_string(),
-        ToolOperationEffect::PotentialMutation,
-    );
+    receipts.begin("call-1".to_string(), ToolOperationEffect::PotentialMutation);
 
     let receipt = receipts.receipt("call-1").expect("receipt should exist");
     assert_eq!(receipt.effect, ToolOperationEffect::PotentialMutation);
@@ -107,10 +92,7 @@ fn read_only_receipt_does_not_block_mutation_preflight() {
 #[test]
 fn explicit_persistence_failure_stays_ambiguous() {
     let mut receipts = ToolOperationReceipts::default();
-    receipts.begin(
-        "call-1".to_string(),
-        ToolOperationEffect::PotentialMutation,
-    );
+    receipts.begin("call-1".to_string(), ToolOperationEffect::PotentialMutation);
     receipts.record_terminal("call-1", ToolOperationTerminalState::Completed);
     receipts.record_result_ambiguous("call-1");
 

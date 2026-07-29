@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 
 use super::AdditionalContextStore;
+use super::ToolOperationReceipts;
 use super::auto_compact_window::AutoCompactWindow;
 use super::auto_compact_window::AutoCompactWindowIds;
 use super::auto_compact_window::AutoCompactWindowSnapshot;
@@ -26,6 +27,7 @@ use codex_utils_output_truncation::TruncationPolicy;
 pub(crate) struct SessionState {
     pub(crate) session_configuration: SessionConfiguration,
     pub(crate) history: ContextManager,
+    pub(crate) tool_operation_receipts: ToolOperationReceipts,
     pub(crate) latest_rate_limits: Option<RateLimitSnapshot>,
     pub(crate) server_reasoning_included: bool,
     pub(crate) mcp_dependency_prompted: HashSet<String>,
@@ -63,6 +65,7 @@ impl SessionState {
         Self {
             session_configuration,
             history,
+            tool_operation_receipts: ToolOperationReceipts::default(),
             latest_rate_limits: None,
             server_reasoning_included: false,
             mcp_dependency_prompted: HashSet::new(),
