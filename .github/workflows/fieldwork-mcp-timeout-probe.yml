@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Run Codex rmcp timeout ownership probe
+      - name: Run Codex rmcp timeout ownership probes
         working-directory: codex-rs
-        run: cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
+        run: |
+          cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_elicitation_probe -- --nocapture
