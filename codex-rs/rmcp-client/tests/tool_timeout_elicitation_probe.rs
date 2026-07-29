@@ -135,7 +135,7 @@ fn init_params() -> InitializeRequestParams {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn user_elicitation_time_is_not_charged_to_the_tool_timeout() -> anyhow::Result<()> {
+async fn tool_timeout_elicitation_pause_probe() -> anyhow::Result<()> {
     let state = ElicitationProbeState::default();
     let client = RmcpClient::new_in_process_client(Arc::new(ElicitationProbeTransportFactory {
         server: ElicitationProbeServer {
@@ -169,16 +169,32 @@ async fn user_elicitation_time_is_not_charged_to_the_tool_timeout() -> anyhow::R
             /*meta*/ None,
             Some(TOOL_TIMEOUT),
         )
-        .await?;
+        .await;
 
-    assert_eq!(result.content.len(), 1);
-    assert!(
-        !state.cancellation_observed.load(Ordering::SeqCst),
-        "the current Codex timeout should pause during elicitation"
+    let expect_elicitation_timeout =
+        std::env::var_os("FIELDWORK_EXPECT_ELICITATION_TIMEOUT").is_some();
+    if expect_elicitation_timeout {
+        let error = result.expect_err("the SDK-native deadline should include elicitation time");
+        assert!(
+            error.to_string().contains("request timeout")
+                || error.to_string().contains("timed out awaiting tools/call"),
+            "unexpected timeout error: {error:#}"
+        );
+        tokio::time::sleep(USER_RESPONSE_DELAY + Duration::from_millis(40)).await;
+    } else {
+        let result = result?;
+        assert_eq!(result.content.len(), 1);
+    }
+
+    assert_eq!(
+        state.cancellation_observed.load(Ordering::SeqCst),
+        expect_elicitation_timeout,
+        "cancellation observation did not match the selected timeout design"
     );
-    assert!(
+    assert_eq!(
         state.side_effect_completed.load(Ordering::SeqCst),
-        "the approved tool should complete after the user response"
+        !expect_elicitation_timeout,
+        "approved side-effect completion did not match the selected timeout design"
     );
 
     client.shutdown().await;
