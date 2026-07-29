@@ -1,0 +1,594 @@
+from pathlib import Path
+from textwrap import dedent
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected one anchor, found {count}")
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def replace_first(path: str, old: str, new: str) -> None:
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    if old not in text:
+        raise SystemExit(f"{path}: first anchor missing")
+    target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def replace_last(path: str, old: str, new: str) -> None:
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    index = text.rfind(old)
+    if index < 0:
+        raise SystemExit(f"{path}: last anchor missing")
+    target.write_text(text[:index] + new + text[index + len(old) :], encoding="utf-8")
+
+
+lifecycle = "codex-rs/core/src/tools/lifecycle.rs"
+replace_once(
+    lifecycle,
+    dedent(
+        """\
+        pub(crate) async fn notify_tool_finish(invocation: &ToolInvocation, outcome: ToolCallOutcome) {
+            notify_tool_finish_parts(
+                invocation.session.as_ref(),
+                invocation.turn.as_ref(),
+                invocation.call_id.as_str(),
+                &invocation.tool_name,
+                invocation.source.clone(),
+                outcome,
+            )
+            .await;
+        }
+        """
+    ),
+    dedent(
+        """\
+        pub(crate) async fn notify_tool_finish(invocation: &ToolInvocation, outcome: ToolCallOutcome) {
+            notify_tool_finish_parts(
+                invocation.session.as_ref(),
+                invocation.turn.as_ref(),
+                invocation.call_id.as_str(),
+                &invocation.tool_name,
+                invocation.source.clone(),
+                outcome,
+                None,
+            )
+            .await;
+        }
+        """
+    ),
+)
+replace_once(
+    lifecycle,
+    dedent(
+        """\
+        pub(crate) async fn notify_tool_aborted(
+            session: &Session,
+            turn: &TurnContext,
+            call_id: &str,
+            tool_name: &ToolName,
+            source: ToolCallSource,
+        ) {
+            notify_tool_finish_parts(
+                session,
+                turn,
+                call_id,
+                tool_name,
+                source,
+                ToolCallOutcome::Aborted,
+            )
+            .await;
+        }
+        """
+    ),
+    dedent(
+        """\
+        pub(crate) async fn notify_tool_aborted(
+            session: &Session,
+            turn: &TurnContext,
+            call_id: &str,
+            tool_name: &ToolName,
+            source: ToolCallSource,
+            execution_started: bool,
+        ) {
+            let terminal_state = if execution_started {
+                ToolOperationTerminalState::Ambiguous
+            } else {
+                ToolOperationTerminalState::NotStarted
+            };
+            notify_tool_finish_parts(
+                session,
+                turn,
+                call_id,
+                tool_name,
+                source,
+                ToolCallOutcome::Aborted,
+                Some(terminal_state),
+            )
+            .await;
+        }
+        """
+    ),
+)
+replace_once(
+    lifecycle,
+    dedent(
+        """\
+        async fn notify_tool_finish_parts(
+            session: &Session,
+            turn: &TurnContext,
+            call_id: &str,
+            tool_name: &ToolName,
+            source: ToolCallSource,
+            outcome: ToolCallOutcome,
+        ) {
+            session
+                .record_tool_operation_terminal(call_id, receipt_terminal_state(outcome))
+                .await;
+        """
+    ),
+    dedent(
+        """\
+        async fn notify_tool_finish_parts(
+            session: &Session,
+            turn: &TurnContext,
+            call_id: &str,
+            tool_name: &ToolName,
+            source: ToolCallSource,
+            outcome: ToolCallOutcome,
+            terminal_state_override: Option<ToolOperationTerminalState>,
+        ) {
+            session
+                .record_tool_operation_terminal(
+                    call_id,
+                    terminal_state_override.unwrap_or_else(|| receipt_terminal_state(outcome)),
+                )
+                .await;
+        """
+    ),
+)
+replace_once(
+    lifecycle,
+    dedent(
+        """\
+        fn receipt_terminal_state(outcome: ToolCallOutcome) -> ToolOperationTerminalState {
+            match outcome {
+                ToolCallOutcome::Completed { .. } => ToolOperationTerminalState::Completed,
+                ToolCallOutcome::Blocked | ToolCallOutcome::Failed { .. } => {
+                    ToolOperationTerminalState::Failed
+                }
+                ToolCallOutcome::Aborted => ToolOperationTerminalState::Aborted,
+            }
+        }
+        """
+    ),
+    dedent(
+        """\
+        fn receipt_terminal_state(outcome: ToolCallOutcome) -> ToolOperationTerminalState {
+            match outcome {
+                ToolCallOutcome::Completed { .. } => ToolOperationTerminalState::Completed,
+                ToolCallOutcome::Blocked
+                | ToolCallOutcome::Failed {
+                    handler_executed: false,
+                } => ToolOperationTerminalState::Failed,
+                ToolCallOutcome::Failed {
+                    handler_executed: true,
+                }
+                | ToolCallOutcome::Aborted => ToolOperationTerminalState::Ambiguous,
+            }
+        }
+        """
+    ),
+)
+replace_once(
+    lifecycle,
+    dedent(
+        """\
+            #[test]
+            fn maps_blocked_and_failed_to_failed() {
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Blocked),
+                    ToolOperationTerminalState::Failed
+                );
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Failed {
+                        handler_executed: false,
+                    }),
+                    ToolOperationTerminalState::Failed
+                );
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Failed {
+                        handler_executed: true,
+                    }),
+                    ToolOperationTerminalState::Failed
+                );
+            }
+
+            #[test]
+            fn maps_cancellation_to_aborted() {
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Aborted),
+                    ToolOperationTerminalState::Aborted
+                );
+            }
+        """
+    ),
+    dedent(
+        """\
+            #[test]
+            fn maps_blocked_and_pre_execution_failure_to_failed() {
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Blocked),
+                    ToolOperationTerminalState::Failed
+                );
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Failed {
+                        handler_executed: false,
+                    }),
+                    ToolOperationTerminalState::Failed
+                );
+            }
+
+            #[test]
+            fn maps_handler_executed_failure_to_ambiguous() {
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Failed {
+                        handler_executed: true,
+                    }),
+                    ToolOperationTerminalState::Ambiguous
+                );
+            }
+
+            #[test]
+            fn maps_unqualified_cancellation_to_ambiguous() {
+                assert_eq!(
+                    receipt_terminal_state(ToolCallOutcome::Aborted),
+                    ToolOperationTerminalState::Ambiguous
+                );
+            }
+        """
+    ),
+)
+
+parallel = "codex-rs/core/src/tools/parallel.rs"
+replace_once(
+    parallel,
+    dedent(
+        """\
+        use super::*;
+        use std::time::Duration;
+        """
+    ),
+    dedent(
+        """\
+        use super::*;
+        use std::sync::atomic::AtomicUsize;
+        use std::time::Duration;
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+        let execution_started_at = tool_call_timing_guard
+            .as_ref()
+            .map(|timing| Arc::clone(&timing.execution_started_at));
+        let abort_session = Arc::clone(&session);
+        """
+    ),
+    dedent(
+        """\
+        let execution_started_at = tool_call_timing_guard
+            .as_ref()
+            .map(|timing| Arc::clone(&timing.execution_started_at));
+        let execution_started = Arc::new(AtomicBool::new(false));
+        let dispatch_execution_started = Arc::clone(&execution_started);
+        let abort_execution_started = Arc::clone(&execution_started);
+        let abort_session = Arc::clone(&session);
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+                // Admission through the parallel-execution gate marks the end
+                // of dispatch waiting and the start of handler execution.
+                if let Some(execution_started_at) = execution_started_at {
+        """
+    ),
+    dedent(
+        """\
+                // Admission through the parallel-execution gate marks the end
+                // of dispatch waiting and the start of handler execution.
+                dispatch_execution_started.store(true, Ordering::Release);
+                if let Some(execution_started_at) = execution_started_at {
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+                let response = Self::aborted_response(&call, secs);
+                notify_tool_aborted(
+                    abort_session.as_ref(),
+                    abort_turn.as_ref(),
+                    call.call_id.as_str(),
+                    &call.tool_name,
+                    abort_source,
+                )
+        """
+    ),
+    dedent(
+        """\
+                let response = Self::aborted_response(&call, secs);
+                let execution_started = abort_execution_started.load(Ordering::Acquire);
+                notify_tool_aborted(
+                    abort_session.as_ref(),
+                    abort_turn.as_ref(),
+                    call.call_id.as_str(),
+                    &call.tool_name,
+                    abort_source,
+                    execution_started,
+                )
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+        struct ImmediateHandler {
+            tool_name: codex_tools::ToolName,
+        }
+        """
+    ),
+    dedent(
+        """\
+        struct ImmediateHandler {
+            tool_name: codex_tools::ToolName,
+            executions: Arc<AtomicUsize>,
+        }
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+            fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+                Box::pin(async {
+        """
+    ),
+    dedent(
+        """\
+            fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+                self.executions.fetch_add(1, Ordering::AcqRel);
+                Box::pin(async {
+        """
+    ),
+)
+constructor = dedent(
+    """\
+    let handler = Arc::new(ImmediateHandler {
+        tool_name: tool_name.clone(),
+    }) as Arc<dyn CoreToolRuntime>;
+    """
+)
+replace_first(
+    parallel,
+    constructor,
+    dedent(
+        """\
+        let executions = Arc::new(AtomicUsize::new(0));
+        let handler = Arc::new(ImmediateHandler {
+            tool_name: tool_name.clone(),
+            executions: Arc::clone(&executions),
+        }) as Arc<dyn CoreToolRuntime>;
+        """
+    ),
+)
+replace_once(
+    parallel,
+    constructor,
+    dedent(
+        """\
+        let handler = Arc::new(ImmediateHandler {
+            tool_name: tool_name.clone(),
+            executions: Arc::new(AtomicUsize::new(0)),
+        }) as Arc<dyn CoreToolRuntime>;
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+        let runtime = ToolCallRuntime::new(router, session, step_context, tracker);
+        let execution_gate = Arc::clone(&runtime.parallel_execution);
+        """
+    ),
+    dedent(
+        """\
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+        let runtime = ToolCallRuntime::new(
+            router,
+            Arc::clone(&session),
+            step_context,
+            tracker,
+        );
+        let execution_gate = Arc::clone(&runtime.parallel_execution);
+        """
+    ),
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+        execution_gate_task
+            .await
+            .expect("execution gate task should join");
+
+        Ok(())
+        """
+    ),
+    dedent(
+        """\
+        execution_gate_task
+            .await
+            .expect("execution gate task should join");
+        assert_eq!(
+            executions.load(Ordering::Acquire),
+            0,
+            "handler must not execute when cancellation wins before gate admission"
+        );
+        let receipt = session
+            .tool_operation_receipt("call-1")
+            .await
+            .expect("pre-admission cancellation should record a receipt");
+        assert_eq!(
+            receipt.terminal_state,
+            codex_tools::ToolOperationTerminalState::NotStarted
+        );
+
+        Ok(())
+        """
+    ),
+)
+replace_last(
+    parallel,
+    "        let runtime = ToolCallRuntime::new(router, session, step_context, tracker);\n",
+    "        let receipt_session = Arc::clone(&session);\n"
+    "        let runtime = ToolCallRuntime::new(router, session, step_context, tracker);\n",
+)
+replace_once(
+    parallel,
+    dedent(
+        """\
+        assert_eq!(vec![ToolCallOutcome::Aborted], actual);
+
+        Ok(())
+        """
+    ),
+    dedent(
+        """\
+        assert_eq!(vec![ToolCallOutcome::Aborted], actual);
+        let receipt = receipt_session
+            .tool_operation_receipt("call-1")
+            .await
+            .expect("post-admission cancellation should record a receipt");
+        assert_eq!(
+            receipt.terminal_state,
+            codex_tools::ToolOperationTerminalState::Ambiguous
+        );
+
+        Ok(())
+        """
+    ),
+)
+
+operation = "codex-rs/tools/src/tool_operation.rs"
+replace_once(
+    operation,
+    "pub const TOOL_OPERATION_RECEIPT_VERSION: u8 = 1;\n",
+    "pub const TOOL_OPERATION_RECEIPT_VERSION: u8 = 2;\n",
+)
+replace_once(
+    operation,
+    dedent(
+        """\
+        pub enum ToolOperationTerminalState {
+            #[default]
+            Pending,
+            Completed,
+        """
+    ),
+    dedent(
+        """\
+        pub enum ToolOperationTerminalState {
+            #[default]
+            Pending,
+            NotStarted,
+            Completed,
+        """
+    ),
+)
+replace_once(
+    operation,
+    dedent(
+        """\
+                ToolOperationTerminalState::Pending,
+                ToolOperationTerminalState::Completed
+                | ToolOperationTerminalState::Failed
+                | ToolOperationTerminalState::Aborted,
+        """
+    ),
+    dedent(
+        """\
+                ToolOperationTerminalState::Pending,
+                ToolOperationTerminalState::NotStarted
+                | ToolOperationTerminalState::Completed
+                | ToolOperationTerminalState::Failed
+                | ToolOperationTerminalState::Aborted,
+        """
+    ),
+)
+replace_once(
+    operation,
+    dedent(
+        """\
+                    matches!(
+                        self.terminal_state,
+                        ToolOperationTerminalState::Completed
+                            | ToolOperationTerminalState::Failed
+                            | ToolOperationTerminalState::Aborted
+                    ) && self.result_state == ToolOperationResultState::Persisted
+        """
+    ),
+    dedent(
+        """\
+                    matches!(
+                        self.terminal_state,
+                        ToolOperationTerminalState::NotStarted
+                            | ToolOperationTerminalState::Completed
+                            | ToolOperationTerminalState::Failed
+                    ) && self.result_state == ToolOperationResultState::Persisted
+        """
+    ),
+)
+
+tests = Path("codex-rs/tools/src/tool_operation_tests.rs")
+text = tests.read_text(encoding="utf-8")
+addition = dedent(
+    """\
+
+    #[test]
+    fn not_started_potential_mutation_is_ready_after_result_persistence() {
+        let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+        receipt.record_terminal_outcome(ToolOperationTerminalState::NotStarted);
+        receipt.record_result_persisted();
+
+        assert!(receipt.is_compaction_ready());
+    }
+
+    #[test]
+    fn aborted_potential_mutation_requires_reconciliation_before_compaction() {
+        let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+        receipt.record_terminal_outcome(ToolOperationTerminalState::Aborted);
+        receipt.record_result_persisted();
+
+        assert!(!receipt.is_compaction_ready());
+    }
+    """
+)
+if "not_started_potential_mutation_is_ready_after_result_persistence" in text:
+    raise SystemExit("not-started readiness test already exists")
+tests.write_text(text + addition, encoding="utf-8")
