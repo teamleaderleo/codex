@@ -262,7 +262,8 @@ impl TurnState {
     }
 
     /// Starts one turn-scoped receipt when the corresponding call item is durable.
-    /// A repeated call identity becomes ambiguous instead of replacing prior state.
+    /// A repeated call identity becomes conservatively mutating and ambiguous instead of
+    /// replacing prior state.
     pub(crate) fn begin_tool_operation(
         &mut self,
         call_id: String,
@@ -273,7 +274,9 @@ impl TurnState {
                 entry.insert(ToolOperationReceipt::pending(effect));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().record_result_ambiguous();
+                let receipt = entry.get_mut();
+                receipt.effect = ToolOperationEffect::PotentialMutation;
+                receipt.record_result_ambiguous();
             }
         }
     }
