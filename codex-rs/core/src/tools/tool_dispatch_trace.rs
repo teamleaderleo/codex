@@ -9,12 +9,15 @@ use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::operation_receipt::OperationEffect;
+use crate::tools::operation_receipt::OperationTerminalReceipt;
 use codex_rollout_trace::ExecutionStatus;
 use codex_rollout_trace::ToolDispatchInvocation;
 use codex_rollout_trace::ToolDispatchPayload;
 use codex_rollout_trace::ToolDispatchRequester;
 use codex_rollout_trace::ToolDispatchResult;
 use codex_rollout_trace::ToolDispatchTraceContext;
+use tracing::trace;
 
 /// Keeps registry early-return paths paired with trace end events.
 pub(crate) struct ToolDispatchTrace {
@@ -38,6 +41,18 @@ impl ToolDispatchTrace {
         payload: &ToolPayload,
         result: &dyn ToolOutput,
     ) {
+        let operation_receipt = OperationTerminalReceipt::at_dispatch_returned(
+            OperationEffect::from_read_only_hint(None),
+        );
+        trace!(
+            operation_effect = ?operation_receipt.effect,
+            handler_state = ?operation_receipt.handler_state,
+            identity_state = ?operation_receipt.identity_state,
+            compaction_disposition = ?operation_receipt.compaction_disposition(),
+            automatic_replay = ?operation_receipt.automatic_replay_disposition(),
+            "recorded privacy-safe operation receipt at tool dispatch"
+        );
+
         if !self.context.is_enabled() {
             return;
         }
@@ -55,6 +70,17 @@ impl ToolDispatchTrace {
     }
 
     pub(crate) fn record_failed(&self, error: &FunctionCallError) {
+        let operation_receipt = OperationTerminalReceipt::at_dispatch_failed(
+            OperationEffect::from_read_only_hint(None),
+        );
+        trace!(
+            operation_effect = ?operation_receipt.effect,
+            handler_state = ?operation_receipt.handler_state,
+            identity_state = ?operation_receipt.identity_state,
+            compaction_disposition = ?operation_receipt.compaction_disposition(),
+            automatic_replay = ?operation_receipt.automatic_replay_disposition(),
+            "recorded privacy-safe failed operation receipt at tool dispatch"
+        );
         self.context.record_failed(error);
     }
 }
