@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 enum CallFamily {
     Function,
     Custom,
+    ToolSearch,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -16,6 +17,8 @@ pub(crate) enum CompactionIdentityDefectKind {
     MissingOutput,
     OrphanOutput,
     OutputBeforeCall,
+    UnpairableCall,
+    UnpairableOutput,
 }
 
 impl CompactionIdentityDefectKind {
@@ -26,6 +29,8 @@ impl CompactionIdentityDefectKind {
             Self::MissingOutput => "missing_output",
             Self::OrphanOutput => "orphan_output",
             Self::OutputBeforeCall => "output_before_call",
+            Self::UnpairableCall => "unpairable_call",
+            Self::UnpairableOutput => "unpairable_output",
         }
     }
 }
@@ -48,6 +53,10 @@ struct CallKey {
 /// outputs in a cloned model-facing view. Compaction must inspect raw history
 /// instead so it never converts an ambiguous execution state into an authoritative
 /// replacement checkpoint.
+///
+/// Legacy local-shell calls and client-executed tool-search items without a call ID
+/// are reported as unpairable. Server-executed tool-search items remain outside
+/// client call/result pairing because the provider owns their terminal identity.
 pub(crate) fn validate_compaction_call_output_identity(items: &[ResponseItem]) -> CodexResult<()> {
     let defects = compaction_identity_defects(items);
     if defects.is_empty() {
@@ -73,56 +82,67 @@ pub(crate) fn validate_compaction_call_output_identity(items: &[ResponseItem]) -
 fn compaction_identity_defects(items: &[ResponseItem]) -> Vec<CompactionIdentityDefect> {
     let mut calls = BTreeMap::<CallKey, Vec<usize>>::new();
     let mut outputs = BTreeMap::<CallKey, Vec<usize>>::new();
+    let mut defects = Vec::new();
 
     for (index, item) in items.iter().enumerate() {
         match item {
             ResponseItem::FunctionCall { call_id, .. } => {
-                calls
-                    .entry(CallKey {
-                        family: CallFamily::Function,
-                        call_id: call_id.clone(),
-                    })
-                    .or_default()
-                    .push(index);
+                record_position(&mut calls, CallFamily::Function, call_id, index);
             }
             ResponseItem::LocalShellCall {
                 call_id: Some(call_id),
                 ..
             } => {
-                calls
-                    .entry(CallKey {
-                        family: CallFamily::Function,
-                        call_id: call_id.clone(),
-                    })
-                    .or_default()
-                    .push(index);
+                record_position(&mut calls, CallFamily::Function, call_id, index);
+            }
+            ResponseItem::LocalShellCall { call_id: None, .. } => {
+                defects.push(CompactionIdentityDefect {
+                    family: CallFamily::Function,
+                    kind: CompactionIdentityDefectKind::UnpairableCall,
+                });
             }
             ResponseItem::FunctionCallOutput { call_id, .. } => {
-                outputs
-                    .entry(CallKey {
-                        family: CallFamily::Function,
-                        call_id: call_id.clone(),
-                    })
-                    .or_default()
-                    .push(index);
+                record_position(&mut outputs, CallFamily::Function, call_id, index);
             }
             ResponseItem::CustomToolCall { call_id, .. } => {
-                calls
-                    .entry(CallKey {
-                        family: CallFamily::Custom,
-                        call_id: call_id.clone(),
-                    })
-                    .or_default()
-                    .push(index);
+                record_position(&mut calls, CallFamily::Custom, call_id, index);
             }
             ResponseItem::CustomToolCallOutput { call_id, .. } => {
-                outputs
-                    .entry(CallKey {
-                        family: CallFamily::Custom,
-                        call_id: call_id.clone(),
-                    })
-                    .or_default()
-                    .push(index);
+                record_position(&mut outputs, CallFamily::Custom, call_id, index);
+            }
+            ResponseItem::ToolSearchCall {
+                call_id: Some(call_id),
+                execution,
+                ..
+            } if execution == "client" => {
+                record_position(&mut calls, CallFamily::ToolSearch, call_id, index);
+            }
+            ResponseItem::ToolSearchCall {
+                call_id: None,
+                execution,
+                ..
+            } if execution == "client" => {
+                defects.push(CompactionIdentityDefect {
+                    family: CallFamily::ToolSearch,
+                    kind: CompactionIdentityDefectKind::UnpairableCall,
+                });
+            }
+            ResponseItem::ToolSearchOutput {
+                call_id: Some(call_id),
+                execution,
+                ..
+            } if execution == "client" => {
+                record_position(&mut outputs, CallFamily::ToolSearch, call_id, index);
+            }
+            ResponseItem::ToolSearchOutput {
+                call_id: None,
+                execution,
+                ..
+            } if execution == "client" => {
+                defects.push(CompactionIdentityDefect {
+                    family: CallFamily::ToolSearch,
+                    kind: CompactionIdentityDefectKind::UnpairableOutput,
+                });
             }
             _ => {}
         }
@@ -136,7 +156,6 @@ fn compaction_identity_defects(items: &[ResponseItem]) -> Vec<CompactionIdentity
     keys.sort();
     keys.dedup();
 
-    let mut defects = Vec::new();
     for key in keys {
         let call_positions = calls.get(&key).map(Vec::as_slice).unwrap_or_default();
         let output_positions = outputs.get(&key).map(Vec::as_slice).unwrap_or_default();
@@ -175,6 +194,21 @@ fn compaction_identity_defects(items: &[ResponseItem]) -> Vec<CompactionIdentity
         }
     }
     defects
+}
+
+fn record_position(
+    positions: &mut BTreeMap<CallKey, Vec<usize>>,
+    family: CallFamily,
+    call_id: &str,
+    index: usize,
+) {
+    positions
+        .entry(CallKey {
+            family,
+            call_id: call_id.to_string(),
+        })
+        .or_default()
+        .push(index);
 }
 
 #[cfg(test)]
