@@ -1,0 +1,339 @@
+name: fieldwork-83-malformed-tool-search-identity
+
+on:
+  push:
+    branches:
+      - fieldwork/83-malformed-tool-search-identity
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-malformed-tool-search-identity
+  cancel-in-progress: true
+
+jobs:
+  test-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out candidate branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-malformed-tool-search-identity
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Apply reviewed source candidate
+        shell: python
+        run: |
+          from pathlib import Path
+          from textwrap import dedent
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one anchor, found {count}')
+              target.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          source = 'codex-rs/core/src/stream_events_utils.rs'
+          replace_once(
+              source,
+              'use codex_rollout::state_db;\nuse codex_utils_stream_parser::strip_proposed_plan_blocks;\n',
+              'use codex_rollout::state_db;\nuse codex_tools::ToolOperationEffect;\nuse codex_tools::ToolOperationTerminalState;\nuse codex_utils_stream_parser::strip_proposed_plan_blocks;\n',
+          )
+
+          replace_once(
+              source,
+              dedent('''\
+              pub(crate) struct HandleOutputCtx {
+                  pub sess: Arc<Session>,
+                  pub turn_context: Arc<TurnContext>,
+                  pub turn_store: Arc<ExtensionData>,
+                  pub tool_runtime: ToolCallRuntime,
+                  pub cancellation_token: CancellationToken,
+              }
+              '''),
+              dedent('''\
+              pub(crate) struct HandleOutputCtx {
+                  pub sess: Arc<Session>,
+                  pub turn_context: Arc<TurnContext>,
+                  pub turn_store: Arc<ExtensionData>,
+                  pub tool_runtime: ToolCallRuntime,
+                  pub cancellation_token: CancellationToken,
+              }
+
+              struct PreDispatchToolFailure {
+                  response: ResponseInputItem,
+                  receipt_call_id: Option<String>,
+              }
+
+              fn pre_dispatch_tool_failure_response(
+                  item: &ResponseItem,
+                  message: String,
+              ) -> PreDispatchToolFailure {
+                  if let ResponseItem::ToolSearchCall {
+                      call_id: Some(call_id),
+                      execution,
+                      ..
+                  } = item
+                      && execution == "client"
+                  {
+                      warn!(
+                          error = %message,
+                          "client tool_search request rejected before dispatch"
+                      );
+                      return PreDispatchToolFailure {
+                          response: ResponseInputItem::ToolSearchOutput {
+                              call_id: call_id.clone(),
+                              status: "failed".to_string(),
+                              execution: "client".to_string(),
+                              tools: Vec::new(),
+                          },
+                          receipt_call_id: Some(call_id.clone()),
+                      };
+                  }
+
+                  warn!(error = %message, "tool request rejected before dispatch without pairable identity");
+                  PreDispatchToolFailure {
+                      response: ResponseInputItem::FunctionCallOutput {
+                          call_id: String::new(),
+                          output: FunctionCallOutputPayload {
+                              body: FunctionCallOutputBody::Text(message),
+                              ..Default::default()
+                          },
+                      },
+                      receipt_call_id: None,
+                  }
+              }
+              '''),
+          )
+
+          replace_once(
+              source,
+              dedent('''\
+                      // The tool request should be answered directly (or was denied); push that response into the transcript.
+                      Err(FunctionCallError::RespondToModel(message)) => {
+                          let response = ResponseInputItem::FunctionCallOutput {
+                              call_id: String::new(),
+                              output: FunctionCallOutputPayload {
+                                  body: FunctionCallOutputBody::Text(message),
+                                  ..Default::default()
+                              },
+                          };
+                          record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
+                              .await;
+                          if let Some(response_item) = response_input_to_response_item(&response) {
+                              ctx.sess
+                                  .record_conversation_items(
+                                      &ctx.turn_context,
+                                      std::slice::from_ref(&response_item),
+                                  )
+                                  .await;
+                          }
+
+                          output.needs_follow_up = true;
+                      }
+              '''),
+              dedent('''\
+                      // The tool request should be answered directly (or was denied); push that response into the transcript.
+                      Err(FunctionCallError::RespondToModel(message)) => {
+                          let PreDispatchToolFailure {
+                              response,
+                              receipt_call_id,
+                          } = pre_dispatch_tool_failure_response(&item, message);
+                          record_completed_response_item(ctx.sess.as_ref(), ctx.turn_context.as_ref(), &item)
+                              .await;
+
+                          if let Some(call_id) = receipt_call_id.as_deref() {
+                              ctx.sess
+                                  .begin_tool_operation_receipt(
+                                      call_id.to_string(),
+                                      ToolOperationEffect::PotentialMutation,
+                                  )
+                                  .await;
+                              ctx.sess
+                                  .record_tool_operation_terminal(
+                                      call_id,
+                                      ToolOperationTerminalState::Failed,
+                                  )
+                                  .await;
+                          }
+
+                          if let Some(response_item) = response_input_to_response_item(&response) {
+                              let result_persisted = ctx
+                                  .sess
+                                  .record_conversation_items(
+                                      &ctx.turn_context,
+                                      std::slice::from_ref(&response_item),
+                                  )
+                                  .await;
+                              if let Some(call_id) = receipt_call_id.as_deref() {
+                                  if result_persisted {
+                                      ctx.sess
+                                          .record_tool_operation_result_persisted(call_id)
+                                          .await;
+                                  } else {
+                                      ctx.sess
+                                          .record_tool_operation_result_ambiguous(call_id)
+                                          .await;
+                                  }
+                              }
+                              mark_thread_memory_mode_polluted_if_external_context(
+                                  ctx.sess.as_ref(),
+                                  ctx.turn_context.as_ref(),
+                                  &response_item,
+                              )
+                              .await;
+                          }
+
+                          output.needs_follow_up = true;
+                      }
+              '''),
+          )
+
+          tests = 'codex-rs/core/src/stream_events_utils_tests.rs'
+          replace_once(
+              tests,
+              'use crate::session::step_context::StepContext;\n',
+              'use crate::context_manager::validate_compaction_call_output_identity;\nuse crate::session::step_context::StepContext;\n',
+          )
+          replace_once(
+              tests,
+              'use codex_protocol::models::MessagePhase;\nuse codex_protocol::models::ResponseItem;\n',
+              'use codex_protocol::models::MessagePhase;\nuse codex_protocol::models::ResponseItem;\nuse codex_tools::ToolOperationEffect;\nuse codex_tools::ToolOperationResultState;\nuse codex_tools::ToolOperationTerminalState;\n',
+          )
+          replace_once(
+              tests,
+              dedent('''\
+              #[tokio::test]
+              async fn handle_non_tool_response_item_strips_citations_from_assistant_message() {
+              '''),
+              dedent('''\
+              #[tokio::test]
+              async fn malformed_client_tool_search_preserves_identity_and_receipt() {
+                  let (session, turn_context) = make_session_and_context().await;
+                  let session = Arc::new(session);
+                  let turn_context = Arc::new(turn_context);
+                  let step_context = StepContext::for_test(Arc::clone(&turn_context));
+                  let router = Arc::new(ToolRouter::from_context(
+                      step_context.turn.as_ref(),
+                      &step_context.environments,
+                      step_context.mcp.as_ref(),
+                      crate::tools::router::ToolRouterParams {
+                          tool_suggest_candidates: None,
+                          tool_runtimes: Vec::new(),
+                          extension_tool_executors: Vec::new(),
+                          wait_for_environment_tool_config: None,
+                          dynamic_tools: turn_context.dynamic_tools.as_slice(),
+                      },
+                      &Default::default(),
+                  ));
+                  let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+                  let tool_runtime = ToolCallRuntime::new(
+                      router,
+                      Arc::clone(&session),
+                      step_context,
+                      tracker,
+                  );
+                  let call_id = "malformed-search";
+                  let item = ResponseItem::ToolSearchCall {
+                      id: None,
+                      call_id: Some(call_id.to_string()),
+                      status: None,
+                      execution: "client".to_string(),
+                      arguments: serde_json::json!({"query": 42}),
+                      internal_chat_message_metadata_passthrough: None,
+                  };
+                  let mut ctx = HandleOutputCtx {
+                      sess: Arc::clone(&session),
+                      turn_context: Arc::clone(&turn_context),
+                      turn_store: Arc::new(ExtensionData::new(turn_context.sub_id.clone())),
+                      tool_runtime,
+                      cancellation_token: CancellationToken::new(),
+                  };
+
+                  let output = handle_output_item_done(&mut ctx, item, /*previously_active_item*/ None)
+                      .await
+                      .expect("malformed tool search should become a failed paired result");
+
+                  assert!(output.needs_follow_up);
+                  assert!(output.tool_future.is_none());
+
+                  let history = session.clone_history().await;
+                  let raw_items = history.raw_items();
+                  assert!(raw_items.iter().any(|item| {
+                      matches!(
+                          item,
+                          ResponseItem::ToolSearchCall {
+                              call_id: Some(observed_call_id),
+                              execution,
+                              ..
+                          } if observed_call_id == call_id && execution == "client"
+                      )
+                  }));
+                  assert!(raw_items.iter().any(|item| {
+                      matches!(
+                          item,
+                          ResponseItem::ToolSearchOutput {
+                              call_id: Some(observed_call_id),
+                              status,
+                              execution,
+                              tools,
+                              ..
+                          } if observed_call_id == call_id
+                              && status == "failed"
+                              && execution == "client"
+                              && tools.is_empty()
+                      )
+                  }));
+                  assert!(!raw_items.iter().any(|item| {
+                      matches!(
+                          item,
+                          ResponseItem::FunctionCallOutput { call_id, .. } if call_id.is_empty()
+                      )
+                  }));
+                  validate_compaction_call_output_identity(raw_items)
+                      .expect("malformed tool search should retain one pairable identity");
+
+                  let receipt = session
+                      .tool_operation_receipt(call_id)
+                      .await
+                      .expect("pre-dispatch failure receipt should exist");
+                  assert_eq!(receipt.effect, ToolOperationEffect::PotentialMutation);
+                  assert_eq!(receipt.terminal_state, ToolOperationTerminalState::Failed);
+                  assert_eq!(receipt.result_state, ToolOperationResultState::Persisted);
+                  assert!(!session.has_unreconciled_potential_mutation().await);
+              }
+
+              #[tokio::test]
+              async fn handle_non_tool_response_item_strips_citations_from_assistant_message() {
+              '''),
+          )
+
+          Path('.github/workflows/fieldwork-83-malformed-tool-search-identity.yml').unlink()
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Format and run focused tests
+        run: |
+          rustfmt --edition 2024 codex-rs/core/src/stream_events_utils.rs codex-rs/core/src/stream_events_utils_tests.rs
+          rustfmt --edition 2024 --check codex-rs/core/src/stream_events_utils.rs codex-rs/core/src/stream_events_utils_tests.rs
+          cd codex-rs
+          cargo test -p codex-core --lib malformed_client_tool_search_preserves_identity_and_receipt --locked
+          cargo test -p codex-core --lib compaction_identity --locked
+      - name: Verify patch hygiene
+        run: git diff --check
+      - name: Publish validated source-only head
+        run: |
+          git add -A
+          git commit -m 'core: preserve malformed tool search identity'
+          git push origin HEAD:fieldwork/83-malformed-tool-search-identity
