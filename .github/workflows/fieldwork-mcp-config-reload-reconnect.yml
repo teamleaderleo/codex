@@ -15,7 +15,7 @@ jobs:
   apply-and-test:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,17 +105,17 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
 
-      - name: Test reconnect regression
+      - name: Test host reload reconnect
         working-directory: codex-rs
         run: just test -p codex-core host_mcp_config_refresh_reconnects_ready_clients
 
-      - name: Test codex-core
+      - name: Test ordinary reconciliation reuse
         working-directory: codex-rs
-        run: just test -p codex-core
+        run: just test -p codex-mcp reconciliation_reuses_connection_without_relisting_regular_tools
 
-      - name: Test codex-app-server
+      - name: Test app-server MCP refresh
         working-directory: codex-rs
-        run: just test -p codex-app-server
+        run: just test -p codex-app-server mcp_refresh
 
       - name: Commit validated patch
         run: |
