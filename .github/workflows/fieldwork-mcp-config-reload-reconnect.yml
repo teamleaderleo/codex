@@ -22,19 +22,19 @@ jobs:
           ref: fieldwork/31-mcp-config-reload-reconnect
           fetch-depth: 0
 
-      - name: Apply bounded source patch
+      - name: Apply bounded source patch and regression
         shell: python
         run: |
           from pathlib import Path
 
-          path = Path("codex-rs/core/src/codex_thread.rs")
-          text = path.read_text(encoding="utf-8")
-          old = '''    /// Refresh MCP configuration and managed requirements without reloading unrelated settings.
+          thread_path = Path("codex-rs/core/src/codex_thread.rs")
+          thread_text = thread_path.read_text(encoding="utf-8")
+          old_thread = '''    /// Refresh MCP configuration and managed requirements without reloading unrelated settings.
               pub async fn refresh_mcp_config(&self, next_config: crate::config::Config) {
                   self.session.refresh_mcp_config(next_config).await;
               }
           '''
-          new = '''    /// Refresh MCP configuration and managed requirements without reloading unrelated settings.
+          new_thread = '''    /// Refresh MCP configuration and managed requirements without reloading unrelated settings.
               ///
               /// A host-requested MCP config reload is an explicit freshness boundary. Request fresh
               /// connections before publishing the new config so a stable endpoint cannot retain its
@@ -47,17 +47,64 @@ jobs:
                   self.session.refresh_mcp_config(next_config).await;
               }
           '''
-          if old not in text:
+          if old_thread not in thread_text:
               raise SystemExit("target refresh_mcp_config snippet was not found exactly")
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          thread_path.write_text(thread_text.replace(old_thread, new_thread, 1), encoding="utf-8")
+
+          test_path = Path("codex-rs/core/tests/suite/mcp_tool_exposure.rs")
+          test_text = test_path.read_text(encoding="utf-8")
+          anchor = '''#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+          async fn out_of_band_resource_read_reconciles_the_published_mcp_runtime() -> Result<()> {
+          '''
+          regression = '''#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+          async fn host_mcp_config_refresh_reconnects_ready_clients() -> Result<()> {
+              skip_if_no_network!(Ok(()));
+
+              let server = responses::start_mock_server().await;
+              let (apps_server, startup_control) =
+                  AppsTestServer::mount_with_startup_control(&server).await?;
+              let test = search_capable_apps_builder(apps_server.chatgpt_base_url.clone())
+                  .build(&server)
+                  .await?;
+              wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+
+              let initial_attempts = startup_control.initialize_attempts();
+              assert!(initial_attempts > 0);
+
+              test.codex.refresh_mcp_config(test.config.clone()).await;
+
+              tokio::time::timeout(Duration::from_secs(5), async {
+                  while startup_control.initialize_attempts() <= initial_attempts {
+                      tokio::time::sleep(Duration::from_millis(10)).await;
+                  }
+              })
+              .await
+              .expect("host MCP config refresh should reconnect the ready client");
+              assert_eq!(startup_control.initialize_attempts(), initial_attempts + 1);
+              Ok(())
+          }
+
+          #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+          async fn out_of_band_resource_read_reconciles_the_published_mcp_runtime() -> Result<()> {
+          '''
+          if anchor not in test_text:
+              raise SystemExit("MCP integration-test anchor was not found exactly")
+          test_path.write_text(test_text.replace(anchor, regression, 1), encoding="utf-8")
+
           Path(".github/workflows/fieldwork-mcp-config-reload-reconnect.yml").unlink()
 
       - name: Install just
         run: cargo install just --locked
 
-      - name: Format
+      - name: Format Rust
         working-directory: codex-rs
-        run: just fmt
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+
+      - name: Test reconnect regression
+        working-directory: codex-rs
+        run: just test -p codex-core host_mcp_config_refresh_reconnects_ready_clients
 
       - name: Test codex-core
         working-directory: codex-rs
@@ -71,6 +118,6 @@ jobs:
         run: |
           git config user.name "fieldwork-ci"
           git config user.email "fieldwork-ci@users.noreply.github.com"
-          git add codex-rs/core/src/codex_thread.rs .github/workflows/fieldwork-mcp-config-reload-reconnect.yml
+          git add codex-rs/core/src/codex_thread.rs codex-rs/core/tests/suite/mcp_tool_exposure.rs .github/workflows/fieldwork-mcp-config-reload-reconnect.yml
           git commit -m "fix(mcp): reconnect on host config reload"
           git push origin HEAD:fieldwork/31-mcp-config-reload-reconnect
