@@ -40,3 +40,18 @@ jobs:
         run: |
           cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_elicitation_probe -- --nocapture
+
+  pause-aware-explicit-cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply pause-aware explicit cancellation candidate
+        run: git apply fieldwork/patches/mcp-timeout/pause-aware-explicit-cancel.patch
+      - name: Run candidate behavior controls
+        working-directory: codex-rs
+        env:
+          FIELDWORK_EXPECT_MCP_CANCEL: "1"
+        run: |
+          cargo test -p codex-rmcp-client --test tool_timeout_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_elicitation_probe -- --nocapture
