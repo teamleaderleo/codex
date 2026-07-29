@@ -20,6 +20,10 @@ jobs:
         with:
           ref: fieldwork/83-canonical-session-receipts
           fetch-depth: 0
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
       - name: Remove superseded turn owner
         run: |
           if [ -f codex-rs/core/src/state/turn_operation_receipt_tests.rs ]; then
@@ -69,8 +73,6 @@ jobs:
         run: git diff --check
       - name: Commit validated replacement
         run: |
-          git config user.name fieldwork-ci
-          git config user.email fieldwork-ci@users.noreply.github.com
           git add codex-rs/core/src/state .github/workflows/fieldwork-83-canonical-session-receipts.yml
           git commit -m 'core: replace turn receipts with canonical session owner'
           git push origin HEAD:fieldwork/83-canonical-session-receipts
