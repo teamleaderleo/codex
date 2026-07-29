@@ -10,6 +10,7 @@ on:
       - .github/fieldwork/83_add_commit_error_control.py
       - .github/workflows/fieldwork-83-direct-append-evidence.yml
       - .github/workflows/fieldwork-83-direct-append-evidence-pr.yml
+      - .github/workflows/fieldwork-83-direct-append-evidence-cancel.yml
       - .github/workflows/fieldwork-83-direct-append-commit-error.yml
       - .github/workflows/fieldwork-83-direct-append-commit-error-v2.yml
       - codex-rs/thread-store/src/in_memory.rs
@@ -76,6 +77,7 @@ jobs:
           rm -f .github/fieldwork/83_add_commit_error_control.py
           rm -f .github/workflows/fieldwork-83-direct-append-evidence.yml
           rm -f .github/workflows/fieldwork-83-direct-append-evidence-pr.yml
+          rm -f .github/workflows/fieldwork-83-direct-append-evidence-cancel.yml
           rm -f .github/workflows/fieldwork-83-direct-append-commit-error.yml
           rm -f .github/workflows/fieldwork-83-direct-append-commit-error-v2.yml
           rmdir .github/fieldwork 2>/dev/null || true
