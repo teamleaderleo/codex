@@ -12,12 +12,6 @@ def replace(path: str, old: str, new: str, count: int = 1) -> None:
     file.write_text(text.replace(old, new))
 
 
-replace(
-    "codex-rs/core/src/unified_exec/head_tail_buffer.rs",
-    "#[derive(Debug)]",
-    "#[derive(Clone, Debug)]",
-)
-
 process = "codex-rs/core/src/unified_exec/process.rs"
 replace(
     process,
@@ -52,7 +46,7 @@ replace(
 replace(
     process,
     "    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        output_tx: broadcast::Sender<Vec<u8>>,",
-    "    async fn record_output_chunk(\n        output_buffer: &OutputBuffer,\n        completion_buffer: &OutputBuffer,\n        chunk: &[u8],\n    ) {\n        output_buffer.lock().await.push_chunk(chunk.to_vec());\n        completion_buffer\n            .lock()\n            .await\n            .push_chunk(chunk.to_vec());\n    }\n\n    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        completion_buffer: OutputBuffer,\n        output_tx: broadcast::Sender<Vec<u8>>,",
+    "    async fn record_output_chunk(\n        output_buffer: &OutputBuffer,\n        completion_buffer: &OutputBuffer,\n        chunk: &[u8],\n    ) {\n        completion_buffer\n            .lock()\n            .await\n            .push_chunk(chunk.to_vec());\n        output_buffer.lock().await.push_chunk(chunk.to_vec());\n    }\n\n    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        completion_buffer: OutputBuffer,\n        output_tx: broadcast::Sender<Vec<u8>>,",
 )
 replace(
     process,
@@ -75,7 +69,7 @@ watcher = "codex-rs/core/src/unified_exec/async_watcher.rs"
 replace(
     watcher,
     "/// Spawn a background task that continuously reads from the PTY, appends to the\n/// shared transcript, and emits ExecCommandOutputDelta events on UTF‑8\n/// boundaries.",
-    "/// Spawn a background task that emits best-effort ExecCommandOutputDelta events\n/// on UTF-8 boundaries. Before signaling that output is drained, replace the\n/// event-side transcript with the producer-owned authoritative transcript.",
+    "/// Spawn a background task that emits best-effort ExecCommandOutputDelta events\n/// on UTF-8 boundaries. Before signaling that output is drained, transfer the\n/// producer-owned authoritative transcript to the command completion path.",
 )
 replace(
     watcher,
@@ -90,12 +84,28 @@ replace(
 replace(
     watcher,
     "async fn process_chunk(\n",
-    "async fn reconcile_transcript(\n    transcript: &Arc<Mutex<HeadTailBuffer>>,\n    completion_buffer: &Arc<Mutex<HeadTailBuffer>>,\n) {\n    let authoritative = completion_buffer.lock().await.clone();\n    *transcript.lock().await = authoritative;\n}\n\nasync fn process_chunk(\n",
+    "async fn reconcile_transcript(\n    transcript: &Arc<Mutex<HeadTailBuffer>>,\n    completion_buffer: &Arc<Mutex<HeadTailBuffer>>,\n) {\n    let authoritative = completion_buffer.lock().await.drain();\n    *transcript.lock().await = authoritative;\n}\n\nasync fn process_chunk(\n",
+)
+replace(
+    watcher,
+    "                        &mut pending,\n                        &transcript,\n                        &call_id,",
+    "                        &mut pending,\n                        &call_id,",
+    count=2,
+)
+replace(
+    watcher,
+    "async fn process_chunk(\n    pending: &mut Vec<u8>,\n    transcript: &Arc<Mutex<HeadTailBuffer>>,\n    call_id: &str,",
+    "async fn process_chunk(\n    pending: &mut Vec<u8>,\n    call_id: &str,",
+)
+replace(
+    watcher,
+    "        {\n            let mut guard = transcript.lock().await;\n            guard.push_chunk(prefix.to_vec());\n        }\n\n        if *emitted_deltas >= MAX_EXEC_OUTPUT_DELTAS_PER_CALL {",
+    "        if *emitted_deltas >= MAX_EXEC_OUTPUT_DELTAS_PER_CALL {",
 )
 replace(
     watcher,
     "/// Emit an ExecCommandEnd event for a unified exec session, using the transcript\n/// as the primary source of aggregated_output and falling back to the provided\n/// text when the transcript is empty.",
-    "/// Emit an ExecCommandEnd event for a unified exec session. A non-empty fallback\n/// is the authoritative output collected by the synchronous command path;\n/// background completions use the reconciled producer-owned transcript.",
+    "/// Emit an ExecCommandEnd event for a unified exec session. A non-empty fallback\n/// is the authoritative output collected by the synchronous command path;\n/// background completions use the producer-owned transcript transferred at close.",
 )
 replace(
     watcher,
@@ -207,11 +217,15 @@ async fn reconcile_transcript_replaces_partial_stream_with_authoritative_output(
             transcript.lock().await.push_chunk(chunk);
         }
     }
+    let expected = completion_buffer
+        .lock()
+        .await
+        .to_bytes_with_omission_marker();
 
     reconcile_transcript(&transcript, &completion_buffer).await;
-    let actual = transcript.lock().await.clone();
-    let expected = completion_buffer.lock().await.clone();
+    let actual = transcript.lock().await.to_bytes_with_omission_marker();
     assert_eq!(actual, expected);
+    assert_eq!(completion_buffer.lock().await.total_bytes(), 0);
 }
 
 #[tokio::test]
