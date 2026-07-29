@@ -1,3 +1,4 @@
+use super::TOOL_OPERATION_RECEIPT_VERSION;
 use super::ToolOperationEffect;
 use super::ToolOperationReceipt;
 use super::ToolOperationResultState;
@@ -14,7 +15,7 @@ fn potential_mutation_becomes_compaction_ready_after_terminal_result_persistence
     assert_eq!(
         receipt,
         ToolOperationReceipt {
-            version: 1,
+            version: TOOL_OPERATION_RECEIPT_VERSION,
             effect: ToolOperationEffect::PotentialMutation,
             terminal_state: ToolOperationTerminalState::Completed,
             result_state: ToolOperationResultState::Persisted,
