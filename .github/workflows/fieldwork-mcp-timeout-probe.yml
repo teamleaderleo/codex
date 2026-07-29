@@ -31,6 +31,7 @@ jobs:
           cargo test -p codex-rmcp-client --test tool_timeout_modern_http_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_cancel_delivery_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_ignored_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_concurrent_request_probe -- --nocapture
 
   native-sdk-timeout:
     runs-on: ubuntu-latest
@@ -56,6 +57,7 @@ jobs:
           cargo test -p codex-rmcp-client --test tool_timeout_modern_http_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_cancel_delivery_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_ignored_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_concurrent_request_probe -- --nocapture
 
   pause-aware-explicit-cancel:
     runs-on: ubuntu-latest
@@ -80,6 +82,7 @@ jobs:
           cargo test -p codex-rmcp-client --test tool_timeout_modern_http_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_cancel_delivery_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_ignored_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_concurrent_request_probe -- --nocapture
 
   pause-aware-bounded-cancel:
     runs-on: ubuntu-latest
@@ -104,3 +107,4 @@ jobs:
           cargo test -p codex-rmcp-client --test tool_timeout_modern_http_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_cancel_delivery_probe -- --nocapture
           cargo test -p codex-rmcp-client --test tool_timeout_ignored_cancellation_probe -- --nocapture
+          cargo test -p codex-rmcp-client --test tool_timeout_concurrent_request_probe -- --nocapture
