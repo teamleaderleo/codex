@@ -1,0 +1,47 @@
+name: fieldwork-85-lite-prewarm-full-first-turn-pr
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+      - .github/workflows/fieldwork-85-lite-prewarm-full-first-turn.yml
+      - .github/workflows/fieldwork-85-lite-prewarm-full-first-turn-pr.yml
+      - codex-rs/core/src/client.rs
+      - codex-rs/core/tests/suite/agent_websocket.rs
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Apply reviewed source candidate when staged
+        run: |
+          if test -f .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py; then
+            python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+          fi
+      - name: Format and validate
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked
+          cargo test -p codex-core --test all responses_websocket_request_prewarm_reuses_connection --locked
+      - name: Check patch hygiene
+        run: git diff --check
