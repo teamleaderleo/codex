@@ -1,7 +1,9 @@
+mod compaction_identity;
 mod history;
 mod normalize;
 pub(crate) mod updates;
 
+pub(crate) use compaction_identity::validate_compaction_call_output_identity;
 pub(crate) use history::ContextManager;
 pub(crate) use history::estimate_item_token_count;
 pub(crate) use history::is_user_turn_boundary;
