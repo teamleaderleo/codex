@@ -36,7 +36,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Apply SDK-native timeout candidate
-        run: git apply fieldwork/patches/mcp-timeout/native-sdk-timeout.patch
+        run: python3 fieldwork/patches/mcp-timeout/apply_candidate.py native-sdk-timeout
+      - name: Verify transformed source
+        run: |
+          cargo fmt --all -- --check
+          git diff --check
+        working-directory: codex-rs
       - name: Run candidate behavior controls
         working-directory: codex-rs
         env:
@@ -53,7 +58,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Apply pause-aware explicit cancellation candidate
-        run: git apply fieldwork/patches/mcp-timeout/pause-aware-explicit-cancel.patch
+        run: python3 fieldwork/patches/mcp-timeout/apply_candidate.py pause-aware-explicit-cancel
+      - name: Verify transformed source
+        run: |
+          cargo fmt --all -- --check
+          git diff --check
+        working-directory: codex-rs
       - name: Run candidate behavior controls
         working-directory: codex-rs
         env:
