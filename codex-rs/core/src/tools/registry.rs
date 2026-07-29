@@ -35,6 +35,7 @@ use codex_rollout::state_db;
 use codex_shell_command::parse_command::parse_shell_script;
 use codex_tools::ToolName;
 use codex_tools::ToolOperationEffect;
+use codex_tools::ToolOperationTerminalState;
 use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
@@ -467,8 +468,21 @@ impl ToolRegistry {
 
         let dispatch_trace = ToolDispatchTrace::start(&invocation);
         let tool = match self.tool(&tool_name) {
-            Some(tool) => tool,
+            Some(tool) => {
+                invocation
+                    .session
+                    .begin_tool_operation_receipt(call_id_owned.clone(), tool.operation_effect())
+                    .await;
+                tool
+            }
             None => {
+                invocation
+                    .session
+                    .begin_tool_operation_receipt(
+                        call_id_owned.clone(),
+                        ToolOperationEffect::PotentialMutation,
+                    )
+                    .await;
                 let message = unsupported_tool_call_message(&invocation.payload, &tool_name);
                 let log_payload = invocation.payload.log_payload();
                 otel.tool_result_with_tags(
@@ -483,6 +497,12 @@ impl ToolRegistry {
                 );
                 let err = FunctionCallError::RespondToModel(message);
                 dispatch_trace.record_failed(&err);
+                record_tool_receipt_terminal_if_unclaimed(
+                    &invocation,
+                    terminal_outcome_reached.as_deref(),
+                    ToolOperationTerminalState::Failed,
+                )
+                .await;
                 return Err(err);
             }
         };
@@ -514,6 +534,12 @@ impl ToolRegistry {
             );
             let err = FunctionCallError::Fatal(message);
             dispatch_trace.record_failed(&err);
+            record_tool_receipt_terminal_if_unclaimed(
+                &invocation,
+                terminal_outcome_reached.as_deref(),
+                ToolOperationTerminalState::Failed,
+            )
+            .await;
             return Err(err);
         }
 
@@ -711,6 +737,22 @@ impl ToolRegistry {
             }
         }
     }
+}
+
+async fn record_tool_receipt_terminal_if_unclaimed(
+    invocation: &ToolInvocation,
+    terminal_outcome_reached: Option<&AtomicBool>,
+    terminal_state: ToolOperationTerminalState,
+) -> bool {
+    if terminal_outcome_reached.is_some_and(|reached| reached.swap(true, Ordering::AcqRel)) {
+        return false;
+    }
+
+    invocation
+        .session
+        .record_tool_operation_terminal(&invocation.call_id, terminal_state)
+        .await;
+    true
 }
 
 async fn notify_tool_finish_if_unclaimed(

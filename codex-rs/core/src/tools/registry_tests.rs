@@ -527,3 +527,121 @@ fn test_invocation(
         },
     }
 }
+
+#[tokio::test]
+async fn receipt_before_dispatch_uses_selected_read_only_effect() -> anyhow::Result<()> {
+    let (session, turn) = crate::session::tests::make_session_and_context().await;
+    let tool_name = codex_tools::ToolName::plain("read_only_receipt");
+    let handler = Arc::new(ReadOnlyTestHandler {
+        tool_name: tool_name.clone(),
+    }) as Arc<dyn CoreToolRuntime>;
+    let registry = ToolRegistry::new(HashMap::from([(tool_name.clone(), handler)]));
+    let session = Arc::new(session);
+
+    registry
+        .dispatch_any_with_terminal_outcome(
+            test_invocation(
+                Arc::clone(&session),
+                Arc::new(turn),
+                "read-only-call",
+                tool_name,
+            ),
+            None,
+        )
+        .await?;
+
+    let receipt = session
+        .tool_operation_receipt("read-only-call")
+        .await
+        .expect("receipt should exist");
+    assert_eq!(receipt.effect, codex_tools::ToolOperationEffect::ReadOnly);
+    assert_eq!(
+        receipt.terminal_state,
+        codex_tools::ToolOperationTerminalState::Completed
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn receipt_before_dispatch_closes_unsupported_call() {
+    let (session, turn) = crate::session::tests::make_session_and_context().await;
+    let registry = ToolRegistry::new(HashMap::new());
+    let session = Arc::new(session);
+    let terminal = Arc::new(AtomicBool::new(false));
+
+    let err = registry
+        .dispatch_any_with_terminal_outcome(
+            test_invocation(
+                Arc::clone(&session),
+                Arc::new(turn),
+                "unsupported-call",
+                codex_tools::ToolName::plain("missing_tool"),
+            ),
+            Some(Arc::clone(&terminal)),
+        )
+        .await
+        .err()
+        .expect("unsupported tool should fail");
+
+    assert!(matches!(err, FunctionCallError::RespondToModel(_)));
+    assert!(terminal.load(Ordering::Acquire));
+    let receipt = session
+        .tool_operation_receipt("unsupported-call")
+        .await
+        .expect("receipt should exist");
+    assert_eq!(
+        receipt.effect,
+        codex_tools::ToolOperationEffect::PotentialMutation
+    );
+    assert_eq!(
+        receipt.terminal_state,
+        codex_tools::ToolOperationTerminalState::Failed
+    );
+    assert_eq!(
+        receipt.result_state,
+        codex_tools::ToolOperationResultState::Pending
+    );
+}
+
+#[tokio::test]
+async fn receipt_before_dispatch_closes_incompatible_payload_with_selected_effect() {
+    let (session, turn) = crate::session::tests::make_session_and_context().await;
+    let tool_name = codex_tools::ToolName::plain("read_only_incompatible");
+    let handler = Arc::new(ReadOnlyTestHandler {
+        tool_name: tool_name.clone(),
+    }) as Arc<dyn CoreToolRuntime>;
+    let registry = ToolRegistry::new(HashMap::from([(tool_name.clone(), handler)]));
+    let session = Arc::new(session);
+    let terminal = Arc::new(AtomicBool::new(false));
+    let mut invocation = test_invocation(
+        Arc::clone(&session),
+        Arc::new(turn),
+        "incompatible-call",
+        tool_name,
+    );
+    invocation.payload = ToolPayload::Custom {
+        input: "not a function payload".to_string(),
+    };
+
+    let err = registry
+        .dispatch_any_with_terminal_outcome(invocation, Some(Arc::clone(&terminal)))
+        .await
+        .err()
+        .expect("incompatible payload should fail");
+
+    assert!(matches!(err, FunctionCallError::Fatal(_)));
+    assert!(terminal.load(Ordering::Acquire));
+    let receipt = session
+        .tool_operation_receipt("incompatible-call")
+        .await
+        .expect("receipt should exist");
+    assert_eq!(receipt.effect, codex_tools::ToolOperationEffect::ReadOnly);
+    assert_eq!(
+        receipt.terminal_state,
+        codex_tools::ToolOperationTerminalState::Failed
+    );
+    assert_eq!(
+        receipt.result_state,
+        codex_tools::ToolOperationResultState::Pending
+    );
+}

@@ -3,7 +3,6 @@ use codex_extension_api::ToolCallSource as ExtensionToolCallSource;
 use codex_extension_api::ToolFinishInput;
 use codex_extension_api::ToolStartInput;
 use codex_tools::ToolName;
-use codex_tools::ToolOperationEffect;
 use codex_tools::ToolOperationTerminalState;
 
 use crate::session::session::Session;
@@ -12,14 +11,6 @@ use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 
 pub(crate) async fn notify_tool_start(invocation: &ToolInvocation) {
-    invocation
-        .session
-        .begin_tool_operation_receipt(
-            invocation.call_id.clone(),
-            ToolOperationEffect::PotentialMutation,
-        )
-        .await;
-
     for contributor in invocation
         .session
         .services
