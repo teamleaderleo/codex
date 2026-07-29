@@ -3,7 +3,7 @@ name: Fieldwork MCP timeout cancellation probe
 on:
   pull_request:
     branches:
-      - fieldwork/upstream-5989-base
+      - fieldwork/upstream-5989-base-clean
     paths:
       - codex-rs/rmcp-client/**
       - fieldwork/patches/mcp-timeout/**
