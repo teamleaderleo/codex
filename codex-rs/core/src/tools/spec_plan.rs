@@ -242,6 +242,7 @@ pub(crate) fn finalize_tool_router(
     tool_search_handler_cache: &ToolSearchHandlerCache,
 ) -> ToolRouter {
     apply_direct_model_only_namespace_overrides(turn_context, &mut registry);
+    normalize_unloadable_deferred_tools(turn_context, &mut registry);
     let code_mode_enabled = matches!(
         effective_tool_mode(turn_context),
         ToolMode::CodeMode | ToolMode::CodeModeOnly
@@ -267,6 +268,27 @@ pub(crate) fn finalize_tool_router(
     let model_visible_specs =
         build_model_visible_specs(turn_context, &registry, &code_mode_tool_names, hosted_specs);
     ToolRouter::from_parts(registry, model_visible_specs)
+}
+
+fn normalize_unloadable_deferred_tools(turn_context: &TurnContext, registry: &mut ToolRegistry) {
+    if matches!(
+        effective_tool_mode(turn_context),
+        ToolMode::CodeMode | ToolMode::CodeModeOnly
+    ) {
+        return;
+    }
+
+    let search_enabled = search_tool_enabled(turn_context);
+    for runtime in registry.runtimes_mut() {
+        if runtime.exposure() != ToolExposure::Deferred {
+            continue;
+        }
+
+        let has_executable_loader = search_enabled && runtime.search_info().is_some();
+        if !has_executable_loader {
+            *runtime = override_tool_exposure(Arc::clone(runtime), ToolExposure::Direct);
+        }
+    }
 }
 
 fn apply_direct_model_only_namespace_overrides(
