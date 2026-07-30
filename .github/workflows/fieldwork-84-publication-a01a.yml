@@ -1,0 +1,53 @@
+name: fieldwork-84-publication-a01a
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/84-publication-carrier-base-a01a
+    paths:
+      - .github/workflows/fieldwork-84-publication-a01a.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-84-publication-a01a
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact publication source head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: c3373c717f3138ff5f0a979d12836f60800d2bcf
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Verify one-file source fence
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only a01a2d91461a57809e944de7758477b92617ab01 HEAD)"
+          test "$actual" = 'codex-rs/codex-mcp/src/runtime.rs'
+          git diff --check a01a2d91461a57809e944de7758477b92617ab01 HEAD
+
+      - name: Format and run exact publication controls
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: 16777216
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          mapfile -t tests < <(cargo test -p codex-mcp --lib --locked -- --list | grep 'publication_' | cut -d: -f1)
+          test "${#tests[@]}" -eq 5
+          for test_name in "${tests[@]}"; do
+            cargo test -p codex-mcp --lib --locked "$test_name" -- --exact
+          done
