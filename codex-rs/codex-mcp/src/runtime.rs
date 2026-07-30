@@ -204,10 +204,14 @@ impl McpRuntime {
     /// Starts fresh connections and returns their complete, refreshed Apps catalog.
     pub async fn replace_fresh(&self, input: McpRuntimeInput) -> anyhow::Result<Vec<ToolInfo>> {
         let ticket = self.issue_refresh_ticket(/*force_fresh*/ true);
-        if !self.publish(input, /*previous*/ None, ticket).await {
-            anyhow::bail!("MCP refresh was superseded before publication");
-        }
-        self.latest_hard_refresh_codex_apps_tools_cache().await
+        let candidate = self
+            .publish(input, /*previous*/ None, ticket)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("MCP refresh was superseded before publication"))?;
+        candidate
+            .connections
+            .hard_refresh_codex_apps_tools_cache()
+            .await
     }
 
     fn issue_refresh_ticket(&self, force_fresh: bool) -> McpRefreshTicket {
@@ -222,7 +226,7 @@ impl McpRuntime {
         input: McpRuntimeInput,
         previous: Option<&McpConnectionSet>,
         ticket: McpRefreshTicket,
-    ) -> bool {
+    ) -> Option<Arc<PublishedMcpRuntime>> {
         let (publish, publication_gate) = McpPublicationGate::pending();
         let config = Arc::clone(&input.config);
         let auth = input.auth.clone();
@@ -252,14 +256,14 @@ impl McpRuntime {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if state.can_publish(ticket) {
-                self.current.store(candidate);
+                self.current.store(Arc::clone(&candidate));
                 state.mark_published(ticket);
-                true
+                Some(candidate)
             } else {
-                false
+                None
             }
         };
-        if accepted {
+        if accepted.is_some() {
             let _ = publish.send(true);
         }
         accepted
