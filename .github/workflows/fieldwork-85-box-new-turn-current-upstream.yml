@@ -1,6 +1,6 @@
 name: fieldwork-85-box-new-turn-current-upstream
 
-# Head-only trigger marker: boxed new-turn pass 2 with exact receipt.
+# Mica repair: preserve both classification runs across an expected abort.
 on:
   pull_request:
     branches:
@@ -88,6 +88,7 @@ jobs:
           EXACT_TEST: ${{ steps.exact.outputs.name }}
         run: |
           set -uo pipefail
+          set +e
           cargo test -p codex-core --test all --locked "$EXACT_TEST" -- --exact --nocapture 2>&1 | tee /tmp/default.log
           default_status=${PIPESTATUS[0]}
           RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "$EXACT_TEST" -- --exact --nocapture 2>&1 | tee /tmp/large.log
