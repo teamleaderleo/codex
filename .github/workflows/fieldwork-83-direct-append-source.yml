@@ -1,4 +1,4 @@
-name: fieldwork-83-direct-append-source
+name: fieldwork-83-append-outcome-current-upstream
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: fieldwork-83-direct-append-source
+  group: fieldwork-83-append-outcome-current-upstream
   cancel-in-progress: true
 
 jobs:
@@ -48,78 +48,60 @@ jobs:
           command -v just >/dev/null || cargo install --locked just
           cargo nextest --version >/dev/null 2>&1 || cargo install --locked cargo-nextest
 
-      - name: Apply reviewed append-boundary source intent
+      - name: Apply reviewed append-outcome candidate to exact current upstream
         env:
-          EVIDENCE_COMMIT: 5198f9d79dbed0ce1151c3f825a5ce74ec520f08
+          CURRENT_BASE: 97576b1794872e342450ebd577123e052ab57626
+          REVIEWED_BASE: b545c94041017d000e2c8b2f6272705d21b85dfb
+          REVIEWED_HEAD: 30a0a9b50da5fd2f7d58ee81315e0311e84e221e
         run: |
-          git show "$EVIDENCE_COMMIT:.github/workflows/fieldwork-83-direct-append-evidence.yml" > /tmp/fieldwork-83-base.yml
-          python3 - <<'PY'
-          from pathlib import Path
-
-          lines = Path('/tmp/fieldwork-83-base.yml').read_text(encoding='utf-8').splitlines()
-          start = next(i for i, line in enumerate(lines) if line.strip() == "python3 - <<'PY'") + 1
-          stop = next(i for i, line in enumerate(lines[start:], start) if line.strip() == 'PY')
-          script = '\n'.join(
-              line[10:] if line.startswith('          ') else line
-              for line in lines[start:stop]
-          )
-          Path('/tmp/fieldwork-83-base.py').write_text(script + '\n', encoding='utf-8')
-          PY
-          git show "$EVIDENCE_COMMIT:.github/fieldwork/83_add_append_recovery_test.py" > /tmp/fieldwork-83-recovery.py
-          git show "$EVIDENCE_COMMIT:.github/fieldwork/83_add_commit_error_control.py" > /tmp/fieldwork-83-commit-error.py
-          python3 /tmp/fieldwork-83-base.py
-          python3 /tmp/fieldwork-83-recovery.py
-          python3 /tmp/fieldwork-83-commit-error.py
-
-      - name: Format and run focused repository tests
-        run: |
-          just fmt
-          just test -p codex-core direct_tool_result_persistence_
-          just test -p codex-thread-store in_memory
-
-      - name: Preserve only the reviewed source files
-        run: |
-          mkdir -p /tmp/fieldwork-83-source
-          cp --parents \
-            codex-rs/thread-store/src/in_memory.rs \
-            codex-rs/core/src/session/turn.rs \
+          test "$(git rev-parse fieldwork/upstream-97576b-source-base)" = "$CURRENT_BASE"
+          git diff --binary "$REVIEWED_BASE" "$REVIEWED_HEAD" -- \
+            codex-rs/core/src/session/mod.rs \
             codex-rs/core/src/session/turn_tests.rs \
-            /tmp/fieldwork-83-source
-          git reset --hard HEAD
-          cp /tmp/fieldwork-83-source/codex-rs/thread-store/src/in_memory.rs codex-rs/thread-store/src/in_memory.rs
-          cp /tmp/fieldwork-83-source/codex-rs/core/src/session/turn.rs codex-rs/core/src/session/turn.rs
-          cp /tmp/fieldwork-83-source/codex-rs/core/src/session/turn_tests.rs codex-rs/core/src/session/turn_tests.rs
-          git diff --check
-          actual="$(git diff --name-only | sort)"
-          expected="$(printf '%s\n' \
-            codex-rs/core/src/session/turn.rs \
-            codex-rs/core/src/session/turn_tests.rs \
-            codex-rs/thread-store/src/in_memory.rs | sort)"
-          test "$actual" = "$expected"
-          git diff --binary -- \
             codex-rs/thread-store/src/in_memory.rs \
-            codex-rs/core/src/session/turn.rs \
-            codex-rs/core/src/session/turn_tests.rs \
-            > /tmp/fieldwork-83-source.patch
-
-      - name: Publish clean source-only branch
-        env:
-          BASE_SHA: f7265553ea1510304f3091833dcbce65ef21f10c
-          SOURCE_BRANCH: fieldwork/83-direct-append-source-20260731
-        run: |
-          git switch --detach "$BASE_SHA"
-          git switch -C "$SOURCE_BRANCH"
-          git apply /tmp/fieldwork-83-source.patch
-          git add \
-            codex-rs/thread-store/src/in_memory.rs \
-            codex-rs/core/src/session/turn.rs \
-            codex-rs/core/src/session/turn_tests.rs
+            > /tmp/fieldwork-83-append-outcome.patch
+          test -s /tmp/fieldwork-83-append-outcome.patch
+          git switch --detach "$CURRENT_BASE"
+          git apply --3way --index /tmp/fieldwork-83-append-outcome.patch
           actual="$(git diff --cached --name-only | sort)"
           expected="$(printf '%s\n' \
-            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/mod.rs \
             codex-rs/core/src/session/turn_tests.rs \
             codex-rs/thread-store/src/in_memory.rs | sort)"
           test "$actual" = "$expected"
           git diff --cached --check
-          git commit -m 'core: test direct result persistence through live append'
+
+      - name: Format and run exact append-outcome controls
+        run: |
+          just fmt
+          just test -p codex-core append_outcome_ephemeral_history_is_authoritative --exact
+          just test -p codex-core append_outcome_reports_successful_live_append --exact
+          just test -p codex-core append_outcome_reports_prewrite_failure --exact
+          just test -p codex-core append_outcome_reports_commit_then_error_as_failure --exact
+          echo 'FIELDWORK_APPEND_OUTCOME_EXACT=4/4'
+
+      - name: Run thread-store package tests
+        run: |
+          just test -p codex-thread-store
+
+      - name: Preserve exact source fence
+        run: |
+          git add \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish clean source-only branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-append-outcome-upstream-97576b
+        run: |
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: propagate rollout append outcomes'
           git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
