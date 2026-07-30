@@ -4,14 +4,113 @@ on:
   pull_request:
     branches:
       - fieldwork/239-n-terminal-restack-carrier-base
-    paths:
-      - .github/workflows/fieldwork-239-n-terminal-restack.yml
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  SOURCE_BRANCH: fieldwork/239-n-terminal-restack-97576
+  SOURCE_BASE: 97576b1794872e342450ebd577123e052ab57626
 
 jobs:
-  carrier-base-placeholder:
+  restack-focused:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
-      - run: echo 'carrier workflow is supplied by the pull-request head'
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          ref: ${{ env.SOURCE_BRANCH }}
+      - uses: ./.github/actions/setup-ci
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: cargo-nextest
+      - name: Verify exact source base
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_BASE"
+          test -z "$(git status --short)"
+      - name: Extract and apply the carrier-head source program
+        env:
+          CARRIER_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$CARRIER_REF"
+          git show FETCH_HEAD:.github/workflows/fieldwork-239-n-terminal-restack.yml > /tmp/carrier.yml
+          python3 - <<'PY'
+          from pathlib import Path
+
+          lines = Path('/tmp/carrier.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == "python3 - <<'PY'")
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          body = []
+          for line in lines[start + 1:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/apply.py').write_text('\n'.join(body) + '\n')
+          PY
+          python3 /tmp/apply.py
+      - name: Format and verify the four-file source fence
+        run: |
+          set -euo pipefail
+          just fmt
+          git diff --check
+          git diff --name-only | sort > /tmp/changed
+          cat /tmp/changed
+          diff -u <(cat <<'EOF'
+          codex-rs/core/src/unified_exec/async_watcher.rs
+          codex-rs/core/src/unified_exec/async_watcher_tests.rs
+          codex-rs/core/src/unified_exec/process.rs
+          codex-rs/core/src/unified_exec/process_tests.rs
+          EOF
+          ) /tmp/changed
+      - name: Execute exact terminal controls through the repository test entrypoint
+        run: |
+          set -euo pipefail
+          tests=(
+            'test(=unified_exec::process::tests::local_output_task_retains_stdout_before_best_effort_broadcast)'
+            'test(=unified_exec::async_watcher::tests::completed_item_includes_output_emitted_before_subscription)'
+            'test(=unified_exec::async_watcher::tests::reconcile_transcript_replaces_partial_stream_with_authoritative_output)'
+          )
+          for filter in "${tests[@]}"; do
+            just test -p codex-core --lib -E "$filter" --no-tests=fail
+          done
+          echo 'FIELDWORK_TERMINAL_CURRENT_HEAD_EXACT=3/3'
+      - name: Execute codex-core project tests
+        run: just test -p codex-core
+      - name: Publish exact tested source head
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-agent
+          git config user.email fieldwork-agent@users.noreply.github.com
+          git add codex-rs/core/src/unified_exec/process.rs \
+                  codex-rs/core/src/unified_exec/process_tests.rs \
+                  codex-rs/core/src/unified_exec/async_watcher.rs \
+                  codex-rs/core/src/unified_exec/async_watcher_tests.rs
+          git commit -m 'core: retain terminal output before best-effort delivery'
+          git push origin "HEAD:$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+
+  workspace-tests:
+    needs: restack-focused
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          ref: ${{ env.SOURCE_BRANCH }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: cargo-nextest
+      - name: Execute repository-declared Rust workspace tests
+        run: just test
