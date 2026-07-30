@@ -3,9 +3,7 @@ name: fieldwork-239-n-terminal-restack
 on:
   pull_request:
     branches:
-      - fieldwork/239-n-terminal-restack-carrier-base
-    paths:
-      - .github/workflows/fieldwork-239-n-terminal-restack.yml
+      - fieldwork/239-n-terminal-restack-carrier-base-v2
 
 permissions:
   contents: write
@@ -37,289 +35,31 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_BASE"
           test -z "$(git status --short)"
-      - name: Apply current-head terminal retention source slice
+      - name: Extract and apply the carrier-head source program
+        env:
+          CARRIER_REF: ${{ github.event.pull_request.head.ref }}
         run: |
+          set -euo pipefail
+          git fetch origin "$CARRIER_REF"
+          git show FETCH_HEAD:.github/workflows/fieldwork-239-n-terminal-restack.yml > /tmp/carrier.yml
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace(path: str, old: str, new: str, expected: int = 1) -> None:
-              file = Path(path)
-              text = file.read_text()
-              count = text.count(old)
-              if count != expected:
-                  raise SystemExit(f"{path}: expected {expected} anchor(s), found {count}: {old[:80]!r}")
-              file.write_text(text.replace(old, new))
-
-          process = "codex-rs/core/src/unified_exec/process.rs"
-          replace(
-              process,
-              """    output_buffer: OutputBuffer,\n    output_notify: Arc<Notify>,""",
-              """    output_buffer: OutputBuffer,\n    completion_buffer: OutputBuffer,\n    output_notify: Arc<Notify>,""",
-          )
-          replace(
-              process,
-              """        let output_buffer = Arc::new(Mutex::new(HeadTailBuffer::default()));\n        let output_notify = Arc::new(Notify::new());""",
-              """        let output_buffer = Arc::new(Mutex::new(HeadTailBuffer::default()));\n        let completion_buffer = Arc::new(Mutex::new(HeadTailBuffer::default()));\n        let output_notify = Arc::new(Notify::new());""",
-          )
-          replace(
-              process,
-              """            output_tx,\n            output_buffer,\n            output_notify,""",
-              """            output_tx,\n            output_buffer,\n            completion_buffer,\n            output_notify,""",
-          )
-          replace(
-              process,
-              """    pub(super) fn output_receiver(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {\n        self.output_tx.subscribe()\n    }""",
-              """    pub(super) fn completion_buffer(&self) -> OutputBuffer {\n        Arc::clone(&self.completion_buffer)\n    }\n\n    pub(super) fn output_receiver(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {\n        self.output_tx.subscribe()\n    }""",
-          )
-          replace(
-              process,
-              """        let output_rx = codex_utils_pty::combine_output_receivers(stdout_rx, stderr_rx);\n        let mut managed = Self::new(\n            ProcessHandle::Local(Box::new(process_handle)),\n            sandbox_type,\n            Some(spawn_lifecycle),\n        );\n        managed.output_task = Some(Self::spawn_local_output_task(\n            output_rx,\n            Arc::clone(&managed.output_buffer),\n            Arc::clone(&managed.output_notify),\n            Arc::clone(&managed.output_closed),\n            Arc::clone(&managed.output_closed_notify),\n            managed.output_tx.clone(),\n        ));""",
-              """        let mut managed = Self::new(\n            ProcessHandle::Local(Box::new(process_handle)),\n            sandbox_type,\n            Some(spawn_lifecycle),\n        );\n        managed.output_task = Some(Self::spawn_local_output_task(\n            stdout_rx,\n            stderr_rx,\n            Arc::clone(&managed.output_buffer),\n            Arc::clone(&managed.completion_buffer),\n            Arc::clone(&managed.output_notify),\n            Arc::clone(&managed.output_closed),\n            Arc::clone(&managed.output_closed_notify),\n            managed.output_tx.clone(),\n        ));""",
-          )
-          replace(
-              process,
-              """        managed.output_task = Some(Self::spawn_exec_server_output_task(\n            started,\n            output_handles,\n            managed.output_tx.clone(),\n            managed.state_tx.clone(),\n        ));""",
-              """        managed.output_task = Some(Self::spawn_exec_server_output_task(\n            started,\n            output_handles,\n            Arc::clone(&managed.completion_buffer),\n            managed.output_tx.clone(),\n            managed.state_tx.clone(),\n        ));""",
-          )
-          replace(
-              process,
-              """    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        output_tx: broadcast::Sender<Vec<u8>>,""",
-              """    async fn record_output_chunk(\n        output_buffer: &OutputBuffer,\n        completion_buffer: &OutputBuffer,\n        chunk: &[u8],\n    ) {\n        completion_buffer.lock().await.push_chunk(chunk.to_vec());\n        output_buffer.lock().await.push_chunk(chunk.to_vec());\n    }\n\n    fn spawn_exec_server_output_task(\n        started: StartedExecProcess,\n        output_handles: OutputHandles,\n        completion_buffer: OutputBuffer,\n        output_tx: broadcast::Sender<Vec<u8>>,""",
-          )
-          replace(
-              process,
-              """                        let mut guard = output_buffer.lock().await;\n                        guard.push_chunk(bytes.clone());\n                        drop(guard);""",
-              """                        Self::record_output_chunk(&output_buffer, &completion_buffer, &bytes).await;""",
-              expected=2,
-          )
-          replace(
-              process,
-              """    fn spawn_local_output_task(\n        mut receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,\n        buffer: OutputBuffer,\n        output_notify: Arc<Notify>,\n        output_closed: Arc<AtomicBool>,\n        output_closed_notify: Arc<Notify>,\n        output_tx: broadcast::Sender<Vec<u8>>,\n    ) -> JoinHandle<()> {\n        tokio::spawn(async move {\n            let _output_task_guard = OutputTaskGuard {\n                output_closed: Arc::clone(&output_closed),\n                output_closed_notify: Arc::clone(&output_closed_notify),\n            };\n            loop {\n                match receiver.recv().await {\n                    Ok(chunk) => {\n                        let mut guard = buffer.lock().await;\n                        guard.push_chunk(chunk.clone());\n                        drop(guard);\n                        let _ = output_tx.send(chunk);\n                        output_notify.notify_waiters();\n                    }\n                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,\n                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {\n                        output_closed.store(true, Ordering::Release);\n                        output_closed_notify.notify_waiters();\n                        break;\n                    }\n                };\n            }\n        })\n    }""",
-              """    fn spawn_local_output_task(\n        mut stdout_receiver: tokio::sync::mpsc::Receiver<Vec<u8>>,\n        mut stderr_receiver: tokio::sync::mpsc::Receiver<Vec<u8>>,\n        buffer: OutputBuffer,\n        completion_buffer: OutputBuffer,\n        output_notify: Arc<Notify>,\n        output_closed: Arc<AtomicBool>,\n        output_closed_notify: Arc<Notify>,\n        output_tx: broadcast::Sender<Vec<u8>>,\n    ) -> JoinHandle<()> {\n        tokio::spawn(async move {\n            let _output_task_guard = OutputTaskGuard {\n                output_closed: Arc::clone(&output_closed),\n                output_closed_notify: Arc::clone(&output_closed_notify),\n            };\n            let mut stdout_open = true;\n            let mut stderr_open = true;\n            while stdout_open || stderr_open {\n                let chunk = tokio::select! {\n                    stdout = stdout_receiver.recv(), if stdout_open => match stdout {\n                        Some(chunk) => Some(chunk),\n                        None => {\n                            stdout_open = false;\n                            None\n                        }\n                    },\n                    stderr = stderr_receiver.recv(), if stderr_open => match stderr {\n                        Some(chunk) => Some(chunk),\n                        None => {\n                            stderr_open = false;\n                            None\n                        }\n                    },\n                };\n                let Some(chunk) = chunk else {\n                    continue;\n                };\n                Self::record_output_chunk(&buffer, &completion_buffer, &chunk).await;\n                let _ = output_tx.send(chunk);\n                output_notify.notify_waiters();\n            }\n        })\n    }""",
-          )
-
-          watcher = "codex-rs/core/src/unified_exec/async_watcher.rs"
-          replace(
-              watcher,
-              """/// Spawn a background task that continuously reads from the PTY, appends to the\n/// shared transcript, and emits ExecCommandOutputDelta events on UTF‑8\n/// boundaries.""",
-              """/// Spawn a background task that emits best-effort ExecCommandOutputDelta events\n/// on UTF-8 boundaries. Before signaling that output is drained, transfer the\n/// producer-owned authoritative transcript to the command completion path.""",
-          )
-          replace(
-              watcher,
-              """    let mut receiver = process.output_receiver();\n    let output_drained = process.output_drained_notify();""",
-              """    let mut receiver = process.output_receiver();\n    let completion_buffer = process.completion_buffer();\n    let output_drained = process.output_drained_notify();""",
-          )
-          replace(watcher, "                        &transcript,\n", "", expected=2)
-          replace(
-              watcher,
-              """        output_drained.notify_one();""",
-              """        reconcile_transcript(&transcript, &completion_buffer).await;\n        output_drained.notify_one();""",
-          )
-          replace(
-              watcher,
-              """async fn process_chunk(\n    pending: &mut VecDeque<u8>,\n    transcript: &Arc<Mutex<HeadTailBuffer>>,""",
-              """async fn reconcile_transcript(\n    transcript: &Arc<Mutex<HeadTailBuffer>>,\n    completion_buffer: &Arc<Mutex<HeadTailBuffer>>,\n) {\n    let authoritative = completion_buffer.lock().await.drain();\n    *transcript.lock().await = authoritative;\n}\n\nasync fn process_chunk(\n    pending: &mut VecDeque<u8>,""",
-          )
-          replace(
-              watcher,
-              """        {\n            let mut guard = transcript.lock().await;\n            guard.push_chunk(prefix.to_vec());\n        }\n\n""",
-              "",
-          )
-
-          process_tests = "codex-rs/core/src/unified_exec/process_tests.rs"
-          replace(
-              process_tests,
-              """use std::collections::VecDeque;\nuse std::sync::Arc;\nuse tokio::sync::Mutex;\nuse tokio::sync::watch;""",
-              """use std::collections::VecDeque;\nuse std::sync::Arc;\nuse std::sync::atomic::AtomicBool;\nuse std::sync::atomic::Ordering;\nuse tokio::sync::Mutex;\nuse tokio::sync::Notify;\nuse tokio::sync::broadcast;\nuse tokio::sync::mpsc;\nuse tokio::sync::watch;""",
-          )
-          file = Path(process_tests)
-          text = file.read_text()
-          marker = "local_output_task_retains_stdout_before_best_effort_broadcast"
-          if marker in text:
-              raise SystemExit(f"{process_tests}: test already present")
-          text += """
-
-#[tokio::test]
-async fn local_output_task_retains_stdout_before_best_effort_broadcast() {
-    let (stdout_tx, stdout_rx) = mpsc::channel(512);
-    let (stderr_tx, stderr_rx) = mpsc::channel(1);
-    drop(stderr_tx);
-    let buffer = Arc::new(Mutex::new(
-        crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
-    ));
-    let completion_buffer = Arc::new(Mutex::new(
-        crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
-    ));
-    let output_notify = Arc::new(Notify::new());
-    let output_closed = Arc::new(AtomicBool::new(false));
-    let output_closed_notify = Arc::new(Notify::new());
-    let (output_tx, mut lagging_receiver) = broadcast::channel(1);
-    let task = UnifiedExecProcess::spawn_local_output_task(
-        stdout_rx,
-        stderr_rx,
-        Arc::clone(&buffer),
-        Arc::clone(&completion_buffer),
-        output_notify,
-        Arc::clone(&output_closed),
-        output_closed_notify,
-        output_tx,
-    );
-
-    let mut expected = Vec::new();
-    for index in 0..256 {
-        let chunk = format!("stdout-{index:04}\\n").into_bytes();
-        expected.extend_from_slice(&chunk);
-        stdout_tx.send(chunk).await.expect("send stdout chunk");
-    }
-    drop(stdout_tx);
-    task.await.expect("local output task should finish");
-
-    assert!(output_closed.load(Ordering::Acquire));
-    assert!(matches!(
-        lagging_receiver.recv().await,
-        Err(broadcast::error::RecvError::Lagged(_))
-    ));
-    assert_eq!(buffer.lock().await.total_bytes(), expected.len());
-    assert_eq!(completion_buffer.lock().await.total_bytes(), expected.len());
-    assert_eq!(
-        completion_buffer
-            .lock()
-            .await
-            .to_bytes_with_omission_marker(),
-        expected
-    );
-}
-"""
-          file.write_text(text)
-
-          watcher_tests = "codex-rs/core/src/unified_exec/async_watcher_tests.rs"
-          replace(
-              watcher_tests,
-              """use super::TRAILING_OUTPUT_GRACE;\nuse super::spawn_exit_watcher;""",
-              """use super::TRAILING_OUTPUT_GRACE;\nuse super::reconcile_transcript;\nuse super::spawn_exit_watcher;""",
-          )
-          replace(
-              watcher_tests,
-              """async fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {""",
-              """async fn unstarted_streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {""",
-          )
-          replace(
-              watcher_tests,
-              """    let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));\n    start_streaming_output(&process, &context, Arc::clone(&transcript));\n\n    Ok(StreamingOutputHarness {""",
-              """    let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));\n\n    Ok(StreamingOutputHarness {""",
-          )
-          insertion = r'''
-async fn streaming_output_harness() -> anyhow::Result<StreamingOutputHarness> {
-    let harness = unstarted_streaming_output_harness().await?;
-    start_streaming_output(
-        &harness.process,
-        &harness.context,
-        Arc::clone(&harness.transcript),
-    );
-    Ok(harness)
-}
-
-#[tokio::test]
-async fn completed_item_includes_output_emitted_before_subscription() -> anyhow::Result<()> {
-    let StreamingOutputHarness {
-        process,
-        stdout_tx,
-        exit_tx,
-        transcript,
-        context,
-        rx_event,
-    } = unstarted_streaming_output_harness().await?;
-    let expected = b"EARLY-OUTPUT-MARKER".to_vec();
-    stdout_tx.send(expected.clone()).expect("send early output");
-
-    let output_buffer = process.output_handles().output_buffer;
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            if output_buffer.lock().await.total_bytes() == expected.len() {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await?;
-
-    start_streaming_output(&process, &context, Arc::clone(&transcript));
-    #[allow(deprecated)]
-    let cwd = context.turn.cwd.clone().into();
-    spawn_exit_watcher(
-        Arc::clone(&process),
-        Arc::clone(&context.session),
-        Arc::clone(&context.turn),
-        context.call_id,
-        vec!["proof".to_string()],
-        cwd,
-        /*process_id*/ 123,
-        /*plugin_attribution*/ None,
-        transcript,
-        Instant::now(),
-        /*network_denial_monitor*/ None,
-    );
-    exit_tx.send(0).expect("send exit");
-    drop(stdout_tx);
-
-    let event = rx_event.recv().await.expect("command end event");
-    let EventMsg::ItemCompleted(completed) = event.msg else {
-        panic!("expected ItemCompleted");
-    };
-    let TurnItem::CommandExecution(item) = completed.item else {
-        panic!("expected CommandExecution");
-    };
-    assert_eq!(
-        (
-            item.status,
-            item.exit_code,
-            item.aggregated_output.as_deref()
-        ),
-        (
-            CommandExecutionStatus::Completed,
-            Some(0),
-            Some("EARLY-OUTPUT-MARKER")
-        )
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn reconcile_transcript_replaces_partial_stream_with_authoritative_output() {
-    let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
-    let completion_buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
-
-    for index in 0..128 {
-        let chunk = format!("chunk-{index:04}\n").into_bytes();
-        completion_buffer.lock().await.push_chunk(chunk.clone());
-        if index >= 64 {
-            transcript.lock().await.push_chunk(chunk);
-        }
-    }
-    let expected = completion_buffer
-        .lock()
-        .await
-        .to_bytes_with_omission_marker();
-
-    reconcile_transcript(&transcript, &completion_buffer).await;
-    let actual = transcript.lock().await.to_bytes_with_omission_marker();
-    assert_eq!(actual, expected);
-    assert_eq!(completion_buffer.lock().await.total_bytes(), 0);
-}
-
-'''
-          replace(
-              watcher_tests,
-              """#[tokio::test]\nasync fn streaming_output_finishes_on_close_without_waiting_for_grace()""",
-              insertion + """#[tokio::test]\nasync fn streaming_output_finishes_on_close_without_waiting_for_grace()""",
-          )
+          lines = Path('/tmp/carrier.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == "python3 - <<'PY'")
+          end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == 'PY')
+          body = []
+          for line in lines[start + 1:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/apply.py').write_text('\n'.join(body) + '\n')
           PY
+          python3 /tmp/apply.py
       - name: Format and verify the four-file source fence
         run: |
           set -euo pipefail
           just fmt
           git diff --check
-          git diff --name-only > /tmp/changed
+          git diff --name-only | sort > /tmp/changed
           cat /tmp/changed
           diff -u <(cat <<'EOF'
           codex-rs/core/src/unified_exec/async_watcher.rs
