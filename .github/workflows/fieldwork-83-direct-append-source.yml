@@ -1,0 +1,120 @@
+name: fieldwork-83-direct-append-source
+
+on:
+  push:
+    branches:
+      - fieldwork/83-direct-append-carrier-20260731
+    paths:
+      - .github/workflows/fieldwork-83-direct-append-source.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-direct-append-source
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-direct-append-carrier-20260731
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Install repository test runners
+        run: |
+          command -v just >/dev/null || cargo install --locked just
+          cargo nextest --version >/dev/null 2>&1 || cargo install --locked cargo-nextest
+
+      - name: Apply reviewed append-boundary source intent
+        env:
+          EVIDENCE_COMMIT: 5198f9d79dbed0ce1151c3f825a5ce74ec520f08
+        run: |
+          git show "$EVIDENCE_COMMIT:.github/workflows/fieldwork-83-direct-append-evidence.yml" > /tmp/fieldwork-83-base.yml
+          python3 - <<'PY'
+          from pathlib import Path
+
+          lines = Path('/tmp/fieldwork-83-base.yml').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(lines) if line.strip() == "python3 - <<'PY'") + 1
+          stop = next(i for i, line in enumerate(lines[start:], start) if line.strip() == 'PY')
+          script = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in lines[start:stop]
+          )
+          Path('/tmp/fieldwork-83-base.py').write_text(script + '\n', encoding='utf-8')
+          PY
+          git show "$EVIDENCE_COMMIT:.github/fieldwork/83_add_append_recovery_test.py" > /tmp/fieldwork-83-recovery.py
+          git show "$EVIDENCE_COMMIT:.github/fieldwork/83_add_commit_error_control.py" > /tmp/fieldwork-83-commit-error.py
+          python3 /tmp/fieldwork-83-base.py
+          python3 /tmp/fieldwork-83-recovery.py
+          python3 /tmp/fieldwork-83-commit-error.py
+
+      - name: Format and run focused repository tests
+        run: |
+          just fmt
+          just test -p codex-core direct_tool_result_persistence_
+          just test -p codex-thread-store in_memory
+
+      - name: Preserve only the reviewed source files
+        run: |
+          mkdir -p /tmp/fieldwork-83-source
+          cp --parents \
+            codex-rs/thread-store/src/in_memory.rs \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            /tmp/fieldwork-83-source
+          git reset --hard HEAD
+          cp /tmp/fieldwork-83-source/codex-rs/thread-store/src/in_memory.rs codex-rs/thread-store/src/in_memory.rs
+          cp /tmp/fieldwork-83-source/codex-rs/core/src/session/turn.rs codex-rs/core/src/session/turn.rs
+          cp /tmp/fieldwork-83-source/codex-rs/core/src/session/turn_tests.rs codex-rs/core/src/session/turn_tests.rs
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --binary -- \
+            codex-rs/thread-store/src/in_memory.rs \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            > /tmp/fieldwork-83-source.patch
+
+      - name: Publish clean source-only branch
+        env:
+          BASE_SHA: f7265553ea1510304f3091833dcbce65ef21f10c
+          SOURCE_BRANCH: fieldwork/83-direct-append-source-20260731
+        run: |
+          git switch --detach "$BASE_SHA"
+          git switch -C "$SOURCE_BRANCH"
+          git apply /tmp/fieldwork-83-source.patch
+          git add \
+            codex-rs/thread-store/src/in_memory.rs \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git commit -m 'core: test direct result persistence through live append'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
