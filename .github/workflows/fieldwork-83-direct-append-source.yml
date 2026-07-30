@@ -6,6 +6,11 @@ on:
       - fieldwork/83-direct-append-carrier-20260731
     paths:
       - .github/workflows/fieldwork-83-direct-append-source.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-83-direct-append-source.yml
 
 permissions:
   contents: write
