@@ -10,8 +10,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fieldwork-239-new-turn-future-sizes
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  SOURCE_BASE: e6cfd40c3f444aadd6017c9eeab01db70f48961a
 
 jobs:
   diagnose:
@@ -21,8 +26,14 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
-          ref: fieldwork/239-new-turn-future-sizes
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 2
+      - name: Verify exact carrier relation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$SOURCE_BASE"
+          echo "FIELDWORK_FUTURE_SIZE_CARRIER_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_FUTURE_SIZE_SOURCE_BASE=$SOURCE_BASE"
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
           toolchain: 1.95.0
@@ -133,7 +144,12 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
           cd ..
-          git diff --check
+          actual="$(git diff --name-only "$SOURCE_BASE" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/handlers.rs \
+            codex-rs/core/src/session/turn_context.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --check "$SOURCE_BASE"
       - name: Resolve and classify exact current-upstream control
         working-directory: codex-rs
         run: |
@@ -154,6 +170,7 @@ jobs:
           grep -F 'FIELDWORK_FUTURE_SIZE=handler_new_turn:' /tmp/large.log
           grep -F 'FIELDWORK_FUTURE_SIZE=turn_from_configuration:' /tmp/large.log
           grep -F 'FIELDWORK_FUTURE_SIZE=turn_context:' /tmp/large.log
+          grep -F 'FIELDWORK_FUTURE_SIZE=prewarm_turn_context:' /tmp/large.log
           test "$large_status" -eq 0
           if test "$default_status" -ne 0; then
             grep -E 'stack overflow|has overflowed its stack' /tmp/default.log
