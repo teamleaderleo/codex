@@ -52,6 +52,29 @@ jobs:
             codex-rs/core/src/client.rs \
             codex-rs/core/tests/suite/agent_websocket.rs \
             codex-rs/core/tests/suite/client_websockets.rs > /tmp/source.patch
+      - name: Publish source-only exact head
+        run: |
+          set -euo pipefail
+          upstream=e6cfd40c3f444aadd6017c9eeab01db70f48961a
+          target=fieldwork/239-lite-source-e6cfd
+          git cat-file -e "${upstream}^{commit}"
+          git worktree add --detach /tmp/fieldwork-lite-source "$upstream"
+          cd /tmp/fieldwork-lite-source
+          git apply /tmp/source.patch
+          cd codex-rs
+          cargo fmt --all -- --check
+          cd ..
+          git diff --check
+          git config user.name fieldwork-bot
+          git config user.email fieldwork-bot@users.noreply.github.com
+          git add \
+            codex-rs/core/src/client.rs \
+            codex-rs/core/tests/suite/agent_websocket.rs \
+            codex-rs/core/tests/suite/client_websockets.rs
+          git commit -m 'core: send full first Responses Lite turn after prewarm'
+          source_sha=$(git rev-parse HEAD)
+          git push --force origin "HEAD:refs/heads/${target}"
+          echo "FIELDWORK_LITE_SOURCE=${source_sha}"
       - name: Resolve and run exact client controls
         working-directory: codex-rs
         run: |
@@ -91,25 +114,3 @@ jobs:
             grep -E 'stack overflow|has overflowed its stack' /tmp/default.log
           fi
           echo "FIELDWORK_LITE_AGENT=default:${default_status};large:${large_status}"
-      - name: Publish source-only exact head
-        run: |
-          set -euo pipefail
-          upstream=e6cfd40c3f444aadd6017c9eeab01db70f48961a
-          target=fieldwork/239-lite-source-e6cfd
-          git cat-file -e "${upstream}^{commit}"
-          git reset --hard "$upstream"
-          git apply /tmp/source.patch
-          cd codex-rs
-          cargo fmt --all -- --check
-          cd ..
-          git diff --check
-          git config user.name fieldwork-bot
-          git config user.email fieldwork-bot@users.noreply.github.com
-          git add \
-            codex-rs/core/src/client.rs \
-            codex-rs/core/tests/suite/agent_websocket.rs \
-            codex-rs/core/tests/suite/client_websockets.rs
-          git commit -m 'core: send full first Responses Lite turn after prewarm'
-          source_sha=$(git rev-parse HEAD)
-          git push --force origin "HEAD:refs/heads/${target}"
-          echo "FIELDWORK_LITE_SOURCE=${source_sha}"
