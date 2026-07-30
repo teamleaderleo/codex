@@ -28,15 +28,13 @@ jobs:
         with:
           persist-credentials: true
           ref: fieldwork/239-lite-publish
-          fetch-depth: 7
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
           toolchain: 1.95.0
           components: rustfmt
       - name: Apply current-head source and tests
-        run: |
-          python3 .github/fieldwork/239_apply_lite_full_first_turn.py
-          python3 .github/fieldwork/239_fix_lite_agent_prefix.py
+        run: python3 .github/fieldwork/239_apply_lite_full_first_turn.py
       - name: Format and verify source inventory
         run: |
           set -euo pipefail
