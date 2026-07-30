@@ -1,0 +1,161 @@
+name: fieldwork-239-new-turn-future-sizes
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-e6cfd-base
+    paths:
+      - .github/workflows/fieldwork-239-new-turn-future-sizes.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          ref: fieldwork/239-new-turn-future-sizes
+          fetch-depth: 2
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Instrument nested turn-construction futures
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          handlers = Path('codex-rs/core/src/session/handlers.rs')
+          text = handlers.read_text(encoding='utf-8')
+          old = '''    let Ok(current_context) = sess.new_turn_with_sub_id(sub_id.clone(), updates).await else {
+          '''
+          new = '''    let new_turn = sess.new_turn_with_sub_id(sub_id.clone(), updates);
+              eprintln!(
+                  "FIELDWORK_FUTURE_SIZE=handler_new_turn:{}",
+                  std::mem::size_of_val(&new_turn)
+              );
+              let Ok(current_context) = Box::pin(new_turn).await else {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('handler new-turn anchor changed')
+          handlers.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          turn = Path('codex-rs/core/src/session/turn_context.rs')
+          text = turn.read_text(encoding='utf-8')
+          replacements = [
+              (
+                  '''        Ok(self
+                      .new_turn_from_configuration(
+                          sub_id,
+                          session_configuration,
+                          updates.final_output_json_schema,
+                      )
+                      .await)
+          ''',
+                  '''        let future = self.new_turn_from_configuration(
+                      sub_id,
+                      session_configuration,
+                      updates.final_output_json_schema,
+                  );
+                  eprintln!(
+                      "FIELDWORK_FUTURE_SIZE=turn_from_configuration:{}",
+                      std::mem::size_of_val(&future)
+                  );
+                  Ok(future.await)
+          ''',
+                  'turn-from-configuration',
+              ),
+              (
+                  '''        self.new_turn_context_from_configuration(
+                      sub_id,
+                      session_configuration,
+                      final_output_json_schema,
+                      TurnMultiAgentRuntime::ResolveAndStore,
+                      self.git_enrichment_policy,
+                  )
+                  .await
+          ''',
+                  '''        let future = self.new_turn_context_from_configuration(
+                      sub_id,
+                      session_configuration,
+                      final_output_json_schema,
+                      TurnMultiAgentRuntime::ResolveAndStore,
+                      self.git_enrichment_policy,
+                  );
+                  eprintln!(
+                      "FIELDWORK_FUTURE_SIZE=turn_context:{}",
+                      std::mem::size_of_val(&future)
+                  );
+                  future.await
+          ''',
+                  'turn-context',
+              ),
+              (
+                  '''        self.new_turn_context_from_configuration(
+                      sub_id,
+                      session_configuration,
+                      /*final_output_json_schema*/ None,
+                      TurnMultiAgentRuntime::Preview,
+                      GitEnrichmentPolicy::Skip,
+                  )
+                  .await
+          ''',
+                  '''        let future = self.new_turn_context_from_configuration(
+                      sub_id,
+                      session_configuration,
+                      /*final_output_json_schema*/ None,
+                      TurnMultiAgentRuntime::Preview,
+                      GitEnrichmentPolicy::Skip,
+                  );
+                  eprintln!(
+                      "FIELDWORK_FUTURE_SIZE=prewarm_turn_context:{}",
+                      std::mem::size_of_val(&future)
+                  );
+                  future.await
+          ''',
+                  'prewarm-turn-context',
+              ),
+          ]
+          for old, new, label in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label} anchor changed')
+              text = text.replace(old, new, 1)
+          turn.write_text(text, encoding='utf-8')
+          PY
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cd ..
+          git diff --check
+      - name: Resolve and classify exact current-upstream control
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          suffix=missing_process_host_falls_back_to_direct_tools_and_warns_once
+          cargo test -p codex-core --test all --locked -- --list > /tmp/tests.list
+          mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+          printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+          test "${#matches[@]}" -eq 1
+
+          set +e
+          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/default.log
+          default_status=${PIPESTATUS[0]}
+          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/large.log
+          large_status=${PIPESTATUS[0]}
+          set -e
+
+          grep -F 'FIELDWORK_FUTURE_SIZE=handler_new_turn:' /tmp/large.log
+          grep -F 'FIELDWORK_FUTURE_SIZE=turn_from_configuration:' /tmp/large.log
+          grep -F 'FIELDWORK_FUTURE_SIZE=turn_context:' /tmp/large.log
+          test "$large_status" -eq 0
+          if test "$default_status" -ne 0; then
+            grep -E 'stack overflow|has overflowed its stack' /tmp/default.log
+          fi
+          echo "FIELDWORK_FUTURE_SIZE_CONTROL=default:${default_status};large:${large_status}"
