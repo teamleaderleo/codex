@@ -1,0 +1,131 @@
+name: fieldwork-83-receipt-replay-v1-a01a2d
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-receipt-wire-v1-a01a2d
+    paths:
+      - .github/fieldwork/83_receipt_replay_v1.py
+      - .github/fieldwork/83_receipt_replay_union_fix.py
+      - .github/workflows/fieldwork-83-receipt-replay-v1-a01a2d.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-receipt-replay-v1-a01a2d
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_RECEIPT_REPLAY_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply receipt replay intent to exact source head
+        env:
+          SOURCE_HEAD: e205ffe911dcbd661b47c4107e7f26ae772f8182
+          SOURCE_BASE: a01a2d91461a57809e944de7758477b92617ab01
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
+          cp .github/fieldwork/83_receipt_replay_v1.py /tmp/83_receipt_replay_v1.py
+          cp .github/fieldwork/83_receipt_replay_union_fix.py /tmp/83_receipt_replay_union_fix.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/83_receipt_replay_v1.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''replace_once(
+              "codex-rs/core/src/session/rollout_reconstruction.rs",
+              "                 | RolloutItem::TurnContext(_)\\n                 | RolloutItem::EventMsg(_) => {\\n",
+              "                 | RolloutItem::TurnContext(_)\\n                 | RolloutItem::ToolOperationReceipt(_)\\n                 | RolloutItem::EventMsg(_) => {\\n",
+              "world state receipt unreachable",
+          )'''
+          new = '''replace_once(
+              "codex-rs/core/src/session/rollout_reconstruction.rs",
+              "                RolloutItem::SessionMeta(_)\\n                | RolloutItem::ResponseItem(_)\\n                | RolloutItem::InterAgentCommunication(_)\\n                | RolloutItem::InterAgentCommunicationMetadata { .. }\\n                | RolloutItem::TurnContext(_)\\n                | RolloutItem::EventMsg(_) => {\\n",
+              "                RolloutItem::SessionMeta(_)\\n                | RolloutItem::ResponseItem(_)\\n                | RolloutItem::InterAgentCommunication(_)\\n                | RolloutItem::InterAgentCommunicationMetadata { .. }\\n                | RolloutItem::TurnContext(_)\\n                | RolloutItem::ToolOperationReceipt(_)\\n                | RolloutItem::EventMsg(_) => {\\n",
+              "world state receipt unreachable",
+          )'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'world-state generator repair: expected one block, found {count}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          git switch --detach "$SOURCE_HEAD"
+          python /tmp/83_receipt_replay_v1.py
+          python /tmp/83_receipt_replay_union_fix.py
+          test -z "$(git diff --name-only | grep -v '^codex-rs/' || true)"
+          git diff --check
+          printf 'FIELDWORK_RECEIPT_REPLAY_FILES\n'
+          git diff --name-only | sort
+
+      - name: Format exact source
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+
+      - name: Run protocol and ledger controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-protocol tool_operation --locked
+          cargo test -p codex-core state::tool_operation_receipts::tests --locked
+
+      - name: Run rollback-aware receipt replay controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core receipt_replay_restores_direct_and_code_mode_identity --locked
+          cargo test -p codex-core receipt_replay_drops_rolled_back_turn_updates --locked
+          echo 'FIELDWORK_RECEIPT_REPLAY_EXACT=2/2'
+
+      - name: Compile workspace after RolloutItem expansion
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo check --workspace --all-targets --locked
+
+      - name: Preserve source-only fence
+        run: |
+          set -euo pipefail
+          test -z "$(git diff --name-only | grep -v '^codex-rs/' || true)"
+          git diff --check
+          git add codex-rs
+          test -n "$(git diff --cached --name-only)"
+          printf 'FIELDWORK_RECEIPT_REPLAY_SOURCE_FENCE\n'
+          git diff --cached --name-only | sort
+
+      - name: Publish clean source branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-receipt-replay-a01a2d
+        run: |
+          set -euo pipefail
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: replay mutation receipts across continuation'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=e205ffe911dcbd661b47c4107e7f26ae772f8182"
