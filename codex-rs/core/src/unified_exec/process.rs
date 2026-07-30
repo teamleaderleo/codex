@@ -348,14 +348,14 @@ impl UnifiedExecProcess {
             stderr_rx,
             mut exit_rx,
         } = spawned;
-        let output_rx = codex_utils_pty::combine_output_receivers(stdout_rx, stderr_rx);
         let mut managed = Self::new(
             ProcessHandle::Local(Box::new(process_handle)),
             sandbox_type,
             Some(spawn_lifecycle),
         );
         managed.output_task = Some(Self::spawn_local_output_task(
-            output_rx,
+            stdout_rx,
+            stderr_rx,
             Arc::clone(&managed.output_buffer),
             Arc::clone(&managed.completion_buffer),
             Arc::clone(&managed.output_notify),
@@ -610,8 +610,9 @@ impl UnifiedExecProcess {
         })
     }
 
-    fn spawn_local_output_task(
-        mut receiver: tokio::sync::broadcast::Receiver<Vec<u8>>,
+    pub(super) fn spawn_local_output_task(
+        mut stdout_receiver: tokio::sync::mpsc::Receiver<Vec<u8>>,
+        mut stderr_receiver: tokio::sync::mpsc::Receiver<Vec<u8>>,
         buffer: OutputBuffer,
         completion_buffer: OutputBuffer,
         output_notify: Arc<Notify>,
@@ -624,20 +625,31 @@ impl UnifiedExecProcess {
                 output_closed: Arc::clone(&output_closed),
                 output_closed_notify: Arc::clone(&output_closed_notify),
             };
-            loop {
-                match receiver.recv().await {
-                    Ok(chunk) => {
-                        Self::record_output_chunk(&buffer, &completion_buffer, &chunk).await;
-                        let _ = output_tx.send(chunk);
-                        output_notify.notify_waiters();
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        output_closed.store(true, Ordering::Release);
-                        output_closed_notify.notify_waiters();
-                        break;
-                    }
+            let mut stdout_open = true;
+            let mut stderr_open = true;
+            while stdout_open || stderr_open {
+                let chunk = tokio::select! {
+                    stdout = stdout_receiver.recv(), if stdout_open => match stdout {
+                        Some(chunk) => Some(chunk),
+                        None => {
+                            stdout_open = false;
+                            None
+                        }
+                    },
+                    stderr = stderr_receiver.recv(), if stderr_open => match stderr {
+                        Some(chunk) => Some(chunk),
+                        None => {
+                            stderr_open = false;
+                            None
+                        }
+                    },
                 };
+                let Some(chunk) = chunk else {
+                    continue;
+                };
+                Self::record_output_chunk(&buffer, &completion_buffer, &chunk).await;
+                let _ = output_tx.send(chunk);
+                output_notify.notify_waiters();
             }
         })
     }
