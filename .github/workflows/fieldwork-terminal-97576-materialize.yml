@@ -19,7 +19,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: fieldwork-terminal-97576-materialize
+  group: fieldwork-terminal-97576-materialize-${{ github.sha }}
   cancel-in-progress: false
 
 env:
