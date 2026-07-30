@@ -7,6 +7,12 @@ on:
     paths:
       - '.github/workflows/fieldwork-terminal-97576-materialize.yml'
       - '.fieldwork/terminal-97576/**'
+  pull_request:
+    branches:
+      - fieldwork/23-terminal-97576-source
+    paths:
+      - '.github/workflows/fieldwork-terminal-97576-materialize.yml'
+      - '.fieldwork/terminal-97576/**'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +37,7 @@ jobs:
       - name: Check out exact carrier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: true
 
