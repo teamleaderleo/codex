@@ -35,19 +35,42 @@ jobs:
       - name: Verify one-file source fence
         run: |
           set -euo pipefail
+          test "$(git rev-parse HEAD)" = 84b191c66d00ee95a840fb389df0b06f3558f615
           actual="$(git diff --name-only 97576b1794872e342450ebd577123e052ab57626 HEAD)"
           test "$actual" = 'codex-rs/codex-mcp/src/runtime.rs'
           git diff --check 97576b1794872e342450ebd577123e052ab57626 HEAD
+          echo 'FIELDWORK_MCP_PUBLICATION_SOURCE=84b191c66d00ee95a840fb389df0b06f3558f615'
 
-      - name: Format and run exact publication controls
+      - name: Format and run five exact publication controls
         working-directory: codex-rs
         env:
           RUST_MIN_STACK: 16777216
         run: |
           set -euo pipefail
           cargo fmt --all -- --check
-          mapfile -t tests < <(cargo test -p codex-mcp --lib --locked -- --list | grep 'publication_' | cut -d: -f1)
-          test "${#tests[@]}" -eq 5
-          for test_name in "${tests[@]}"; do
-            cargo test -p codex-mcp --lib --locked "$test_name" -- --exact
+          cargo test -p codex-mcp --lib --locked -- --list > /tmp/codex-mcp-tests.list
+          suffixes=(
+            publication_state_rejects_older_generation
+            publication_state_carries_freshness_across_overlapping_refreshes
+            publication_state_rejects_candidate_when_freshness_advances
+            publication_state_keeps_stale_candidate_gate_closed
+            publication_gate_opens_only_for_the_winning_candidate
+          )
+          resolved=()
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-mcp-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            resolved+=("${matches[0]}")
           done
+          test "$(printf '%s\n' "${resolved[@]}" | sort -u | wc -l)" -eq 5
+          for test_name in "${resolved[@]}"; do
+            cargo test -p codex-mcp --lib --locked "$test_name" -- --exact --nocapture
+          done
+          echo 'FIELDWORK_MCP_PUBLICATION_EXACT=5/5'
+
+      - name: Run complete codex-mcp package
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: 16777216
+        run: cargo test -p codex-mcp --locked
