@@ -1,0 +1,90 @@
+name: fieldwork-84-mcp-authority-a01a
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/84-authority-carrier-base-a01a
+    paths:
+      - .github/fieldwork/84_mcp_authority.py
+      - .github/workflows/fieldwork-84-mcp-authority-a01a.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-84-mcp-authority-a01a
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/84-authority-carrier-a01a
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply latest-head authority candidate
+        env:
+          CURRENT_BASE: a01a2d91461a57809e944de7758477b92617ab01
+        run: |
+          set -euo pipefail
+          cp .github/fieldwork/84_mcp_authority.py /tmp/84_mcp_authority.py
+          git switch --detach "$CURRENT_BASE"
+          python /tmp/84_mcp_authority.py
+          git diff --check
+
+      - name: Format and run exact authority controls
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: 16777216
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          mapfile -t tests < <(cargo test -p codex-core --lib --locked -- --list | grep 'mcp_tool_authority_' | cut -d: -f1)
+          test "${#tests[@]}" -eq 2
+          for test_name in "${tests[@]}"; do
+            cargo test -p codex-core --lib --locked "$test_name" -- --exact
+          done
+
+      - name: Verify source fence
+        run: |
+          set -euo pipefail
+          git add \
+            codex-rs/core/src/mcp_tool_call.rs \
+            codex-rs/core/src/mcp_tool_call_tests.rs \
+            codex-rs/core/src/tools/handlers/mcp.rs
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/mcp_tool_call.rs \
+            codex-rs/core/src/mcp_tool_call_tests.rs \
+            codex-rs/core/src/tools/handlers/mcp.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish clean source-only branch
+        env:
+          SOURCE_BRANCH: fieldwork/84-mcp-authority-a01a
+        run: |
+          set -euo pipefail
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: reject MCP calls when live tool authority drifts'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=a01a2d91461a57809e944de7758477b92617ab01"
