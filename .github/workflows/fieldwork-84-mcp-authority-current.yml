@@ -23,7 +23,7 @@ jobs:
       - name: Check out exact carrier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: fieldwork/84-authority-carrier-97576
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -31,6 +31,7 @@ jobs:
         run: |
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_MCP_AUTHORITY_CARRIER_HEAD=$(git rev-parse HEAD)"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
@@ -50,14 +51,16 @@ jobs:
           handler = Path('codex-rs/core/src/tools/handlers/mcp.rs')
           text = handler.read_text(encoding='utf-8')
           old = '''            call_id.clone(),
-            self.tool_info.server_name.clone(),
-            self.tool_info.tool.name.to_string(),
-            self.hook_tool_name(),
-'''
+              self.tool_info.server_name.clone(),
+              self.tool_info.tool.name.to_string(),
+              self.hook_tool_name(),
+  '''
+          old = old.replace('  ', '')
           new = '''            call_id.clone(),
-            self.tool_info.clone(),
-            self.hook_tool_name(),
-'''
+              self.tool_info.clone(),
+              self.hook_tool_name(),
+  '''
+          new = new.replace('  ', '')
           if text.count(old) != 1:
               raise SystemExit(f'handler call anchor count: {text.count(old)}')
           handler.write_text(text.replace(old, new), encoding='utf-8')
@@ -70,71 +73,72 @@ jobs:
           text = text.replace(import_anchor, import_anchor + 'use codex_mcp::ToolInfo;\n')
 
           signature_old = '''    call_id: String,
-    server: String,
-    tool_name: String,
-    hook_tool_name: HookToolName,
-'''
+              server: String,
+              tool_name: String,
+              hook_tool_name: HookToolName,
+  '''.replace('  ', '')
           signature_new = '''    call_id: String,
-    advertised_tool: ToolInfo,
-    hook_tool_name: HookToolName,
-'''
+              advertised_tool: ToolInfo,
+              hook_tool_name: HookToolName,
+  '''.replace('  ', '')
           if text.count(signature_old) != 1:
               raise SystemExit(f'call signature anchor count: {text.count(signature_old)}')
           text = text.replace(signature_old, signature_new)
 
-          context_anchor = '''    let turn_context = &step_context.turn;
-'''
+          context_anchor = '    let turn_context = &step_context.turn;\n'
           context_replacement = '''    let turn_context = &step_context.turn;
-    let server = advertised_tool.server_name.clone();
-    let tool_name = advertised_tool.tool.name.to_string();
-'''
+              let server = advertised_tool.server_name.clone();
+              let tool_name = advertised_tool.tool.name.to_string();
+  '''.replace('  ', '')
           if text.count(context_anchor) != 1:
               raise SystemExit(f'turn context anchor count: {text.count(context_anchor)}')
           text = text.replace(context_anchor, context_replacement)
 
+          doc_anchor = '''/// Handles the specified tool call and dispatches the appropriate tool-call
+  '''
+          # Current source uses the MCP-specific two-line comment. Keep a second exact fallback.
           doc_anchor = '''/// Handles the specified tool call and dispatches the appropriate MCP tool-call
-/// item lifecycle events to the `Session`.
-'''
+              /// item lifecycle events to the `Session`.
+  '''.replace('  ', '')
           helper = '''fn mcp_tool_authority_matches(advertised: &ToolInfo, live: &ToolInfo) -> bool {
-    match (
-        serde_json::to_value(advertised),
-        serde_json::to_value(live),
-    ) {
-        (Ok(advertised), Ok(live)) => advertised == live,
-        _ => false,
-    }
-}
+              match (
+                  serde_json::to_value(advertised),
+                  serde_json::to_value(live),
+              ) {
+                  (Ok(advertised), Ok(live)) => advertised == live,
+                  _ => false,
+              }
+          }
 
-'''
+  '''.replace('  ', '')
           if text.count(doc_anchor) != 1:
               raise SystemExit(f'authority helper anchor count: {text.count(doc_anchor)}')
           text = text.replace(doc_anchor, helper + doc_anchor)
 
-          metadata_anchor = '''    let metadata = mcp_tool_metadata(&prepared_call);
-'''
+          metadata_anchor = '    let metadata = mcp_tool_metadata(&prepared_call);\n'
           gate = '''    if !mcp_tool_authority_matches(&advertised_tool, prepared_call.tool_info()) {
-        let item_metadata =
-            McpToolCallItemMetadata::from_tool_metadata(&server, /*metadata*/ None);
-        let result = notify_mcp_tool_call_skip(
-            sess.as_ref(),
-            turn_context.as_ref(),
-            &call_id,
-            invocation,
-            item_metadata,
-            format!(
-                "MCP tool `{server}/{tool_name}` blocked because its live authority differs from the model-advertised catalogue"
-            ),
-            /*already_started*/ false,
-        )
-        .await;
-        return HandledMcpToolCall {
-            result: CallToolResult::from_result(result),
-            tool_input: arguments_value
-                .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new())),
-        };
-    }
+              let item_metadata =
+                  McpToolCallItemMetadata::from_tool_metadata(&server, /*metadata*/ None);
+              let result = notify_mcp_tool_call_skip(
+                  sess.as_ref(),
+                  turn_context.as_ref(),
+                  &call_id,
+                  invocation,
+                  item_metadata,
+                  format!(
+                      "MCP tool `{server}/{tool_name}` blocked because its live authority differs from the model-advertised catalogue"
+                  ),
+                  /*already_started*/ false,
+              )
+              .await;
+              return HandledMcpToolCall {
+                  result: CallToolResult::from_result(result),
+                  tool_input: arguments_value
+                      .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new())),
+              };
+          }
 
-'''
+  '''.replace('  ', '')
           if text.count(metadata_anchor) != 1:
               raise SystemExit(f'authority gate anchor count: {text.count(metadata_anchor)}')
           text = text.replace(metadata_anchor, gate + metadata_anchor)
@@ -144,91 +148,119 @@ jobs:
           text = tests.read_text(encoding='utf-8')
           test_block = r'''
 
-fn authority_test_tool(schema: serde_json::Value) -> ToolInfo {
-    ToolInfo {
-        server_name: "authority-server".to_string(),
-        supports_parallel_tool_calls: false,
-        server_origin: Some("stdio".to_string()),
-        callable_name: "echo".to_string(),
-        callable_namespace: "mcp__authority_server".to_string(),
-        namespace_description: Some("Authority fixture".to_string()),
-        tool: rmcp::model::Tool::new(
-            "echo".to_string(),
-            "Echo input".to_string(),
-            Arc::new(
-                schema
-                    .as_object()
-                    .expect("authority test schema object")
-                    .clone(),
-            ),
-        ),
-        openai_file_input_optional_fields: HashMap::new(),
-        connector_id: Some("connector-a".to_string()),
-        connector_name: Some("Connector A".to_string()),
-        plugin_display_names: vec!["Plugin A".to_string()],
-    }
-}
+          fn authority_test_tool(schema: serde_json::Value) -> ToolInfo {
+              ToolInfo {
+                  server_name: "authority-server".to_string(),
+                  supports_parallel_tool_calls: false,
+                  server_origin: Some("stdio".to_string()),
+                  callable_name: "echo".to_string(),
+                  callable_namespace: "mcp__authority_server".to_string(),
+                  namespace_description: Some("Authority fixture".to_string()),
+                  tool: rmcp::model::Tool::new(
+                      "echo".to_string(),
+                      "Echo input".to_string(),
+                      Arc::new(
+                          schema
+                              .as_object()
+                              .expect("authority test schema object")
+                              .clone(),
+                      ),
+                  ),
+                  openai_file_input_optional_fields: HashMap::new(),
+                  connector_id: Some("connector-a".to_string()),
+                  connector_name: Some("Connector A".to_string()),
+                  plugin_display_names: vec!["Plugin A".to_string()],
+              }
+          }
 
-#[test]
-fn mcp_tool_authority_accepts_identical_advertisement() {
-    let advertised = authority_test_tool(serde_json::json!({
-        "type": "object",
-        "properties": {"message": {"type": "string"}}
-    }));
-    let live = advertised.clone();
+          #[test]
+          fn mcp_tool_authority_accepts_identical_advertisement() {
+              let advertised = authority_test_tool(serde_json::json!({
+                  "type": "object",
+                  "properties": {"message": {"type": "string"}}
+              }));
+              let live = advertised.clone();
+              assert!(mcp_tool_authority_matches(&advertised, &live));
+          }
 
-    assert!(mcp_tool_authority_matches(&advertised, &live));
-}
-
-#[test]
-fn mcp_tool_authority_rejects_schema_and_connector_drift() {
-    let advertised = authority_test_tool(serde_json::json!({
-        "type": "object",
-        "properties": {"message": {"type": "string"}}
-    }));
-    let mut schema_drift = advertised.clone();
-    schema_drift.tool = rmcp::model::Tool::new(
-        "echo".to_string(),
-        "Echo input".to_string(),
-        Arc::new(
-            serde_json::json!({
-                "type": "object",
-                "properties": {"count": {"type": "integer"}}
-            })
-            .as_object()
-            .expect("schema drift object")
-            .clone(),
-        ),
-    );
-    let mut connector_drift = advertised.clone();
-    connector_drift.connector_id = Some("connector-b".to_string());
-
-    assert!(!mcp_tool_authority_matches(&advertised, &schema_drift));
-    assert!(!mcp_tool_authority_matches(
-        &advertised,
-        &connector_drift
-    ));
-}
-'''
+          #[test]
+          fn mcp_tool_authority_rejects_schema_and_connector_drift() {
+              let advertised = authority_test_tool(serde_json::json!({
+                  "type": "object",
+                  "properties": {"message": {"type": "string"}}
+              }));
+              let mut schema_drift = advertised.clone();
+              schema_drift.tool = rmcp::model::Tool::new(
+                  "echo".to_string(),
+                  "Echo input".to_string(),
+                  Arc::new(
+                      serde_json::json!({
+                          "type": "object",
+                          "properties": {"count": {"type": "integer"}}
+                      })
+                      .as_object()
+                      .expect("schema drift object")
+                      .clone(),
+                  ),
+              );
+              let mut connector_drift = advertised.clone();
+              connector_drift.connector_id = Some("connector-b".to_string());
+              assert!(!mcp_tool_authority_matches(&advertised, &schema_drift));
+              assert!(!mcp_tool_authority_matches(&advertised, &connector_drift));
+          }
+          '''
+          test_block = '\n'.join(line[10:] if line.startswith('          ') else line for line in test_block.splitlines())
           if 'fn mcp_tool_authority_accepts_identical_advertisement()' in text:
               raise SystemExit('authority tests already present')
-          tests.write_text(text + test_block, encoding='utf-8')
+          tests.write_text(text + test_block + '\n', encoding='utf-8')
           PY
           git diff --check
 
-      - name: Format and run exact authority controls
+      - name: Format and verify exact source fence
+        env:
+          CURRENT_BASE: 97576b1794872e342450ebd577123e052ab57626
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cd ..
+          actual="$(git diff --name-only "$CURRENT_BASE" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/mcp_tool_call.rs \
+            codex-rs/core/src/mcp_tool_call_tests.rs \
+            codex-rs/core/src/tools/handlers/mcp.rs | sort)"
+          printf 'actual source files:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+          git diff --check "$CURRENT_BASE"
+
+      - name: Resolve and run two exact authority controls
         working-directory: codex-rs
         run: |
           set -euo pipefail
-          cargo fmt --all
-          cargo fmt --all -- --check
-          mapfile -t tests < <(cargo test -p codex-core --lib --locked -- --list | grep 'mcp_tool_authority_' | cut -d: -f1)
-          test "${#tests[@]}" -eq 2
-          for test_name in "${tests[@]}"; do
-            cargo test -p codex-core --lib --locked "$test_name" -- --exact
+          cargo test -p codex-core --lib --locked -- --list > /tmp/codex-core-tests.list
+          suffixes=(
+            mcp_tool_authority_accepts_identical_advertisement
+            mcp_tool_authority_rejects_schema_and_connector_drift
+          )
+          resolved=()
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-core-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            resolved+=("${matches[0]}")
           done
+          test "$(printf '%s\n' "${resolved[@]}" | sort -u | wc -l)" -eq 2
+          for test_name in "${resolved[@]}"; do
+            cargo test -p codex-core --lib --locked "$test_name" -- --exact --nocapture
+          done
+          echo 'FIELDWORK_MCP_AUTHORITY_EXACT=2/2'
 
-      - name: Verify source fence
+      - name: Run focused MCP call module gate
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked mcp_tool_call -- --nocapture
+
+      - name: Preserve source fence
         run: |
           set -euo pipefail
           git add \
