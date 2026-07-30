@@ -86,6 +86,8 @@ jobs:
           git checkout --detach "$UPSTREAM_HEAD"
           test "$(git rev-parse HEAD)" = "$UPSTREAM_HEAD"
           test "$(git rev-parse origin/fieldwork/23-terminal-current-upstream)" = "$HISTORICAL_SOURCE"
+          echo "FIELDWORK_TERMINAL_INPUT_BASE=$UPSTREAM_HEAD"
+          echo "FIELDWORK_TERMINAL_INPUT_SOURCE=$HISTORICAL_SOURCE"
 
       - uses: ./.github/actions/setup-ci
 
@@ -102,11 +104,17 @@ jobs:
 
       - name: Run nine exact controls
         working-directory: codex-rs
-        run: bash /tmp/exact.sh
+        run: |
+          set -euo pipefail
+          bash /tmp/exact.sh
+          echo 'FIELDWORK_TERMINAL_97576_EXACT=9/9'
 
       - name: Run focused codex-core gate
         working-directory: codex-rs
         run: bash /tmp/focused.sh
 
       - name: Publish source-only exact head
-        run: bash /tmp/publish.sh
+        run: |
+          set -euo pipefail
+          bash /tmp/publish.sh
+          echo "FIELDWORK_TERMINAL_SOURCE_BRANCH=$SOURCE_BRANCH"
