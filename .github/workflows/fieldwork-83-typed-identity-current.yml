@@ -1,0 +1,128 @@
+name: fieldwork-83-typed-identity-current
+
+on:
+  push:
+    branches:
+      - fieldwork/83-typed-identity-carrier-97576b
+    paths:
+      - .github/workflows/fieldwork-83-typed-identity-current.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-typed-identity-current
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-typed-identity-carrier-97576b
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply merged receipt foundation to exact current upstream
+        env:
+          CURRENT_BASE: 97576b1794872e342450ebd577123e052ab57626
+          FOUNDATION_BASE: 2b7b93081361b77f8ddaceaf362a09765b4153bf
+          FOUNDATION_HEAD: 73ae22f90300d632833f9e4a531c4dd857c5db36
+        run: |
+          test "$(git rev-parse HEAD^)" = "$CURRENT_BASE"
+          git diff --binary "$FOUNDATION_BASE" "$FOUNDATION_HEAD" -- . ':(exclude).github/**' \
+            > /tmp/fieldwork-83-receipt-foundation.patch
+          test -s /tmp/fieldwork-83-receipt-foundation.patch
+          git switch --detach "$CURRENT_BASE"
+          git apply --3way --index /tmp/fieldwork-83-receipt-foundation.patch
+          git diff --cached --check
+
+      - name: Apply reviewed typed logical identity intent
+        env:
+          TYPED_IDENTITY_HEAD: 8eb6768faf7010c0b622bda7058a6097a45c57a2
+        run: |
+          mkdir -p .github/fieldwork
+          git show "$TYPED_IDENTITY_HEAD:.github/fieldwork/83_typed_operation_identity.py" \
+            > .github/fieldwork/83_typed_operation_identity.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/fieldwork/83_typed_operation_identity.py')
+          text = path.read_text(encoding='utf-8')
+          enum_anchor = "            Direct,\n            CodeMode {"
+          enum_replacement = "            Direct,\n            DirectPlaintextMessage,\n            CodeMode {"
+          count = text.count(enum_anchor)
+          if count != 2:
+              raise SystemExit(f'typed identity enum adaptation: expected 2 anchors, found {count}')
+          text = text.replace(enum_anchor, enum_replacement)
+          match_anchor = "                    Self::Direct => ToolOperationId::direct(direct_call_id),"
+          match_replacement = "                    Self::Direct | Self::DirectPlaintextMessage => {\n                        ToolOperationId::direct(direct_call_id)\n                    },"
+          count = text.count(match_anchor)
+          if count != 1:
+              raise SystemExit(f'typed identity direct-source adaptation: expected 1 anchor, found {count}')
+          path.write_text(text.replace(match_anchor, match_replacement), encoding='utf-8')
+          PY
+          python .github/fieldwork/83_typed_operation_identity.py
+          rm .github/fieldwork/83_typed_operation_identity.py
+          git diff --cached --check
+          git diff --check
+
+      - name: Format-check and run typed identity controls
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all -- --check
+          cargo test -p codex-core tool_operation_receipts --locked
+          cargo test -p codex-core code_mode_receipt_uses_runtime_identity_instead_of_host_call_id --locked
+          cargo test -p codex-core tools::lifecycle::tests --locked
+          cargo test -p codex-core direct_tool_result_persistence_ --locked
+
+      - name: Preserve exact source fence
+        run: |
+          git add codex-rs/core codex-rs/tools
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/context_manager/compaction_identity.rs \
+            codex-rs/core/src/context_manager/compaction_identity_tests.rs \
+            codex-rs/core/src/context_manager/mod.rs \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/core/src/state/mod.rs \
+            codex-rs/core/src/state/session.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs \
+            codex-rs/core/src/tools/context.rs \
+            codex-rs/core/src/tools/lifecycle.rs \
+            codex-rs/core/src/tools/registry.rs \
+            codex-rs/core/src/tools/registry_tests.rs \
+            codex-rs/tools/src/lib.rs \
+            codex-rs/tools/src/tool_executor.rs \
+            codex-rs/tools/src/tool_executor_tests.rs \
+            codex-rs/tools/src/tool_operation.rs \
+            codex-rs/tools/src/tool_operation_tests.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish clean source-only branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-typed-identity-upstream-97576b
+        run: |
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: key mutation receipts by logical operation identity'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
