@@ -1,0 +1,110 @@
+name: fieldwork-83-direct-append-review-fix-v2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-83-direct-append-review-fix-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-direct-append-clean
+          fetch-depth: 0
+          persist-credentials: true
+      - run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Add live-history assertions by test function
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('codex-rs/core/src/session/turn_tests.rs')
+          text = path.read_text(encoding='utf-8')
+
+          def insert_before_function_end(name: str, marker: str, insertion: str) -> None:
+              global text
+              start = text.index(f'async fn {name}()')
+              next_test = text.find('\n#[tokio::test]', start + 1)
+              end = len(text) if next_test == -1 else next_test
+              segment = text[start:end]
+              if insertion.strip() in segment:
+                  raise SystemExit(f'{name}: insertion already present')
+              pos = segment.rfind(marker)
+              if pos == -1:
+                  raise SystemExit(f'{name}: marker missing')
+              absolute = start + pos + len(marker)
+              text = text[:absolute] + insertion + text[absolute:]
+
+          insert_before_function_end(
+              'direct_tool_result_persistence_recovers_after_one_shot_append_failure',
+              '''    assert!(has_persisted_function_result(
+                  &persisted.items,
+                  "call-after-failure",
+              ));
+          '''.replace('          ', ''),
+              '''    let in_memory = session.clone_history().await;
+              assert!(has_in_memory_function_result(
+                  in_memory.raw_items(),
+                  "call-first-failure",
+              ));
+              assert!(has_in_memory_function_result(
+                  in_memory.raw_items(),
+                  "call-after-failure",
+              ));
+          '''.replace('          ', ''),
+          )
+          insert_before_function_end(
+              'direct_tool_result_persistence_marks_commit_then_error_ambiguous',
+              '''    assert!(has_persisted_function_result(
+                  &persisted.items,
+                  "call-after-commit-error",
+              ));
+          '''.replace('          ', ''),
+              '''    let in_memory = session.clone_history().await;
+              assert!(has_in_memory_function_result(
+                  in_memory.raw_items(),
+                  "call-commit-error",
+              ));
+              assert!(has_in_memory_function_result(
+                  in_memory.raw_items(),
+                  "call-after-commit-error",
+              ));
+          '''.replace('          ', ''),
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Execute focused review gate
+        run: |
+          rustfmt --edition 2024 codex-rs/core/src/session/turn_tests.rs
+          rustfmt --edition 2024 --check codex-rs/core/src/session/turn_tests.rs
+          cd codex-rs
+          cargo test -p codex-core --lib direct_tool_result_persistence_ --locked
+      - name: Publish source-only review head
+        run: |
+          rm -f .github/workflows/fieldwork-83-direct-append-review-fix.yml
+          rm -f .github/workflows/fieldwork-83-direct-append-review-fix-v2.yml
+          expected=$(printf '%s\n' \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs)
+          actual=$(git diff --name-only origin/main | sort)
+          test "$actual" = "$(printf '%s\n' "$expected" | sort)"
+          git diff --check
+          git add -A
+          git commit -m 'test: retain direct results across append uncertainty'
+          git push origin HEAD:fieldwork/83-direct-append-clean
