@@ -1,6 +1,6 @@
 name: fieldwork-upstream-b545-responses-lite-probe
 
-# Head-only trigger marker: conflict-free upstream-b545 compatibility pass 3.
+# Head-only trigger marker: current-upstream stack classification pass 4.
 on:
   pull_request:
     branches:
@@ -31,7 +31,6 @@ jobs:
           python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           rm .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           git diff --check
-          git status --short
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
           toolchain: 1.95.0
@@ -45,6 +44,57 @@ jobs:
       - name: Run generated-response reuse control
         working-directory: codex-rs
         run: cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn --locked -- --nocapture
-      - name: Run first generated Responses Lite turn regression
+      - name: Classify default versus enlarged worker stack
         working-directory: codex-rs
-        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
+        run: |
+          set +e
+          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
+          default_status=$?
+          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
+          large_status=$?
+          set -e
+          echo "FIELDWORK_RESPONSES_LITE=default:${default_status};large:${large_status}"
+          test "$default_status" -ne 0
+          test "$large_status" -eq 0
+      - name: Instrument current-upstream new-turn entry
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('codex-rs/core/src/session/turn_context.rs')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('    pub(crate) async fn new_turn_with_sub_id(')
+          end = text.index('\n    pub(crate) async fn new_default_turn(', start)
+          segment = text[start:end]
+          opening = '    ) -> CodexResult<Arc<TurnContext>> {\n'
+          if segment.count(opening) != 1:
+              raise SystemExit('new-turn opening changed')
+          segment = segment.replace(
+              opening,
+              opening + '        eprintln!("FIELDWORK_CURRENT_NEW_TURN=entered");\n',
+              1,
+          )
+          lock = '            let mut state = self.state.lock().await;\n'
+          if segment.count(lock) != 1:
+              raise SystemExit('new-turn state lock changed')
+          segment = segment.replace(
+              lock,
+              '            eprintln!("FIELDWORK_CURRENT_NEW_TURN=before_state_lock");\n'
+              + lock
+              + '            eprintln!("FIELDWORK_CURRENT_NEW_TURN=after_state_lock");\n',
+              1,
+          )
+          path.write_text(text[:start] + segment + text[end:], encoding='utf-8')
+          PY
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+      - name: Run current-upstream marker regression
+        working-directory: codex-rs
+        run: |
+          set +e
+          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
+          status=$?
+          set -e
+          echo "FIELDWORK_CURRENT_NEW_TURN_STATUS=${status}"
+          test "$status" -ne 0
