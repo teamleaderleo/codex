@@ -51,6 +51,28 @@ jobs:
           test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
           cp .github/fieldwork/83_receipt_replay_v1.py /tmp/83_receipt_replay_v1.py
           cp .github/fieldwork/83_receipt_replay_union_fix.py /tmp/83_receipt_replay_union_fix.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('/tmp/83_receipt_replay_v1.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''replace_once(
+              "codex-rs/core/src/session/rollout_reconstruction.rs",
+              "                 | RolloutItem::TurnContext(_)\\n                 | RolloutItem::EventMsg(_) => {\\n",
+              "                 | RolloutItem::TurnContext(_)\\n                 | RolloutItem::ToolOperationReceipt(_)\\n                 | RolloutItem::EventMsg(_) => {\\n",
+              "world state receipt unreachable",
+          )'''
+          new = '''replace_once(
+              "codex-rs/core/src/session/rollout_reconstruction.rs",
+              "                RolloutItem::SessionMeta(_)\\n                | RolloutItem::ResponseItem(_)\\n                | RolloutItem::InterAgentCommunication(_)\\n                | RolloutItem::InterAgentCommunicationMetadata { .. }\\n                | RolloutItem::TurnContext(_)\\n                | RolloutItem::EventMsg(_) => {\\n",
+              "                RolloutItem::SessionMeta(_)\\n                | RolloutItem::ResponseItem(_)\\n                | RolloutItem::InterAgentCommunication(_)\\n                | RolloutItem::InterAgentCommunicationMetadata { .. }\\n                | RolloutItem::TurnContext(_)\\n                | RolloutItem::ToolOperationReceipt(_)\\n                | RolloutItem::EventMsg(_) => {\\n",
+              "world state receipt unreachable",
+          )'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'world-state generator repair: expected one block, found {count}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
           git switch --detach "$SOURCE_HEAD"
           python /tmp/83_receipt_replay_v1.py
           python /tmp/83_receipt_replay_union_fix.py
