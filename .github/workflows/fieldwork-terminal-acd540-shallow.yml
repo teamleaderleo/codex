@@ -3,15 +3,15 @@ name: fieldwork-terminal-97576-shallow
 on:
   pull_request:
     branches:
-      - fieldwork/upstream-97576-base
+      - fieldwork/23-terminal-97576-isolated-base
     paths:
-      - .github/workflows/fieldwork-terminal-acd540-shallow.yml
+      - .github/fieldwork/23-terminal-97576-isolated-trigger
 
 permissions:
   contents: write
 
 concurrency:
-  group: fieldwork-terminal-97576-shallow
+  group: fieldwork-terminal-97576-isolated
   cancel-in-progress: true
 
 env:
