@@ -1,0 +1,82 @@
+name: fieldwork-terminal-materialize-source
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-97576-base
+    paths:
+      - .github/fieldwork/terminal-source.b64.*
+      - .github/workflows/fieldwork-terminal-materialize-source.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-terminal-materialize-source
+  cancel-in-progress: true
+
+env:
+  SOURCE_BASE: 97576b1794872e342450ebd577123e052ab57626
+  EXPECTED_TREE: 563f90f55c0ebd9454171d24697d796cba1388d4
+  EXPECTED_ARCHIVE_SHA256: dca7808534f03a576a3b1d11f312393a8861c7c5f268cea2b3d6ac442f1122f5
+  SOURCE_BRANCH: fieldwork/23-terminal-97576-source
+
+jobs:
+  materialize-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact materializer head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Decode and verify retained source archive
+        run: |
+          set -euo pipefail
+          cat .github/fieldwork/terminal-source.b64.* > /tmp/terminal-source.b64
+          base64 --decode /tmp/terminal-source.b64 > /tmp/terminal-source.tar.gz
+          echo "$EXPECTED_ARCHIVE_SHA256  /tmp/terminal-source.tar.gz" | sha256sum --check --strict
+          mapfile -t archived < <(tar -tzf /tmp/terminal-source.tar.gz | sed 's#^\./##' | sort)
+          expected=(
+            codex-rs/core/src/unified_exec/async_watcher.rs
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs
+            codex-rs/core/src/unified_exec/process.rs
+            codex-rs/core/src/unified_exec/process_tests.rs
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${archived[@]}")
+
+      - name: Create exact source tree on retained base
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$SOURCE_BASE"
+          git checkout --detach "$SOURCE_BASE"
+          test "$(git rev-parse HEAD)" = "$SOURCE_BASE"
+          tar -xzf /tmp/terminal-source.tar.gz -C .
+          mapfile -t changed < <(git diff --name-only | sort)
+          expected=(
+            codex-rs/core/src/unified_exec/async_watcher.rs
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs
+            codex-rs/core/src/unified_exec/process.rs
+            codex-rs/core/src/unified_exec/process_tests.rs
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          git diff --check
+          git add -- "${expected[@]}"
+          tree=$(git write-tree)
+          test "$tree" = "$EXPECTED_TREE"
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git commit -m 'core: retain terminal output before best-effort broadcast'
+          test "$(git rev-parse HEAD^1)" = "$SOURCE_BASE"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+          echo "FIELDWORK_TERMINAL_MATERIALIZED_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_TERMINAL_MATERIALIZED_TREE=$(git rev-parse HEAD^{tree})"
+
+      - name: Publish source-only branch
+        run: |
+          set -euo pipefail
+          git push origin "HEAD:refs/heads/$SOURCE_BRANCH"
