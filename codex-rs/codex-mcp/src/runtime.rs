@@ -8,8 +8,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
@@ -72,7 +71,7 @@ pub struct McpRuntimeInput {
 /// their exact connections and configuration for as long as they are needed.
 pub struct McpRuntime {
     current: ArcSwap<PublishedMcpRuntime>,
-    reconnect_pending: AtomicBool,
+    publication_state: StdMutex<McpPublicationState>,
     elicitation_router: ElicitationRequestRouter,
 }
 
@@ -85,16 +84,51 @@ struct PublishedMcpRuntime {
     ready_selected_capability_roots: Vec<SelectedCapabilityRoot>,
 }
 
-struct McpReconnectGuard<'a> {
-    pending: &'a AtomicBool,
-    claimed: bool,
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct McpRefreshTicket {
+    generation: u64,
+    freshness_epoch: u64,
+    force_fresh: bool,
 }
 
-impl Drop for McpReconnectGuard<'_> {
-    fn drop(&mut self) {
-        if self.claimed {
-            self.pending.store(true, Ordering::Release);
+#[derive(Debug, Default)]
+struct McpPublicationState {
+    latest_requested_generation: u64,
+    freshness_epoch: u64,
+    published_freshness_epoch: u64,
+}
+
+impl McpPublicationState {
+    fn request_fresh(&mut self) {
+        self.freshness_epoch = self
+            .freshness_epoch
+            .checked_add(1)
+            .expect("MCP freshness epoch overflow");
+    }
+
+    fn issue(&mut self, force_fresh: bool) -> McpRefreshTicket {
+        if force_fresh {
+            self.request_fresh();
         }
+        self.latest_requested_generation = self
+            .latest_requested_generation
+            .checked_add(1)
+            .expect("MCP publication generation overflow");
+        McpRefreshTicket {
+            generation: self.latest_requested_generation,
+            freshness_epoch: self.freshness_epoch,
+            force_fresh: self.freshness_epoch > self.published_freshness_epoch,
+        }
+    }
+
+    fn can_publish(&self, ticket: McpRefreshTicket) -> bool {
+        ticket.generation == self.latest_requested_generation
+            && ticket.freshness_epoch == self.freshness_epoch
+    }
+
+    fn mark_published(&mut self, ticket: McpRefreshTicket) {
+        assert!(self.can_publish(ticket));
+        self.published_freshness_epoch = ticket.freshness_epoch;
     }
 }
 
@@ -148,7 +182,7 @@ impl McpRuntime {
                 plugins_available: false,
                 ready_selected_capability_roots: Vec::new(),
             }),
-            reconnect_pending: AtomicBool::new(false),
+            publication_state: StdMutex::new(McpPublicationState::default()),
             elicitation_router: ElicitationRequestRouter::default(),
         }
     }
@@ -161,26 +195,38 @@ impl McpRuntime {
 
     /// Reconciles configured servers and publishes their immutable runtime snapshot.
     pub async fn replace(&self, input: McpRuntimeInput) {
+        let ticket = self.issue_refresh_ticket(/*force_fresh*/ false);
         let current = self.current.load_full();
-        let mut reconnect = McpReconnectGuard {
-            pending: &self.reconnect_pending,
-            claimed: self.reconnect_pending.swap(false, Ordering::AcqRel),
-        };
-        self.publish(
-            input,
-            (!reconnect.claimed).then_some(current.connections.as_ref()),
-        )
-        .await;
-        reconnect.claimed = false;
+        let previous = (!ticket.force_fresh).then_some(current.connections.as_ref());
+        let _ = self.publish(input, previous, ticket).await;
     }
 
     /// Starts fresh connections and returns their complete, refreshed Apps catalog.
     pub async fn replace_fresh(&self, input: McpRuntimeInput) -> anyhow::Result<Vec<ToolInfo>> {
-        self.publish(input, /*previous*/ None).await;
-        self.latest_hard_refresh_codex_apps_tools_cache().await
+        let ticket = self.issue_refresh_ticket(/*force_fresh*/ true);
+        let candidate = self
+            .publish(input, /*previous*/ None, ticket)
+            .await
+            .ok_or_else(|| anyhow::anyhow!("MCP refresh was superseded before publication"))?;
+        candidate
+            .connections
+            .hard_refresh_codex_apps_tools_cache()
+            .await
     }
 
-    async fn publish(&self, input: McpRuntimeInput, previous: Option<&McpConnectionSet>) {
+    fn issue_refresh_ticket(&self, force_fresh: bool) -> McpRefreshTicket {
+        self.publication_state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .issue(force_fresh)
+    }
+
+    async fn publish(
+        &self,
+        input: McpRuntimeInput,
+        previous: Option<&McpConnectionSet>,
+        ticket: McpRefreshTicket,
+    ) -> Option<Arc<PublishedMcpRuntime>> {
         let (publish, publication_gate) = McpPublicationGate::pending();
         let config = Arc::clone(&input.config);
         let auth = input.auth.clone();
@@ -196,20 +242,39 @@ impl McpRuntime {
             )
             .await,
         );
-        self.current.store(Arc::new(PublishedMcpRuntime {
+        let candidate = Arc::new(PublishedMcpRuntime {
             connections,
             config: Some(config),
             auth,
             auth_token,
             plugins_available,
             ready_selected_capability_roots,
-        }));
-        let _ = publish.send(true);
+        });
+        let accepted = {
+            let mut state = self
+                .publication_state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if state.can_publish(ticket) {
+                self.current.store(Arc::clone(&candidate));
+                state.mark_published(ticket);
+                Some(candidate)
+            } else {
+                None
+            }
+        };
+        if accepted.is_some() {
+            let _ = publish.send(true);
+        }
+        accepted
     }
 
     /// Ensures the next refresh creates fresh connections for every configured server.
     pub fn reconnect_on_next_refresh(&self) {
-        self.reconnect_pending.store(true, Ordering::Release);
+        self.publication_state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .request_fresh();
     }
 
     /// Captures the latest published configuration and live client handles.
@@ -494,6 +559,63 @@ mod tests {
             oauth_resource: None,
             tools: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn publication_state_rejects_older_generation() {
+        let mut state = McpPublicationState::default();
+        let older = state.issue(/*force_fresh*/ false);
+        let newer = state.issue(/*force_fresh*/ false);
+
+        assert!(!state.can_publish(older));
+        assert!(state.can_publish(newer));
+        state.mark_published(newer);
+    }
+
+    #[test]
+    fn publication_state_carries_freshness_across_overlapping_refreshes() {
+        let mut state = McpPublicationState::default();
+        state.request_fresh();
+        let older = state.issue(/*force_fresh*/ false);
+        let newer = state.issue(/*force_fresh*/ false);
+
+        assert!(older.force_fresh);
+        assert!(newer.force_fresh);
+        assert!(!state.can_publish(older));
+        assert!(state.can_publish(newer));
+        state.mark_published(newer);
+
+        let sequential = state.issue(/*force_fresh*/ false);
+        assert!(!sequential.force_fresh);
+    }
+
+    #[test]
+    fn publication_state_rejects_candidate_when_freshness_advances() {
+        let mut state = McpPublicationState::default();
+        let stale = state.issue(/*force_fresh*/ false);
+        state.request_fresh();
+
+        assert!(!state.can_publish(stale));
+        let replacement = state.issue(/*force_fresh*/ false);
+        assert!(replacement.force_fresh);
+        assert!(state.can_publish(replacement));
+    }
+
+    #[tokio::test]
+    async fn publication_state_keeps_stale_candidate_gate_closed() {
+        let mut state = McpPublicationState::default();
+        let stale = state.issue(/*force_fresh*/ false);
+        let current = state.issue(/*force_fresh*/ false);
+        let (publish, gate) = McpPublicationGate::pending();
+
+        if state.can_publish(stale) {
+            publish.send(true).expect("publish stale candidate");
+        } else {
+            drop(publish);
+        }
+
+        assert!(!gate.wait().await);
+        assert!(state.can_publish(current));
     }
 
     #[tokio::test]
