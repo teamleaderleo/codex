@@ -39,11 +39,11 @@ jobs:
           replacements = [
               ('    skip_if_no_network!(Ok(()));\n', '    eprintln!("FIELDWORK_PHASE=entered_test");\n    skip_if_no_network!(Ok(()));\n'),
               ('    let server = start_websocket_server', '    eprintln!("FIELDWORK_PHASE=before_server");\n    let server = start_websocket_server'),
-              ('    let mut model_info = lite_model_info();', '    eprintln!("FIELDWORK_PHASE=after_server");\n    let mut model_info = lite_model_info();'),
-              ('    let test = test_codex()', '    eprintln!("FIELDWORK_PHASE=before_build");\n    let test = test_codex()'),
+              ('    let mut builder = test_codex()', '    eprintln!("FIELDWORK_PHASE=after_server");\n    let mut builder = test_codex()'),
+              ('    let test = builder.build_with_websocket_server(&server).await?;', '    eprintln!("FIELDWORK_PHASE=before_build");\n    let test = builder.build_with_websocket_server(&server).await?;'),
               ('    test.submit_turn_with_policy(', '    eprintln!("FIELDWORK_PHASE=after_build");\n    eprintln!("FIELDWORK_PHASE=before_submit");\n    test.submit_turn_with_policy('),
               ('    let connection = server.single_connection();', '    eprintln!("FIELDWORK_PHASE=after_submit");\n    let connection = server.single_connection();'),
-              ('    assert_eq!(connection.len(), 3);', '    eprintln!("FIELDWORK_PHASE=before_assertions");\n    assert_eq!(connection.len(), 3);'),
+              ('    assert_eq!(connection.len(), 2);', '    eprintln!("FIELDWORK_PHASE=before_assertions");\n    assert_eq!(connection.len(), 2);'),
           ]
           for old, new in replacements:
               if segment.count(old) != 1:
