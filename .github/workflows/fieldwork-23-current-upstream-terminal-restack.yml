@@ -1,5 +1,6 @@
 name: fieldwork-23-current-upstream-terminal-restack
 
+# Head-only trigger marker: current-upstream terminal restack pass 1.
 on:
   pull_request:
     branches:
