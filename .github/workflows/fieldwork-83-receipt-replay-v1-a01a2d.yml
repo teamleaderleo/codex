@@ -6,6 +6,7 @@ on:
       - fieldwork/83-receipt-wire-v1-a01a2d
     paths:
       - .github/fieldwork/83_receipt_replay_v1.py
+      - .github/fieldwork/83_receipt_replay_union_fix.py
       - .github/workflows/fieldwork-83-receipt-replay-v1-a01a2d.yml
 
 permissions:
@@ -49,8 +50,10 @@ jobs:
           test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
           test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
           cp .github/fieldwork/83_receipt_replay_v1.py /tmp/83_receipt_replay_v1.py
+          cp .github/fieldwork/83_receipt_replay_union_fix.py /tmp/83_receipt_replay_union_fix.py
           git switch --detach "$SOURCE_HEAD"
           python /tmp/83_receipt_replay_v1.py
+          python /tmp/83_receipt_replay_union_fix.py
           test -z "$(git diff --name-only | grep -v '^codex-rs/' || true)"
           git diff --check
           printf 'FIELDWORK_RECEIPT_REPLAY_FILES\n'
