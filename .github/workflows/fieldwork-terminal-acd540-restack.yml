@@ -25,6 +25,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ env.UPSTREAM_HEAD }}
+      - uses: ./.github/actions/setup-ci
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
           toolchain: 1.95.0
