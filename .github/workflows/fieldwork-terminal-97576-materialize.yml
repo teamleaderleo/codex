@@ -1,0 +1,71 @@
+name: Fieldwork terminal 97576 source materialization
+
+on:
+  push:
+    branches:
+      - fieldwork/23-terminal-97576-materialize
+    paths:
+      - '.github/workflows/fieldwork-terminal-97576-materialize.yml'
+      - '.fieldwork/terminal-97576/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-terminal-97576-materialize
+  cancel-in-progress: false
+
+env:
+  SOURCE_BASE: 97576b1794872e342450ebd577123e052ab57626
+  SOURCE_COMMIT: 8c7ea38419d790032db459816980e6b4dd38f574
+  SOURCE_TREE: 563f90ea0b4bec779446aa0ce4497e8011acb0e3
+  SOURCE_BRANCH: fieldwork/23-terminal-97576-source
+  PATCH_SHA256: ed4bcd93e99e6e060ee9463b96645bd051380c0762cf106a1b01ffd4af0df619
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reconstruct and verify tested patch
+        run: |
+          set -euo pipefail
+          cat .fieldwork/terminal-97576/patch.b64.* | base64 --decode > /tmp/source.patch
+          test "$(sha256sum /tmp/source.patch | cut -d' ' -f1)" = "$PATCH_SHA256"
+          git cat-file -e "$SOURCE_BASE^{commit}"
+
+      - name: Reproduce exact one-commit source tree
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-bot
+          git config user.email fieldwork-bot@users.noreply.github.com
+          git checkout --detach "$SOURCE_BASE"
+          git am --committer-date-is-author-date /tmp/source.patch
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD^{tree})" = "$SOURCE_TREE"
+          test "$(git rev-parse HEAD^)" = "$SOURCE_BASE"
+          test "$(git rev-list --count "$SOURCE_BASE"..HEAD)" -eq 1
+          git diff --check "$SOURCE_BASE"...HEAD
+          git diff --name-only "$SOURCE_BASE"...HEAD | sort > /tmp/source-files
+          cat > /tmp/expected-files <<'EOF'
+          codex-rs/core/src/unified_exec/async_watcher.rs
+          codex-rs/core/src/unified_exec/async_watcher_tests.rs
+          codex-rs/core/src/unified_exec/process.rs
+          codex-rs/core/src/unified_exec/process_tests.rs
+          EOF
+          diff -u /tmp/expected-files /tmp/source-files
+
+      - name: Update dedicated source branch
+        run: |
+          set -euo pipefail
+          git push origin "+HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_TERMINAL_SOURCE_COMMIT=$(git rev-parse HEAD)"
+          echo "FIELDWORK_TERMINAL_SOURCE_TREE=$(git rev-parse HEAD^{tree})"
