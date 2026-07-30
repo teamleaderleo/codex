@@ -112,6 +112,9 @@ impl ToolCallRuntime {
         let execution_started_at = tool_call_timing_guard
             .as_ref()
             .map(|timing| Arc::clone(&timing.execution_started_at));
+        let execution_started = Arc::new(AtomicBool::new(false));
+        let dispatch_execution_started = Arc::clone(&execution_started);
+        let abort_execution_started = Arc::clone(&execution_started);
         let abort_session = Arc::clone(&session);
         let abort_source = source.clone();
         let abort_turn = Arc::clone(&turn);
@@ -137,6 +140,7 @@ impl ToolCallRuntime {
                 };
                 // Admission through the parallel-execution gate marks the end
                 // of dispatch waiting and the start of handler execution.
+                dispatch_execution_started.store(true, Ordering::Release);
                 if let Some(execution_started_at) = execution_started_at {
                     let _ = execution_started_at.set(Instant::now());
                 }
@@ -185,12 +189,14 @@ impl ToolCallRuntime {
                             }
                         }
                         let response = Self::aborted_response(&call, secs);
+                        let execution_started = abort_execution_started.load(Ordering::Acquire);
                         notify_tool_aborted(
                             abort_session.as_ref(),
                             abort_turn.as_ref(),
                             call.call_id.as_str(),
                             &call.tool_name,
                             abort_source,
+                            execution_started,
                         )
                         .await;
                         Ok(response)
@@ -344,6 +350,7 @@ impl Drop for ToolCallTimingGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
 
     use crate::session::step_context::StepContext;
@@ -411,8 +418,10 @@ mod tests {
         let session = Arc::new(session);
         let turn_context = Arc::new(turn_context);
         let tool_name = codex_tools::ToolName::plain("test_tool");
+        let executions = Arc::new(AtomicUsize::new(0));
         let handler = Arc::new(ImmediateHandler {
             tool_name: tool_name.clone(),
+            executions: Arc::clone(&executions),
         }) as Arc<dyn CoreToolRuntime>;
         let step_context = StepContext::for_test(Arc::clone(&turn_context));
         let router = Arc::new(ToolRouter::from_parts(
@@ -420,7 +429,7 @@ mod tests {
             Vec::new(),
         ));
         let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
-        let runtime = ToolCallRuntime::new(router, session, step_context, tracker);
+        let runtime = ToolCallRuntime::new(router, Arc::clone(&session), step_context, tracker);
         let execution_gate = Arc::clone(&runtime.parallel_execution);
         let execution_gate_guard = execution_gate
             .try_write_owned()
@@ -504,12 +513,26 @@ mod tests {
         execution_gate_task
             .await
             .expect("execution gate task should join");
+        assert_eq!(
+            executions.load(Ordering::Acquire),
+            0,
+            "handler must not execute when cancellation wins before gate admission"
+        );
+        let receipt = session
+            .tool_operation_receipt("call-1")
+            .await
+            .expect("pre-admission cancellation should record a receipt");
+        assert_eq!(
+            receipt.terminal_state,
+            codex_tools::ToolOperationTerminalState::NotStarted
+        );
 
         Ok(())
     }
 
     struct ImmediateHandler {
         tool_name: codex_tools::ToolName,
+        executions: Arc<AtomicUsize>,
     }
 
     impl ToolExecutor<ToolInvocation> for ImmediateHandler {
@@ -529,6 +552,7 @@ mod tests {
         }
 
         fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+            self.executions.fetch_add(1, Ordering::AcqRel);
             Box::pin(async {
                 Ok(
                     Box::new(FunctionToolOutput::from_text("ok".to_string(), Some(true)))
@@ -677,6 +701,7 @@ mod tests {
         let tool_name = codex_tools::ToolName::plain("test_tool");
         let handler = Arc::new(ImmediateHandler {
             tool_name: tool_name.clone(),
+            executions: Arc::new(AtomicUsize::new(0)),
         }) as Arc<dyn CoreToolRuntime>;
         let step_context = StepContext::for_test(Arc::clone(&turn_context));
         let router = Arc::new(ToolRouter::from_parts(
@@ -757,6 +782,7 @@ mod tests {
             Vec::new(),
         ));
         let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+        let receipt_session = Arc::clone(&session);
         let runtime = ToolCallRuntime::new(router, session, step_context, tracker);
         let cancellation_token = CancellationToken::new();
         let call = ToolCall {
@@ -795,6 +821,14 @@ mod tests {
             .drain(..)
             .collect::<Vec<_>>();
         assert_eq!(vec![ToolCallOutcome::Aborted], actual);
+        let receipt = receipt_session
+            .tool_operation_receipt("call-1")
+            .await
+            .expect("post-admission cancellation should record a receipt");
+        assert_eq!(
+            receipt.terminal_state,
+            codex_tools::ToolOperationTerminalState::Ambiguous
+        );
 
         Ok(())
     }

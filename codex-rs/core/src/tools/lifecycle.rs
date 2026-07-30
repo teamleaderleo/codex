@@ -39,6 +39,7 @@ pub(crate) async fn notify_tool_finish(invocation: &ToolInvocation, outcome: Too
         &invocation.tool_name,
         invocation.source.clone(),
         outcome,
+        None,
     )
     .await;
 }
@@ -49,7 +50,13 @@ pub(crate) async fn notify_tool_aborted(
     call_id: &str,
     tool_name: &ToolName,
     source: ToolCallSource,
+    execution_started: bool,
 ) {
+    let terminal_state = if execution_started {
+        ToolOperationTerminalState::Ambiguous
+    } else {
+        ToolOperationTerminalState::NotStarted
+    };
     notify_tool_finish_parts(
         session,
         turn,
@@ -57,6 +64,7 @@ pub(crate) async fn notify_tool_aborted(
         tool_name,
         source,
         ToolCallOutcome::Aborted,
+        Some(terminal_state),
     )
     .await;
 }
@@ -68,9 +76,13 @@ async fn notify_tool_finish_parts(
     tool_name: &ToolName,
     source: ToolCallSource,
     outcome: ToolCallOutcome,
+    terminal_state_override: Option<ToolOperationTerminalState>,
 ) {
     session
-        .record_tool_operation_terminal(call_id, receipt_terminal_state(outcome))
+        .record_tool_operation_terminal(
+            call_id,
+            terminal_state_override.unwrap_or_else(|| receipt_terminal_state(outcome)),
+        )
         .await;
 
     for contributor in session.services.extensions.tool_lifecycle_contributors() {
@@ -92,10 +104,14 @@ async fn notify_tool_finish_parts(
 fn receipt_terminal_state(outcome: ToolCallOutcome) -> ToolOperationTerminalState {
     match outcome {
         ToolCallOutcome::Completed { .. } => ToolOperationTerminalState::Completed,
-        ToolCallOutcome::Blocked | ToolCallOutcome::Failed { .. } => {
-            ToolOperationTerminalState::Failed
+        ToolCallOutcome::Blocked
+        | ToolCallOutcome::Failed {
+            handler_executed: false,
+        } => ToolOperationTerminalState::Failed,
+        ToolCallOutcome::Failed {
+            handler_executed: true,
         }
-        ToolCallOutcome::Aborted => ToolOperationTerminalState::Aborted,
+        | ToolCallOutcome::Aborted => ToolOperationTerminalState::Ambiguous,
     }
 }
 
@@ -127,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn maps_blocked_and_failed_to_failed() {
+    fn maps_blocked_and_pre_execution_failure_to_failed() {
         assert_eq!(
             receipt_terminal_state(ToolCallOutcome::Blocked),
             ToolOperationTerminalState::Failed
@@ -138,19 +154,23 @@ mod tests {
             }),
             ToolOperationTerminalState::Failed
         );
+    }
+
+    #[test]
+    fn maps_handler_executed_failure_to_ambiguous() {
         assert_eq!(
             receipt_terminal_state(ToolCallOutcome::Failed {
                 handler_executed: true,
             }),
-            ToolOperationTerminalState::Failed
+            ToolOperationTerminalState::Ambiguous
         );
     }
 
     #[test]
-    fn maps_cancellation_to_aborted() {
+    fn maps_unqualified_cancellation_to_ambiguous() {
         assert_eq!(
             receipt_terminal_state(ToolCallOutcome::Aborted),
-            ToolOperationTerminalState::Aborted
+            ToolOperationTerminalState::Ambiguous
         );
     }
 }

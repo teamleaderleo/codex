@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-pub const TOOL_OPERATION_RECEIPT_VERSION: u8 = 1;
+pub const TOOL_OPERATION_RECEIPT_VERSION: u8 = 2;
 
 /// Declares whether a tool invocation can change state outside the model transcript.
 ///
@@ -20,6 +20,7 @@ pub enum ToolOperationEffect {
 pub enum ToolOperationTerminalState {
     #[default]
     Pending,
+    NotStarted,
     Completed,
     Failed,
     Aborted,
@@ -66,7 +67,8 @@ impl ToolOperationReceipt {
         self.terminal_state = match (self.terminal_state, outcome) {
             (
                 ToolOperationTerminalState::Pending,
-                ToolOperationTerminalState::Completed
+                ToolOperationTerminalState::NotStarted
+                | ToolOperationTerminalState::Completed
                 | ToolOperationTerminalState::Failed
                 | ToolOperationTerminalState::Aborted,
             ) => outcome,
@@ -101,9 +103,9 @@ impl ToolOperationReceipt {
             ToolOperationEffect::PotentialMutation => {
                 matches!(
                     self.terminal_state,
-                    ToolOperationTerminalState::Completed
+                    ToolOperationTerminalState::NotStarted
+                        | ToolOperationTerminalState::Completed
                         | ToolOperationTerminalState::Failed
-                        | ToolOperationTerminalState::Aborted
                 ) && self.result_state == ToolOperationResultState::Persisted
             }
         }

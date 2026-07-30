@@ -44,7 +44,10 @@ fn conflicting_terminal_outcomes_block_potential_mutation_compaction() {
     receipt.record_result_persisted();
 
     assert!(!receipt.is_compaction_ready());
-    assert_eq!(receipt.terminal_state, ToolOperationTerminalState::Ambiguous);
+    assert_eq!(
+        receipt.terminal_state,
+        ToolOperationTerminalState::Ambiguous
+    );
 }
 
 #[test]
@@ -63,4 +66,22 @@ fn read_only_operation_does_not_require_result_persistence_for_compaction() {
     let receipt = ToolOperationReceipt::pending(ToolOperationEffect::ReadOnly);
 
     assert!(receipt.is_compaction_ready());
+}
+
+#[test]
+fn not_started_potential_mutation_is_ready_after_result_persistence() {
+    let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+    receipt.record_terminal_outcome(ToolOperationTerminalState::NotStarted);
+    receipt.record_result_persisted();
+
+    assert!(receipt.is_compaction_ready());
+}
+
+#[test]
+fn aborted_potential_mutation_requires_reconciliation_before_compaction() {
+    let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+    receipt.record_terminal_outcome(ToolOperationTerminalState::Aborted);
+    receipt.record_result_persisted();
+
+    assert!(!receipt.is_compaction_ready());
 }
