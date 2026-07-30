@@ -1,0 +1,44 @@
+name: fieldwork-upstream-b545-responses-lite-probe
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-b545-probe-base
+    paths:
+      - .github/workflows/fieldwork-upstream-b545-responses-lite-probe.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Apply source-and-test intent from the owned diagnostic branch
+        run: |
+          git fetch origin d1045ae0001444549a4905715e7962e14c2ae163
+          git show d1045ae0001444549a4905715e7962e14c2ae163:.github/fieldwork/85_apply_lite_prewarm_full_first_turn.py > /tmp/apply_responses_lite.py
+          python3 /tmp/apply_responses_lite.py
+          git diff --check
+          git status --short
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Check formatting
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+      - name: Run generated-response reuse control
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn --locked -- --nocapture
+      - name: Run first generated Responses Lite turn regression
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
