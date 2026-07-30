@@ -1,5 +1,6 @@
 name: fieldwork-85-box-new-turn-current-upstream
 
+# Head-only trigger marker: boxed new-turn pass 1.
 on:
   pull_request:
     branches:
