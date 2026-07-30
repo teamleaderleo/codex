@@ -24,13 +24,9 @@ jobs:
           fetch-depth: 0
       - name: Apply source-and-test intent from the owned diagnostic branch
         run: |
-          git fetch origin d1045ae0001444549a4905715e7962e14c2ae163 1d9cc9709bb4c71b7b388e2baf0ab131e5585a61
-          git diff --binary 1d9cc9709bb4c71b7b388e2baf0ab131e5585a61 d1045ae0001444549a4905715e7962e14c2ae163 -- \
-            codex-rs/core/src/client.rs \
-            codex-rs/core/tests/suite/agent_websocket.rs \
-            codex-rs/core/tests/suite/client_websockets.rs > /tmp/responses-lite.patch
-          test -s /tmp/responses-lite.patch
-          git apply --3way /tmp/responses-lite.patch
+          git fetch origin d1045ae0001444549a4905715e7962e14c2ae163
+          git show d1045ae0001444549a4905715e7962e14c2ae163:.github/fieldwork/85_apply_lite_prewarm_full_first_turn.py > /tmp/apply_responses_lite.py
+          python3 /tmp/apply_responses_lite.py
           git diff --check
           git status --short
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
