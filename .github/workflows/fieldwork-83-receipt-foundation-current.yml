@@ -23,7 +23,7 @@ jobs:
       - name: Check out exact carrier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: fieldwork/83-receipt-foundation-carrier-97576b
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -31,6 +31,7 @@ jobs:
         run: |
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_RECEIPT_CARRIER_HEAD=$(git rev-parse HEAD)"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
@@ -53,16 +54,45 @@ jobs:
           git apply --3way --index /tmp/fieldwork-83-receipt-foundation.patch
           git diff --cached --check
 
-      - name: Format-check and run receipt foundation controls
+      - name: Format-check and run exact receipt foundation controls
         working-directory: codex-rs
         run: |
           set -euo pipefail
           cargo fmt --all -- --check
-          cargo test -p codex-tools tool_operation --locked
-          cargo test -p codex-core compaction_identity --locked
-          cargo test -p codex-core tool_operation_receipts --locked
-          cargo test -p codex-core receipt_before_dispatch --locked
-          cargo test -p codex-core direct_tool_result_persistence_ --locked
+          cargo test -p codex-tools --lib --locked -- --list > /tmp/codex-tools-tests.list
+          cargo test -p codex-core --lib --locked -- --list > /tmp/codex-core-tests.list
+
+          declare -A seen=()
+          total=0
+
+          run_group() {
+            local package="$1"
+            local list_file="$2"
+            local token="$3"
+            local marker="$4"
+            mapfile -t matches < <(sed -n 's/: test$//p' "$list_file" | grep "$token" | sort -u)
+            printf '%s matches (%s):\n' "$token" "${#matches[@]}"
+            printf '  %s\n' "${matches[@]:-<none>}"
+            test "${#matches[@]}" -gt 0
+            local group_count=0
+            for full_name in "${matches[@]}"; do
+              test -z "${seen[$package:$full_name]:-}"
+              seen[$package:$full_name]=1
+              cargo test -p "$package" --lib --locked "$full_name" -- --exact --nocapture
+              group_count=$((group_count + 1))
+              total=$((total + 1))
+            done
+            echo "${marker}=${group_count}"
+          }
+
+          run_group codex-tools /tmp/codex-tools-tests.list tool_operation FIELDWORK_RECEIPT_TOOL_OPERATION_EXACT
+          run_group codex-core /tmp/codex-core-tests.list compaction_identity FIELDWORK_RECEIPT_COMPACTION_IDENTITY_EXACT
+          run_group codex-core /tmp/codex-core-tests.list tool_operation_receipts FIELDWORK_RECEIPT_STATE_EXACT
+          run_group codex-core /tmp/codex-core-tests.list receipt_before_dispatch FIELDWORK_RECEIPT_DISPATCH_EXACT
+          run_group codex-core /tmp/codex-core-tests.list direct_tool_result_persistence_ FIELDWORK_RECEIPT_PERSISTENCE_EXACT
+
+          test "$total" -gt 0
+          echo "FIELDWORK_RECEIPT_FOUNDATION_EXACT_TOTAL=$total"
 
       - name: Preserve reviewed source fence
         run: |
