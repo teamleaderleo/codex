@@ -1,11 +1,6 @@
 name: fieldwork-83-receipt-foundation-current
 
 on:
-  push:
-    branches:
-      - fieldwork/83-receipt-foundation-carrier-97576b
-    paths:
-      - .github/workflows/fieldwork-83-receipt-foundation-current.yml
   pull_request:
     branches:
       - fieldwork/upstream-97576b-source-base
