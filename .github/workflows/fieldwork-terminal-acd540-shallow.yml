@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --depth=1 origin \
             refs/heads/fieldwork/upstream-97576-base:refs/remotes/origin/fieldwork/upstream-97576-base
-          git fetch --no-tags --depth=1 origin \
+          git fetch --no-tags --depth=2 origin \
             refs/heads/fieldwork/23-terminal-current-upstream:refs/remotes/origin/fieldwork/23-terminal-current-upstream
           git checkout --detach "$UPSTREAM_HEAD"
           test "$(git rev-parse HEAD)" = "$UPSTREAM_HEAD"
