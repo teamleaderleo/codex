@@ -1,5 +1,6 @@
 name: fieldwork-83-current-upstream-append-outcome
 
+# Head-only trigger marker: current-upstream append outcome pass 1.
 on:
   pull_request:
     branches:
