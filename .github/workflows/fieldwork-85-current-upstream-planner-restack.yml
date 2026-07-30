@@ -1,6 +1,6 @@
 name: fieldwork-85-current-upstream-planner-restack
 
-# Head-only trigger marker: current-upstream planner restack pass 1.
+# Head-only trigger marker: current-upstream planner restack pass 2.
 on:
   pull_request:
     branches:
@@ -208,10 +208,11 @@ jobs:
           cargo test -p codex-core mcp_and_tool_search_follow_direct_and_deferred_tool_exposure --lib --locked
       - name: Publish source-only current-upstream branch
         run: |
-          git diff -- \
+          git diff HEAD -- \
             codex-rs/core/src/tools/spec_plan.rs \
             codex-rs/core/src/tools/spec_plan_tests.rs > /tmp/source.patch
           test -s /tmp/source.patch
+          git reset --hard HEAD
           git checkout -B publish b545c94041017d000e2c8b2f6272705d21b85dfb
           git apply /tmp/source.patch
           git diff --check
