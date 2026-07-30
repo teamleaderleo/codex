@@ -1,6 +1,6 @@
 name: fieldwork-upstream-b545-responses-lite-probe
 
-# Head-only trigger marker: conflict-free upstream-b545 compatibility pass.
+# Head-only trigger marker: conflict-free upstream-b545 compatibility pass 2.
 on:
   pull_request:
     branches:
@@ -26,8 +26,10 @@ jobs:
       - name: Apply source-and-test intent from the owned diagnostic branch
         run: |
           git fetch origin d1045ae0001444549a4905715e7962e14c2ae163
-          git show d1045ae0001444549a4905715e7962e14c2ae163:.github/fieldwork/85_apply_lite_prewarm_full_first_turn.py > /tmp/apply_responses_lite.py
-          python3 /tmp/apply_responses_lite.py
+          mkdir -p .github/fieldwork
+          git show d1045ae0001444549a4905715e7962e14c2ae163:.github/fieldwork/85_apply_lite_prewarm_full_first_turn.py > .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+          python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+          rm .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           git diff --check
           git status --short
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
