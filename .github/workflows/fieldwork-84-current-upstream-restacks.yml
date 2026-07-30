@@ -1,6 +1,6 @@
 name: fieldwork-84-current-upstream-restacks
 
-# Head-only trigger marker: current-upstream MCP restack pass 1.
+# Head-only trigger marker: current-upstream MCP restack pass 2.
 on:
   pull_request:
     branches:
@@ -115,8 +115,9 @@ jobs:
               large_reuse=$?
               set -e
               echo "FIELDWORK_MCP_CURRENT=default:${default_reconnect},${default_reuse};large:${large_reconnect},${large_reuse}"
+              test "$default_reconnect" -ne 0
+              test "$default_reuse" -ne 0
               test "$large_reconnect" -eq 0
-              test "$default_reuse" -eq 0
               test "$large_reuse" -eq 0
               ;;
             publication)
@@ -144,8 +145,9 @@ jobs:
               message='mcp: publish only the latest refresh generation'
               ;;
           esac
-          git diff -- "${paths[@]}" > /tmp/source.patch
+          git diff HEAD -- "${paths[@]}" > /tmp/source.patch
           test -s /tmp/source.patch
+          git reset --hard HEAD
           git checkout -B publish b545c94041017d000e2c8b2f6272705d21b85dfb
           git apply /tmp/source.patch
           git diff --check
