@@ -122,61 +122,92 @@ jobs:
           text = process_tests.read_text()
           assert 'local_output_task_retains_stdout_before_best_effort_broadcast' not in text
           text = text.replace(
+              'use super::process::UnifiedExecProcess;\n',
+              'use super::process::NoopSpawnLifecycle;\nuse super::process::UnifiedExecProcess;\n',
+              1,
+          )
+          text = text.replace(
+              'use codex_exec_server::WriteStatus;\n',
+              'use codex_exec_server::WriteStatus;\nuse codex_utils_pty::ProcessDriver;\nuse codex_utils_pty::spawn_from_driver;\n',
+              1,
+          )
+          text = text.replace(
               'use std::sync::Arc;\n',
-              'use std::sync::Arc;\nuse std::sync::atomic::AtomicBool;\nuse std::sync::atomic::Ordering;\n',
+              'use std::sync::Arc;\nuse std::sync::atomic::Ordering;\nuse std::time::Duration;\n',
               1,
           )
           text = text.replace(
               'use tokio::sync::Mutex;\n',
-              'use tokio::sync::Mutex;\nuse tokio::sync::Notify;\nuse tokio::sync::broadcast;\nuse tokio::sync::mpsc;\n',
+              'use tokio::sync::Mutex;\nuse tokio::sync::broadcast;\nuse tokio::sync::mpsc;\nuse tokio::sync::oneshot;\n',
               1,
           )
           text += r'''
 
+          async fn local_output_process() -> (
+              UnifiedExecProcess,
+              broadcast::Sender<Vec<u8>>,
+              oneshot::Sender<i32>,
+          ) {
+              let (writer_tx, _writer_rx) = mpsc::channel(1);
+              let (stdout_tx, stdout_rx) = broadcast::channel(512);
+              let (exit_tx, exit_rx) = oneshot::channel();
+              let spawned = spawn_from_driver(ProcessDriver {
+                  writer_tx,
+                  stdout_rx,
+                  stderr_rx: None,
+                  exit_rx,
+                  terminator: None,
+                  writer_handle: None,
+                  resizer: None,
+              });
+              let process = UnifiedExecProcess::from_spawned(
+                  spawned,
+                  codex_sandboxing::SandboxType::None,
+                  Box::new(NoopSpawnLifecycle),
+              )
+              .await
+              .expect("driver-backed local process should start");
+              (process, stdout_tx, exit_tx)
+          }
+
+          async fn wait_for_local_output_close(process: &UnifiedExecProcess) {
+              let output_handles = process.output_handles();
+              tokio::time::timeout(Duration::from_secs(5), async {
+                  while !output_handles.output_closed.load(Ordering::Acquire) {
+                      tokio::task::yield_now().await;
+                  }
+              })
+              .await
+              .expect("local output task should close");
+          }
+
           #[tokio::test]
           async fn local_output_task_retains_stdout_before_best_effort_broadcast() {
-              let (stdout_tx, stdout_rx) = mpsc::channel(512);
-              let (stderr_tx, stderr_rx) = mpsc::channel(1);
-              drop(stderr_tx);
-              let buffer = Arc::new(Mutex::new(
-                  crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
-              ));
-              let completion_buffer = Arc::new(Mutex::new(
-                  crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
-              ));
-              let output_notify = Arc::new(Notify::new());
-              let output_closed = Arc::new(AtomicBool::new(false));
-              let output_closed_notify = Arc::new(Notify::new());
-              let (output_tx, mut lagging_receiver) = broadcast::channel(1);
-              let task = UnifiedExecProcess::spawn_local_output_task(
-                  stdout_rx,
-                  stderr_rx,
-                  Arc::clone(&buffer),
-                  Arc::clone(&completion_buffer),
-                  output_notify,
-                  Arc::clone(&output_closed),
-                  output_closed_notify,
-                  output_tx,
-              );
-
+              let (process, stdout_tx, exit_tx) = local_output_process().await;
+              let mut lagging_receiver = process.output_receiver();
               let mut expected = Vec::new();
               for index in 0..256 {
                   let chunk = format!("stdout-{index:04}\n").into_bytes();
                   expected.extend_from_slice(&chunk);
-                  stdout_tx.send(chunk).await.expect("send stdout chunk");
+                  stdout_tx.send(chunk).expect("send stdout chunk");
               }
               drop(stdout_tx);
-              task.await.expect("local output task should finish");
+              exit_tx.send(0).expect("send exit code");
+              wait_for_local_output_close(&process).await;
 
-              assert!(output_closed.load(Ordering::Acquire));
               assert!(matches!(
                   lagging_receiver.recv().await,
                   Err(broadcast::error::RecvError::Lagged(_))
               ));
-              assert_eq!(buffer.lock().await.total_bytes(), expected.len());
-              assert_eq!(completion_buffer.lock().await.total_bytes(), expected.len());
+              let output_handles = process.output_handles();
               assert_eq!(
-                  completion_buffer
+                  output_handles.output_buffer.lock().await.total_bytes(),
+                  expected.len()
+              );
+              assert_eq!(process.completion_buffer().lock().await.total_bytes(), expected.len());
+              assert_eq!(
+                  process
+                      .completion_buffer()
                       .lock()
                       .await
                       .to_bytes_with_omission_marker(),
@@ -186,46 +217,25 @@ jobs:
 
           #[tokio::test]
           async fn local_output_task_retains_invalid_utf8_when_broadcast_lags() {
-              let (stdout_tx, stdout_rx) = mpsc::channel(512);
-              let (stderr_tx, stderr_rx) = mpsc::channel(1);
-              drop(stderr_tx);
-              let buffer = Arc::new(Mutex::new(
-                  crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
-              ));
-              let completion_buffer = Arc::new(Mutex::new(
-                  crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
-              ));
-              let output_notify = Arc::new(Notify::new());
-              let output_closed = Arc::new(AtomicBool::new(false));
-              let output_closed_notify = Arc::new(Notify::new());
-              let (output_tx, mut lagging_receiver) = broadcast::channel(1);
-              let task = UnifiedExecProcess::spawn_local_output_task(
-                  stdout_rx,
-                  stderr_rx,
-                  Arc::clone(&buffer),
-                  Arc::clone(&completion_buffer),
-                  output_notify,
-                  Arc::clone(&output_closed),
-                  output_closed_notify,
-                  output_tx,
-              );
-
+              let (process, stdout_tx, exit_tx) = local_output_process().await;
+              let mut lagging_receiver = process.output_receiver();
               let mut expected = Vec::new();
               for index in 0..256 {
                   let chunk = vec![0xff, (index % 251) as u8, b'\n'];
                   expected.extend_from_slice(&chunk);
-                  stdout_tx.send(chunk).await.expect("send invalid UTF-8 chunk");
+                  stdout_tx.send(chunk).expect("send invalid UTF-8 chunk");
               }
               drop(stdout_tx);
-              task.await.expect("local output task should finish");
+              exit_tx.send(0).expect("send exit code");
+              wait_for_local_output_close(&process).await;
 
-              assert!(output_closed.load(Ordering::Acquire));
               assert!(matches!(
                   lagging_receiver.recv().await,
                   Err(broadcast::error::RecvError::Lagged(_))
               ));
               assert_eq!(
-                  completion_buffer
+                  process
+                      .completion_buffer()
                       .lock()
                       .await
                       .to_bytes_with_omission_marker(),
