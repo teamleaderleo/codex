@@ -1,11 +1,6 @@
 name: fieldwork-83-typed-identity-current
 
 on:
-  push:
-    branches:
-      - fieldwork/83-typed-identity-carrier-97576b
-    paths:
-      - .github/workflows/fieldwork-83-typed-identity-current.yml
   pull_request:
     branches:
       - fieldwork/upstream-97576b-source-base
