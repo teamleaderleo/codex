@@ -49,7 +49,8 @@ jobs:
           FOUNDATION_BASE: 2b7b93081361b77f8ddaceaf362a09765b4153bf
           FOUNDATION_HEAD: 73ae22f90300d632833f9e4a531c4dd857c5db36
         run: |
-          test "$(git rev-parse HEAD^)" = "$CURRENT_BASE"
+          set -euo pipefail
+          test "$(git merge-base HEAD "$CURRENT_BASE")" = "$CURRENT_BASE"
           git diff --binary "$FOUNDATION_BASE" "$FOUNDATION_HEAD" -- . ':(exclude).github/**' \
             > /tmp/fieldwork-83-receipt-foundation.patch
           test -s /tmp/fieldwork-83-receipt-foundation.patch
@@ -60,6 +61,7 @@ jobs:
       - name: Format-check and run receipt foundation controls
         working-directory: codex-rs
         run: |
+          set -euo pipefail
           cargo fmt --all -- --check
           cargo test -p codex-tools tool_operation --locked
           cargo test -p codex-core compaction_identity --locked
@@ -69,6 +71,7 @@ jobs:
 
       - name: Preserve reviewed source fence
         run: |
+          set -euo pipefail
           git add codex-rs/core codex-rs/tools
           actual="$(git diff --cached --name-only | sort)"
           expected="$(printf '%s\n' \
@@ -98,6 +101,9 @@ jobs:
         env:
           SOURCE_BRANCH: fieldwork/83-receipt-foundation-upstream-97576b
         run: |
+          set -euo pipefail
           git switch -C "$SOURCE_BRANCH"
           git commit -m 'core: restore mutation receipt foundation'
           git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=97576b1794872e342450ebd577123e052ab57626"
