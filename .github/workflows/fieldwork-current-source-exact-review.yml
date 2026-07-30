@@ -1,0 +1,113 @@
+name: fieldwork-current-source-exact-review
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/current-source-exact-review-base
+    paths:
+      - .github/workflows/fieldwork-current-source-exact-review.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  exact-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate:
+          - reconnect
+          - publication
+          - terminal
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ matrix.candidate == 'reconnect' && 'fieldwork/84-mcp-reconnect-current-upstream' || matrix.candidate == 'publication' && 'fieldwork/84-mcp-publication-current-upstream' || 'fieldwork/23-terminal-current-upstream' }}
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Verify immutable source diff
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          git diff --check
+          case "$CANDIDATE" in
+            reconnect)
+              test "$(git rev-parse HEAD)" = eb39c46b4bd0e115aa3e0acece50a19e803a37a4
+              expected=2
+              ;;
+            publication)
+              test "$(git rev-parse HEAD)" = af8d348408e4ab7a00f2423503f9862359063357
+              expected=1
+              ;;
+            terminal)
+              test "$(git rev-parse HEAD)" = 7db66fe3f235df77c36a9db521677e23379bcac5
+              expected=4
+              ;;
+          esac
+          git diff --name-only b545c94041017d000e2c8b2f6272705d21b85dfb...HEAD > /tmp/source-files
+          cat /tmp/source-files
+          test "$(wc -l < /tmp/source-files)" -eq "$expected"
+      - name: Resolve and execute exact controls
+        working-directory: codex-rs
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          case "$CANDIDATE" in
+            reconnect)
+              cargo test -p codex-core --test all --locked -- --list > /tmp/tests.list
+              suffixes=(
+                host_mcp_config_refresh_reconnects_ready_clients
+                ordinary_runtime_config_refresh_reuses_ready_mcp_client
+              )
+              for suffix in "${suffixes[@]}"; do
+                mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+                printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+                test "${#matches[@]}" -eq 1
+                RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture
+              done
+              echo 'FIELDWORK_RECONNECT_EXACT=2/2'
+              ;;
+            publication)
+              cargo test -p codex-mcp --lib --locked -- --list > /tmp/tests.list
+              suffixes=(
+                publication_state_rejects_older_generation
+                publication_state_carries_freshness_across_overlapping_refreshes
+                publication_state_rejects_candidate_when_freshness_advances
+                publication_state_keeps_stale_candidate_gate_closed
+                publication_gate_opens_only_for_the_winning_candidate
+              )
+              for suffix in "${suffixes[@]}"; do
+                mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+                printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+                test "${#matches[@]}" -eq 1
+                cargo test -p codex-mcp --lib --locked "${matches[0]}" -- --exact --nocapture
+              done
+              echo 'FIELDWORK_PUBLICATION_EXACT=5/5'
+              ;;
+            terminal)
+              cargo test -p codex-core --lib --locked -- --list > /tmp/tests.list
+              suffixes=(
+                local_output_task_retains_stdout_before_best_effort_broadcast
+                completed_item_includes_output_emitted_before_subscription
+                reconcile_transcript_replaces_partial_stream_with_authoritative_output
+              )
+              for suffix in "${suffixes[@]}"; do
+                mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+                printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+                test "${#matches[@]}" -eq 1
+                cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+              done
+              echo 'FIELDWORK_TERMINAL_EXACT=3/3'
+              ;;
+          esac
