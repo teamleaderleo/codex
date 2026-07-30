@@ -24,7 +24,7 @@ jobs:
       - name: Check out exact carrier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: fieldwork/84-reconnect-appserver-carrier-a01a
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -32,6 +32,7 @@ jobs:
         run: |
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_MCP_RECONNECT_CARRIER_HEAD=$(git rev-parse HEAD)"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
@@ -56,19 +57,49 @@ jobs:
           python /tmp/84_reconnect_appserver.py
           git diff --check
 
-      - name: Format and run exact reconnect controls
+      - name: Format and verify exact source fence
+        env:
+          CURRENT_BASE: a01a2d91461a57809e944de7758477b92617ab01
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cd ..
+          actual="$(git diff --name-only "$CURRENT_BASE" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/app-server/tests/suite/v2/mcp_tool.rs \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs | sort)"
+          printf 'actual source files:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+          git diff --check "$CURRENT_BASE"
+
+      - name: Resolve and run three exact reconnect controls
         working-directory: codex-rs
         env:
           RUST_MIN_STACK: 16777216
         run: |
           set -euo pipefail
-          cargo fmt --all
-          cargo fmt --all -- --check
-          cargo test -p codex-core --test all --locked host_mcp_config_refresh_reconnects_ready_clients -- --exact
-          cargo test -p codex-core --test all --locked ordinary_runtime_config_refresh_reuses_ready_mcp_client -- --exact
-          cargo test -p codex-app-server --test all --locked mcp_server_refresh_request_reconnects_ready_thread_clients -- --exact
+          cargo test -p codex-core --test all --locked -- --list > /tmp/core-integration-tests.list
+          cargo test -p codex-app-server --test all --locked -- --list > /tmp/appserver-integration-tests.list
 
-      - name: Verify source fence
+          run_exact() {
+            local package="$1"
+            local list_file="$2"
+            local suffix="$3"
+            mapfile -t matches < <(sed -n 's/: test$//p' "$list_file" | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p "$package" --test all --locked "${matches[0]}" -- --exact --nocapture
+          }
+
+          run_exact codex-core /tmp/core-integration-tests.list host_mcp_config_refresh_reconnects_ready_clients
+          run_exact codex-core /tmp/core-integration-tests.list ordinary_runtime_config_refresh_reuses_ready_mcp_client
+          run_exact codex-app-server /tmp/appserver-integration-tests.list mcp_server_refresh_request_reconnects_ready_thread_clients
+          echo 'FIELDWORK_MCP_RECONNECT_EXACT=3/3'
+
+      - name: Preserve source fence
         run: |
           set -euo pipefail
           git add \
