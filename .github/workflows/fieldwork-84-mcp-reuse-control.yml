@@ -1,0 +1,87 @@
+name: fieldwork-84-mcp-reuse-control
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-84-mcp-reuse-control.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/84-mcp-config-reload-reconnect-clean
+          fetch-depth: 0
+          persist-credentials: true
+      - run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Add ordinary reconciliation reuse control
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('codex-rs/core/tests/suite/mcp_tool_exposure.rs')
+          text = path.read_text(encoding='utf-8')
+          anchor = '#[tokio::test(flavor = "multi_thread", worker_threads = 2)]\nasync fn out_of_band_resource_read_reconciles_the_published_mcp_runtime()'
+          index = text.index(anchor)
+          regression = '''#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+          async fn ordinary_runtime_config_refresh_reuses_ready_mcp_client() -> Result<()> {
+              skip_if_no_network!(Ok(()));
+
+              let server = responses::start_mock_server().await;
+              let (apps_server, startup_control) =
+                  AppsTestServer::mount_with_startup_control(&server).await?;
+              let test = search_capable_apps_builder(apps_server.chatgpt_base_url.clone())
+                  .build(&server)
+                  .await?;
+              wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+
+              let initial_attempts = startup_control.initialize_attempts();
+              assert!(initial_attempts > 0);
+
+              test.codex
+                  .refresh_runtime_config(test.config.clone())
+                  .await;
+              tokio::time::sleep(Duration::from_millis(250)).await;
+
+              assert_eq!(startup_control.initialize_attempts(), initial_attempts);
+              Ok(())
+          }
+
+          '''.replace('          ', '')
+          path.write_text(text[:index] + regression + text[index:], encoding='utf-8')
+          PY
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Execute reconnect and reuse controls
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: "16777216"
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          cargo test -p codex-core --test all host_mcp_config_refresh_reconnects_ready_clients --locked
+          cargo test -p codex-core --test all ordinary_runtime_config_refresh_reuses_ready_mcp_client --locked
+      - name: Publish source-only review head
+        run: |
+          rm -f .github/workflows/fieldwork-84-mcp-reuse-control.yml
+          expected=$(printf '%s\n' \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs)
+          actual=$(git diff --name-only origin/main | sort)
+          test "$actual" = "$(printf '%s\n' "$expected" | sort)"
+          git diff --check
+          git add -A
+          git commit -m 'test: preserve MCP client reuse during ordinary refresh'
+          git push origin HEAD:fieldwork/84-mcp-config-reload-reconnect-clean
