@@ -13,7 +13,12 @@ use codex_exec_server::WriteStatus;
 use pretty_assertions::assert_eq;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
+use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 use tokio::sync::watch;
 
 struct MockExecProcess {
@@ -171,4 +176,55 @@ async fn remote_terminate_confirmed_updates_state_on_success_only() {
         .expect("terminate should succeed");
 
     assert!(process.has_exited());
+}
+
+#[tokio::test]
+async fn local_output_task_retains_stdout_before_best_effort_broadcast() {
+    let (stdout_tx, stdout_rx) = mpsc::channel(512);
+    let (stderr_tx, stderr_rx) = mpsc::channel(1);
+    drop(stderr_tx);
+    let buffer = Arc::new(Mutex::new(
+        crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
+    ));
+    let completion_buffer = Arc::new(Mutex::new(
+        crate::unified_exec::head_tail_buffer::HeadTailBuffer::default(),
+    ));
+    let output_notify = Arc::new(Notify::new());
+    let output_closed = Arc::new(AtomicBool::new(false));
+    let output_closed_notify = Arc::new(Notify::new());
+    let (output_tx, mut lagging_receiver) = broadcast::channel(1);
+    let task = UnifiedExecProcess::spawn_local_output_task(
+        stdout_rx,
+        stderr_rx,
+        Arc::clone(&buffer),
+        Arc::clone(&completion_buffer),
+        output_notify,
+        Arc::clone(&output_closed),
+        output_closed_notify,
+        output_tx,
+    );
+
+    let mut expected = Vec::new();
+    for index in 0..256 {
+        let chunk = format!("stdout-{index:04}\n").into_bytes();
+        expected.extend_from_slice(&chunk);
+        stdout_tx.send(chunk).await.expect("send stdout chunk");
+    }
+    drop(stdout_tx);
+    task.await.expect("local output task should finish");
+
+    assert!(output_closed.load(Ordering::Acquire));
+    assert!(matches!(
+        lagging_receiver.recv().await,
+        Err(broadcast::error::RecvError::Lagged(_))
+    ));
+    assert_eq!(buffer.lock().await.total_bytes(), expected.len());
+    assert_eq!(completion_buffer.lock().await.total_bytes(), expected.len());
+    assert_eq!(
+        completion_buffer
+            .lock()
+            .await
+            .to_bytes_with_omission_marker(),
+        expected
+    );
 }
