@@ -1,5 +1,6 @@
 name: fieldwork-85-current-upstream-planner-restack
 
+# Head-only trigger marker: current-upstream planner restack pass 1.
 on:
   pull_request:
     branches:
