@@ -23,7 +23,7 @@ jobs:
       - name: Check out exact carrier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: fieldwork/83-typed-identity-carrier-97576b
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -31,6 +31,7 @@ jobs:
         run: |
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_TYPED_IDENTITY_CARRIER_HEAD=$(git rev-parse HEAD)"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
@@ -84,15 +85,46 @@ jobs:
           git diff --cached --check
           git diff --check
 
-      - name: Format-check and run typed identity controls
+      - name: Format-check and run exact typed identity controls
         working-directory: codex-rs
         run: |
           set -euo pipefail
           cargo fmt --all -- --check
-          cargo test -p codex-core tool_operation_receipts --locked
-          cargo test -p codex-core code_mode_receipt_uses_runtime_identity_instead_of_host_call_id --locked
-          cargo test -p codex-core tools::lifecycle::tests --locked
-          cargo test -p codex-core direct_tool_result_persistence_ --locked
+          cargo test -p codex-core --lib --locked -- --list > /tmp/codex-core-tests.list
+
+          declare -A seen=()
+          total=0
+
+          run_group() {
+            local token="$1"
+            local marker="$2"
+            local expected_count="$3"
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-core-tests.list | grep "$token" | sort -u)
+            printf '%s matches (%s):\n' "$token" "${#matches[@]}"
+            printf '  %s\n' "${matches[@]:-<none>}"
+            if test "$expected_count" -gt 0; then
+              test "${#matches[@]}" -eq "$expected_count"
+            else
+              test "${#matches[@]}" -gt 0
+            fi
+            local group_count=0
+            for full_name in "${matches[@]}"; do
+              test -z "${seen[$full_name]:-}"
+              seen[$full_name]=1
+              cargo test -p codex-core --lib --locked "$full_name" -- --exact --nocapture
+              group_count=$((group_count + 1))
+              total=$((total + 1))
+            done
+            echo "${marker}=${group_count}"
+          }
+
+          run_group tool_operation_receipts FIELDWORK_TYPED_IDENTITY_RECEIPT_STATE_EXACT 0
+          run_group code_mode_receipt_uses_runtime_identity_instead_of_host_call_id FIELDWORK_TYPED_IDENTITY_CODE_MODE_EXACT 1
+          run_group 'tools::lifecycle::tests::' FIELDWORK_TYPED_IDENTITY_LIFECYCLE_EXACT 0
+          run_group direct_tool_result_persistence_ FIELDWORK_TYPED_IDENTITY_PERSISTENCE_EXACT 0
+
+          test "$total" -gt 0
+          echo "FIELDWORK_TYPED_IDENTITY_EXACT_TOTAL=$total"
 
       - name: Preserve exact source fence
         run: |
