@@ -1,0 +1,17 @@
+name: fieldwork-239-n-terminal-restack
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/239-n-terminal-restack-carrier-base
+    paths:
+      - .github/workflows/fieldwork-239-n-terminal-restack.yml
+
+permissions:
+  contents: read
+
+jobs:
+  carrier-base-placeholder:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'carrier workflow is supplied by the pull-request head'
