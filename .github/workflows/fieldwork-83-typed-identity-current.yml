@@ -49,7 +49,8 @@ jobs:
           FOUNDATION_BASE: 2b7b93081361b77f8ddaceaf362a09765b4153bf
           FOUNDATION_HEAD: 73ae22f90300d632833f9e4a531c4dd857c5db36
         run: |
-          test "$(git rev-parse HEAD^)" = "$CURRENT_BASE"
+          set -euo pipefail
+          test "$(git merge-base HEAD "$CURRENT_BASE")" = "$CURRENT_BASE"
           git diff --binary "$FOUNDATION_BASE" "$FOUNDATION_HEAD" -- . ':(exclude).github/**' \
             > /tmp/fieldwork-83-receipt-foundation.patch
           test -s /tmp/fieldwork-83-receipt-foundation.patch
@@ -61,6 +62,7 @@ jobs:
         env:
           TYPED_IDENTITY_HEAD: 8eb6768faf7010c0b622bda7058a6097a45c57a2
         run: |
+          set -euo pipefail
           mkdir -p .github/fieldwork
           git show "$TYPED_IDENTITY_HEAD:.github/fieldwork/83_typed_operation_identity.py" \
             > .github/fieldwork/83_typed_operation_identity.py
@@ -90,6 +92,7 @@ jobs:
       - name: Format-check and run typed identity controls
         working-directory: codex-rs
         run: |
+          set -euo pipefail
           cargo fmt --all -- --check
           cargo test -p codex-core tool_operation_receipts --locked
           cargo test -p codex-core code_mode_receipt_uses_runtime_identity_instead_of_host_call_id --locked
@@ -98,6 +101,7 @@ jobs:
 
       - name: Preserve exact source fence
         run: |
+          set -euo pipefail
           git add codex-rs/core codex-rs/tools
           actual="$(git diff --cached --name-only | sort)"
           expected="$(printf '%s\n' \
@@ -128,6 +132,9 @@ jobs:
         env:
           SOURCE_BRANCH: fieldwork/83-typed-identity-upstream-97576b
         run: |
+          set -euo pipefail
           git switch -C "$SOURCE_BRANCH"
           git commit -m 'core: key mutation receipts by logical operation identity'
           git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=97576b1794872e342450ebd577123e052ab57626"
