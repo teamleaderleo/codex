@@ -23,9 +23,12 @@ jobs:
       - name: Check out exact carrier
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: fieldwork/83-receipt-wire-v1-carrier-a01a2d
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Record carrier identity
+        run: echo "FIELDWORK_RECEIPT_WIRE_CARRIER_HEAD=$(git rev-parse HEAD)"
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
