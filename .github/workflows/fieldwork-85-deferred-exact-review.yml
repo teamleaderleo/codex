@@ -1,0 +1,58 @@
+name: fieldwork-85-deferred-exact-review
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/85-deferred-exact-review-base
+    paths:
+      - .github/workflows/fieldwork-85-deferred-exact-review.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  exact-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Verify exact source and diff
+        run: |
+          test "$(git rev-parse HEAD^2 2>/dev/null || git rev-parse HEAD)" != ""
+          git diff --check
+          git diff --name-only fieldwork/upstream-b545-source-base...fieldwork/85-deferred-loader-current-upstream > /tmp/source-files
+          cat /tmp/source-files
+          test "$(wc -l < /tmp/source-files)" -eq 2
+          grep -Fx 'codex-rs/core/src/tools/spec_plan.rs' /tmp/source-files
+          grep -Fx 'codex-rs/core/src/tools/spec_plan_tests.rs' /tmp/source-files
+      - name: Resolve and run four exact tests
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked -- --list > /tmp/tests.list
+          suffixes=(
+            deferred_extension_is_direct_when_search_is_unavailable
+            deferred_runtime_without_search_metadata_is_direct
+            code_mode_keeps_unsearchable_deferred_runtime_registered
+            mcp_and_tool_search_follow_direct_and_deferred_tool_exposure
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 4
+          echo "FIELDWORK_DEFERRED_EXACT=4/4"
