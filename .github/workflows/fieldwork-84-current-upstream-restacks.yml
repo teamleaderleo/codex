@@ -1,0 +1,153 @@
+name: fieldwork-84-current-upstream-restacks
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-b545-mcp-restack-base
+    paths:
+      - .github/workflows/fieldwork-84-current-upstream-restacks.yml
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  restack:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate:
+          - reconnect
+          - publication
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Apply bounded current-upstream candidate
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          base=f7265553ea1510304f3091833dcbce65ef21f10c
+          case "$CANDIDATE" in
+            reconnect)
+              head=a55767d8fb80f6dd18006d0cdabf19128cc546f3
+              paths=(
+                codex-rs/core/src/codex_thread.rs
+                codex-rs/core/tests/suite/mcp_tool_exposure.rs
+              )
+              ;;
+            publication)
+              head=e5774304cd8ca3c3f855c7eff17970e9d8557a08
+              paths=(codex-rs/codex-mcp/src/runtime.rs)
+              ;;
+          esac
+          git fetch origin "$base" "$head"
+          git diff --binary "$base" "$head" -- "${paths[@]}" > /tmp/candidate.patch
+          test -s /tmp/candidate.patch
+          git apply --3way /tmp/candidate.patch
+          if [ "$CANDIDATE" = reconnect ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('codex-rs/core/tests/suite/mcp_tool_exposure.rs')
+          text = path.read_text(encoding='utf-8')
+          name = 'ordinary_runtime_config_refresh_reuses_ready_mcp_client'
+          if name in text:
+              raise SystemExit('current-tree reuse regression already exists')
+          anchor = '#[tokio::test(flavor = "multi_thread", worker_threads = 2)]\nasync fn out_of_band_resource_read_reconciles_the_published_mcp_runtime()'
+          test = '''#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+          async fn ordinary_runtime_config_refresh_reuses_ready_mcp_client() -> Result<()> {
+              let server = responses::start_mock_server().await;
+              let (apps_server, startup_control) =
+                  AppsTestServer::mount_with_startup_control(&server).await?;
+              let test = search_capable_apps_builder(apps_server.chatgpt_base_url.clone())
+                  .build(&server)
+                  .await?;
+              wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+
+              let initial_attempts = startup_control.initialize_attempts();
+              assert!(initial_attempts > 0);
+
+              test.codex.refresh_runtime_config(test.config.clone()).await;
+              tokio::time::sleep(Duration::from_millis(100)).await;
+
+              assert_eq!(startup_control.initialize_attempts(), initial_attempts);
+              Ok(())
+          }
+
+          '''.replace('          ', '')
+          if text.count(anchor) != 1:
+              raise SystemExit('resource read test anchor changed')
+          path.write_text(text.replace(anchor, test + anchor, 1), encoding='utf-8')
+          PY
+          fi
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Execute focused current-upstream gates
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          case "$CANDIDATE" in
+            reconnect)
+              set +e
+              cargo test -p codex-core --test all host_mcp_config_refresh_reconnects_ready_clients --locked -- --nocapture
+              default_reconnect=$?
+              cargo test -p codex-core --test all ordinary_runtime_config_refresh_reuses_ready_mcp_client --locked -- --nocapture
+              default_reuse=$?
+              RUST_MIN_STACK=16777216 cargo test -p codex-core --test all host_mcp_config_refresh_reconnects_ready_clients --locked -- --nocapture
+              large_reconnect=$?
+              RUST_MIN_STACK=16777216 cargo test -p codex-core --test all ordinary_runtime_config_refresh_reuses_ready_mcp_client --locked -- --nocapture
+              large_reuse=$?
+              set -e
+              echo "FIELDWORK_MCP_CURRENT=default:${default_reconnect},${default_reuse};large:${large_reconnect},${large_reuse}"
+              test "$large_reconnect" -eq 0
+              test "$default_reuse" -eq 0
+              test "$large_reuse" -eq 0
+              ;;
+            publication)
+              cargo test -p codex-mcp publication_state_ --locked
+              cargo test -p codex-mcp publication_gate_opens_only_for_the_winning_candidate --locked
+              ;;
+          esac
+      - name: Publish source-only current-upstream branch
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          case "$CANDIDATE" in
+            reconnect)
+              branch=fieldwork/84-mcp-reconnect-current-upstream
+              paths=(
+                codex-rs/core/src/codex_thread.rs
+                codex-rs/core/tests/suite/mcp_tool_exposure.rs
+              )
+              message='core: reconnect MCP clients on host config reload'
+              ;;
+            publication)
+              branch=fieldwork/84-mcp-publication-current-upstream
+              paths=(codex-rs/codex-mcp/src/runtime.rs)
+              message='mcp: publish only the latest refresh generation'
+              ;;
+          esac
+          git diff -- "${paths[@]}" > /tmp/source.patch
+          test -s /tmp/source.patch
+          git checkout -B publish b545c94041017d000e2c8b2f6272705d21b85dfb
+          git apply /tmp/source.patch
+          git diff --check
+          git add "${paths[@]}"
+          git commit -m "$message"
+          git push --force origin HEAD:"$branch"
