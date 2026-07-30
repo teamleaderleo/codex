@@ -1,0 +1,64 @@
+name: fieldwork-83-receipt-wire-v1-a01a2d
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-receipt-wire-v1-a01a2d
+    paths:
+      - .github/workflows/fieldwork-83-receipt-wire-v1-a01a2d.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-83-receipt-wire-v1-a01a2d
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/83-receipt-wire-v1-carrier-a01a2d
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Verify exact source ancestry and fence
+        env:
+          SOURCE_BASE: a01a2d91461a57809e944de7758477b92617ab01
+          SOURCE_HEAD: e205ffe911dcbd661b47c4107e7f26ae772f8182
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
+          actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/protocol/src/lib.rs \
+            codex-rs/protocol/src/tool_operation.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+
+      - name: Format-check exact source
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Run five receipt wire controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-protocol tool_operation --locked
+          echo 'FIELDWORK_RECEIPT_WIRE_V1=5/5'
+
+      - name: Run protocol package tests
+        working-directory: codex-rs
+        run: cargo test -p codex-protocol --locked
