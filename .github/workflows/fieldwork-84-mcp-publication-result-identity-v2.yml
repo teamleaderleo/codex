@@ -1,0 +1,109 @@
+name: fieldwork-84-mcp-publication-result-identity-v2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-84-mcp-publication-result-identity-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/84-mcp-publication-tickets
+          fetch-depth: 0
+          persist-credentials: true
+      - run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Bind replace_fresh result to accepted candidate
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('codex-rs/codex-mcp/src/runtime.rs')
+          text = path.read_text(encoding='utf-8')
+
+          replace_start = text.index('    pub async fn replace_fresh(')
+          replace_end = text.index('\n    fn issue_refresh_ticket(', replace_start)
+          replacement = '''    pub async fn replace_fresh(&self, input: McpRuntimeInput) -> anyhow::Result<Vec<ToolInfo>> {
+              let ticket = self.issue_refresh_ticket(/*force_fresh*/ true);
+              let candidate = self
+                  .publish(input, /*previous*/ None, ticket)
+                  .await
+                  .ok_or_else(|| anyhow::anyhow!("MCP refresh was superseded before publication"))?;
+              candidate
+                  .connections
+                  .hard_refresh_codex_apps_tools_cache()
+                  .await
+          }
+          '''.replace('          ', '')
+          text = text[:replace_start] + replacement + text[replace_end:]
+
+          publish_start = text.index('    async fn publish(')
+          publish_body = text.index(' {\n', publish_start)
+          signature = text[publish_start:publish_body]
+          if ') -> bool' not in signature:
+              raise SystemExit('publish return type changed')
+          signature = signature.replace(
+              ') -> bool',
+              ') -> Option<Arc<PublishedMcpRuntime>>',
+              1,
+          )
+          text = text[:publish_start] + signature + text[publish_body:]
+
+          tail_start = text.index('        let accepted = {', publish_start)
+          tail_end = text.index(
+              '\n    /// Ensures the next refresh creates fresh connections',
+              tail_start,
+          )
+          tail = '''        let accepted = {
+              let mut state = self
+                  .publication_state
+                  .lock()
+                  .unwrap_or_else(|poisoned| poisoned.into_inner());
+              if state.can_publish(ticket) {
+                  self.current.store(Arc::clone(&candidate));
+                  state.mark_published(ticket);
+                  Some(candidate)
+              } else {
+                  None
+              }
+          };
+              if accepted.is_some() {
+                  let _ = publish.send(true);
+              }
+              accepted
+          }
+
+          '''.replace('          ', '')
+          path.write_text(text[:tail_start] + tail + text[tail_end:], encoding='utf-8')
+          PY
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Execute focused runtime gate
+        run: |
+          rustfmt --edition 2024 codex-rs/codex-mcp/src/runtime.rs
+          rustfmt --edition 2024 --check codex-rs/codex-mcp/src/runtime.rs
+          cd codex-rs
+          cargo test -p codex-mcp publication_state_ --locked
+          cargo test -p codex-mcp publication_gate_opens_only_for_the_winning_candidate --locked
+      - name: Publish source-only review head
+        run: |
+          rm -f .github/workflows/fieldwork-84-mcp-publication-result-identity.yml
+          rm -f .github/workflows/fieldwork-84-mcp-publication-result-identity-v2.yml
+          actual=$(git diff --name-only origin/main)
+          test "$actual" = "codex-rs/codex-mcp/src/runtime.rs"
+          git diff --check
+          git add -A
+          git commit -m 'mcp: bind fresh results to accepted publication'
+          git push origin HEAD:fieldwork/84-mcp-publication-tickets
