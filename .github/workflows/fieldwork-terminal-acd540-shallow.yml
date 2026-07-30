@@ -1,9 +1,9 @@
-name: fieldwork-terminal-acd540-shallow
+name: fieldwork-terminal-97576-shallow
 
 on:
   pull_request:
     branches:
-      - fieldwork/upstream-acd540-terminal-restack-base
+      - fieldwork/upstream-97576-base
     paths:
       - .github/workflows/fieldwork-terminal-acd540-shallow.yml
 
@@ -11,14 +11,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: fieldwork-terminal-acd540-shallow
+  group: fieldwork-terminal-97576-shallow
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
-  UPSTREAM_HEAD: acd540f1581bf30f963fccbcce43ac494102242c
+  UPSTREAM_HEAD: 97576b1794872e342450ebd577123e052ab57626
   HISTORICAL_SOURCE: 7db66fe3f235df77c36a9db521677e23379bcac5
-  SOURCE_BRANCH: fieldwork/23-terminal-acd540-source
+  SOURCE_BRANCH: fieldwork/23-terminal-97576-source
 
 jobs:
   shallow-restack-and-verify:
@@ -80,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags --depth=1 origin \
-            refs/heads/fieldwork/upstream-acd540-terminal-restack-base:refs/remotes/origin/fieldwork/upstream-acd540-terminal-restack-base
+            refs/heads/fieldwork/upstream-97576-base:refs/remotes/origin/fieldwork/upstream-97576-base
           git fetch --no-tags --depth=1 origin \
             refs/heads/fieldwork/23-terminal-current-upstream:refs/remotes/origin/fieldwork/23-terminal-current-upstream
           git checkout --detach "$UPSTREAM_HEAD"
