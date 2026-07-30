@@ -1,0 +1,167 @@
+name: fieldwork-83-typed-identity-a01a2d
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-a01a2d-source-base
+    paths:
+      - .github/workflows/fieldwork-83-typed-identity-a01a2d.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-typed-identity-a01a2d
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_TYPED_IDENTITY_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply merged receipt foundation to exact current upstream
+        env:
+          CURRENT_BASE: a01a2d91461a57809e944de7758477b92617ab01
+          FOUNDATION_BASE: 2b7b93081361b77f8ddaceaf362a09765b4153bf
+          FOUNDATION_HEAD: 73ae22f90300d632833f9e4a531c4dd857c5db36
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$CURRENT_BASE")" = "$CURRENT_BASE"
+          git diff --binary "$FOUNDATION_BASE" "$FOUNDATION_HEAD" -- . ':(exclude).github/**' \
+            > /tmp/fieldwork-83-receipt-foundation.patch
+          test -s /tmp/fieldwork-83-receipt-foundation.patch
+          git switch --detach "$CURRENT_BASE"
+          git apply --3way --index /tmp/fieldwork-83-receipt-foundation.patch
+          git diff --cached --check
+
+      - name: Apply reviewed typed logical identity intent
+        env:
+          TYPED_IDENTITY_HEAD: 8eb6768faf7010c0b622bda7058a6097a45c57a2
+        run: |
+          set -euo pipefail
+          mkdir -p .github/fieldwork
+          git show "$TYPED_IDENTITY_HEAD:.github/fieldwork/83_typed_operation_identity.py" \
+            > .github/fieldwork/83_typed_operation_identity.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/fieldwork/83_typed_operation_identity.py')
+          text = path.read_text(encoding='utf-8')
+          enum_anchor = "            Direct,\n            CodeMode {"
+          enum_replacement = "            Direct,\n            DirectPlaintextMessage,\n            CodeMode {"
+          count = text.count(enum_anchor)
+          if count != 2:
+              raise SystemExit(f'typed identity enum adaptation: expected 2 anchors, found {count}')
+          text = text.replace(enum_anchor, enum_replacement)
+          match_anchor = "                    Self::Direct => ToolOperationId::direct(direct_call_id),"
+          match_replacement = "                    Self::Direct | Self::DirectPlaintextMessage => {\n                        ToolOperationId::direct(direct_call_id)\n                    },"
+          count = text.count(match_anchor)
+          if count != 1:
+              raise SystemExit(f'typed identity direct-source adaptation: expected 1 anchor, found {count}')
+          path.write_text(text.replace(match_anchor, match_replacement), encoding='utf-8')
+          PY
+          python .github/fieldwork/83_typed_operation_identity.py
+          rm .github/fieldwork/83_typed_operation_identity.py
+          git diff --cached --check
+          git diff --check
+
+      - name: Format-check and run exact typed identity controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test -p codex-core --lib --locked -- --list > /tmp/codex-core-tests.list
+
+          declare -A seen=()
+          total=0
+
+          run_group() {
+            local token="$1"
+            local marker="$2"
+            local expected_count="$3"
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-core-tests.list | grep "$token" | sort -u)
+            printf '%s matches (%s):\n' "$token" "${#matches[@]}"
+            printf '  %s\n' "${matches[@]:-<none>}"
+            if test "$expected_count" -gt 0; then
+              test "${#matches[@]}" -eq "$expected_count"
+            else
+              test "${#matches[@]}" -gt 0
+            fi
+            local group_count=0
+            for full_name in "${matches[@]}"; do
+              test -z "${seen[$full_name]:-}"
+              seen[$full_name]=1
+              cargo test -p codex-core --lib --locked "$full_name" -- --exact --nocapture
+              group_count=$((group_count + 1))
+              total=$((total + 1))
+            done
+            echo "${marker}=${group_count}"
+          }
+
+          run_group tool_operation_receipts FIELDWORK_TYPED_IDENTITY_RECEIPT_STATE_EXACT 0
+          run_group code_mode_receipt_uses_runtime_identity_instead_of_host_call_id FIELDWORK_TYPED_IDENTITY_CODE_MODE_EXACT 1
+          run_group 'tools::lifecycle::tests::' FIELDWORK_TYPED_IDENTITY_LIFECYCLE_EXACT 0
+          run_group direct_tool_result_persistence_ FIELDWORK_TYPED_IDENTITY_PERSISTENCE_EXACT 0
+
+          test "$total" -gt 0
+          echo "FIELDWORK_TYPED_IDENTITY_EXACT_TOTAL=$total"
+
+      - name: Preserve exact source fence
+        run: |
+          set -euo pipefail
+          git add codex-rs/core codex-rs/tools
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/context_manager/compaction_identity.rs \
+            codex-rs/core/src/context_manager/compaction_identity_tests.rs \
+            codex-rs/core/src/context_manager/mod.rs \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/session/turn.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/core/src/state/mod.rs \
+            codex-rs/core/src/state/session.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs \
+            codex-rs/core/src/tools/context.rs \
+            codex-rs/core/src/tools/lifecycle.rs \
+            codex-rs/core/src/tools/registry.rs \
+            codex-rs/core/src/tools/registry_tests.rs \
+            codex-rs/tools/src/lib.rs \
+            codex-rs/tools/src/tool_executor.rs \
+            codex-rs/tools/src/tool_executor_tests.rs \
+            codex-rs/tools/src/tool_operation.rs \
+            codex-rs/tools/src/tool_operation_tests.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish clean source branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-typed-identity-a01a2d
+        run: |
+          set -euo pipefail
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: key mutation receipts by logical operation identity'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=a01a2d91461a57809e944de7758477b92617ab01"
