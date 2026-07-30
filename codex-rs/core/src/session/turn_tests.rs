@@ -384,6 +384,15 @@ async fn direct_tool_result_persistence_recovers_after_one_shot_append_failure()
         &persisted.items,
         "call-after-failure",
     ));
+    let in_memory = session.clone_history().await;
+    assert!(has_in_memory_function_result(
+        in_memory.raw_items(),
+        "call-first-failure",
+    ));
+    assert!(has_in_memory_function_result(
+        in_memory.raw_items(),
+        "call-after-failure",
+    ));
 }
 
 #[tokio::test]
@@ -440,6 +449,15 @@ async fn direct_tool_result_persistence_marks_commit_then_error_ambiguous() {
     ));
     assert!(has_persisted_function_result(
         &persisted.items,
+        "call-after-commit-error",
+    ));
+    let in_memory = session.clone_history().await;
+    assert!(has_in_memory_function_result(
+        in_memory.raw_items(),
+        "call-commit-error",
+    ));
+    assert!(has_in_memory_function_result(
+        in_memory.raw_items(),
         "call-after-commit-error",
     ));
 }
