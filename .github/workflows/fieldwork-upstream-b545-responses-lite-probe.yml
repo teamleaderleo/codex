@@ -1,6 +1,6 @@
 name: fieldwork-upstream-b545-responses-lite-probe
 
-# Head-only trigger marker: conflict-free upstream-b545 compatibility pass 2.
+# Head-only trigger marker: conflict-free upstream-b545 compatibility pass 3.
 on:
   pull_request:
     branches:
@@ -36,9 +36,12 @@ jobs:
         with:
           toolchain: 1.95.0
           components: rustfmt
-      - name: Check formatting
+      - name: Format temporary candidate
         working-directory: codex-rs
-        run: cargo fmt --all -- --check
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
       - name: Run generated-response reuse control
         working-directory: codex-rs
         run: cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn --locked -- --nocapture
