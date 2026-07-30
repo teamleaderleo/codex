@@ -1,0 +1,80 @@
+name: fieldwork-85-lite-submit-isolation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-85-lite-submit-isolation.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  submit-markers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Apply Responses Lite candidate
+        run: python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+      - name: Instrument submit and event boundaries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('codex-rs/core/tests/common/test_codex.rs')
+          text = path.read_text(encoding='utf-8')
+          function_start = text.index('    async fn submit_turn_with_context(')
+          function_end = text.index('\n    }\n}', function_start)
+          segment = text[function_start:function_end]
+          replacements = [
+              (
+                  '        self.codex\n            .submit(Op::UserInput {',
+                  '        eprintln!("FIELDWORK_SUBMIT=before_op_submit");\n'
+                  '        self.codex\n            .submit(Op::UserInput {',
+              ),
+              (
+                  '            .await?;\n\n        let turn_id = wait_for_event_match',
+                  '            .await?;\n'
+                  '        eprintln!("FIELDWORK_SUBMIT=after_op_submit");\n'
+                  '        eprintln!("FIELDWORK_SUBMIT=before_turn_started_wait");\n\n'
+                  '        let turn_id = wait_for_event_match',
+              ),
+              (
+                  '        .await;\n        wait_for_event_with_timeout(',
+                  '        .await;\n'
+                  '        eprintln!("FIELDWORK_SUBMIT=after_turn_started_wait");\n'
+                  '        eprintln!("FIELDWORK_SUBMIT=before_turn_complete_wait");\n'
+                  '        wait_for_event_with_timeout(',
+              ),
+              (
+                  '        .await;\n        Ok(())',
+                  '        .await;\n'
+                  '        eprintln!("FIELDWORK_SUBMIT=after_turn_complete_wait");\n'
+                  '        Ok(())',
+              ),
+          ]
+          for old, new in replacements:
+              if segment.count(old) != 1:
+                  raise SystemExit(f'submit anchor changed: {old!r}')
+              segment = segment.replace(old, new, 1)
+          path.write_text(text[:function_start] + segment + text[function_end:], encoding='utf-8')
+          PY
+      - name: Format diagnostic source
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Run full regression with submit markers
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
