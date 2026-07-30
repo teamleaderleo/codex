@@ -1,0 +1,99 @@
+name: fieldwork-85-lite-worker-isolation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-85-lite-worker-isolation.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  worker-markers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Apply Responses Lite candidate
+        run: python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+      - name: Instrument session worker boundaries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('codex-rs/core/src/session/handlers.rs')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('pub(super) async fn user_input_or_turn_inner(')
+          end = text.index('\n}\n\n/// Queues an inter-agent message', start)
+          segment = text[start:end]
+          replacements = [
+              (
+                  '    let emit_thread_settings_applied = thread_settings != ThreadSettingsOverrides::default();\n',
+                  '    eprintln!("FIELDWORK_WORKER=entered_user_input_handler");\n'
+                  '    let emit_thread_settings_applied = thread_settings != ThreadSettingsOverrides::default();\n',
+              ),
+              (
+                  '    let Ok(current_context) = sess.new_turn_with_sub_id(sub_id.clone(), updates).await else {\n',
+                  '    eprintln!("FIELDWORK_WORKER=before_new_turn");\n'
+                  '    let Ok(current_context) = sess.new_turn_with_sub_id(sub_id.clone(), updates).await else {\n',
+              ),
+              (
+                  '    if emit_thread_settings_applied {\n',
+                  '    eprintln!("FIELDWORK_WORKER=after_new_turn");\n'
+                  '    if emit_thread_settings_applied {\n',
+              ),
+              (
+                  '    sess.maybe_emit_model_warnings_for_turn(current_context.as_ref())\n',
+                  '    eprintln!("FIELDWORK_WORKER=before_model_warnings");\n'
+                  '    sess.maybe_emit_model_warnings_for_turn(current_context.as_ref())\n',
+              ),
+              (
+                  '        .await;\n    match sess\n        .steer_input(',
+                  '        .await;\n'
+                  '    eprintln!("FIELDWORK_WORKER=after_model_warnings");\n'
+                  '    eprintln!("FIELDWORK_WORKER=before_steer_input");\n'
+                  '    match sess\n        .steer_input(',
+              ),
+              (
+                  '        Err(SteerInputError::NoActiveTurn(items)) => {\n',
+                  '        Err(SteerInputError::NoActiveTurn(items)) => {\n'
+                  '            eprintln!("FIELDWORK_WORKER=steer_no_active_turn");\n',
+              ),
+              (
+                  '            sess.spawn_task(\n',
+                  '            eprintln!("FIELDWORK_WORKER=before_spawn_task");\n'
+                  '            sess.spawn_task(\n',
+              ),
+              (
+                  '            .await;\n        }\n        Err(err) => {',
+                  '            .await;\n'
+                  '            eprintln!("FIELDWORK_WORKER=after_spawn_task");\n'
+                  '        }\n'
+                  '        Err(err) => {',
+              ),
+          ]
+          for old, new in replacements:
+              if segment.count(old) != 1:
+                  raise SystemExit(f'worker anchor changed: {old!r}')
+              segment = segment.replace(old, new, 1)
+          path.write_text(text[:start] + segment + text[end:], encoding='utf-8')
+          PY
+      - name: Format diagnostic source
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Run full regression with worker markers
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
