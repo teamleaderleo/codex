@@ -50,7 +50,7 @@ jobs:
           REVIEWED_HEAD: 30a0a9b50da5fd2f7d58ee81315e0311e84e221e
         run: |
           set -euo pipefail
-          test "$(git rev-parse fieldwork/upstream-97576b-source-base)" = "$CURRENT_BASE"
+          test "$(git rev-parse origin/fieldwork/upstream-97576b-source-base)" = "$CURRENT_BASE"
           git diff --binary "$REVIEWED_BASE" "$REVIEWED_HEAD" -- \
             codex-rs/core/src/session/mod.rs \
             codex-rs/core/src/session/turn_tests.rs \
