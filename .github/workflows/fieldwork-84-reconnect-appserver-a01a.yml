@@ -1,0 +1,95 @@
+name: fieldwork-84-reconnect-appserver-a01a
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/84-reconnect-appserver-carrier-base-a01a
+    paths:
+      - .github/fieldwork/84_reconnect_appserver.py
+      - .github/workflows/fieldwork-84-reconnect-appserver-a01a.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-84-reconnect-appserver-a01a
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/84-reconnect-appserver-carrier-a01a
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply reconnect candidate and app-server control
+        env:
+          CURRENT_BASE: a01a2d91461a57809e944de7758477b92617ab01
+          RECONNECT_HEAD: 7e9d80c4965a76b802f02d7bace17ea1c4a8931c
+        run: |
+          set -euo pipefail
+          cp .github/fieldwork/84_reconnect_appserver.py /tmp/84_reconnect_appserver.py
+          git diff --binary "$CURRENT_BASE" "$RECONNECT_HEAD" -- \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs \
+            > /tmp/reconnect.patch
+          test -s /tmp/reconnect.patch
+          git switch --detach "$CURRENT_BASE"
+          git apply --3way --index /tmp/reconnect.patch
+          python /tmp/84_reconnect_appserver.py
+          git diff --check
+
+      - name: Format and run exact reconnect controls
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: 16777216
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo test -p codex-core --test all --locked host_mcp_config_refresh_reconnects_ready_clients -- --exact
+          cargo test -p codex-core --test all --locked ordinary_runtime_config_refresh_reuses_ready_mcp_client -- --exact
+          cargo test -p codex-app-server --test all --locked mcp_server_refresh_request_reconnects_ready_thread_clients -- --exact
+
+      - name: Verify source fence
+        run: |
+          set -euo pipefail
+          git add \
+            codex-rs/app-server/tests/suite/v2/mcp_tool.rs \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/app-server/tests/suite/v2/mcp_tool.rs \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish clean source-only branch
+        env:
+          SOURCE_BRANCH: fieldwork/84-mcp-reconnect-appserver-a01a
+        run: |
+          set -euo pipefail
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: reconnect MCP clients on host refresh'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=a01a2d91461a57809e944de7758477b92617ab01"
