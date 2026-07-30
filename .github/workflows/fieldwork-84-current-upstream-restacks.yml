@@ -1,5 +1,6 @@
 name: fieldwork-84-current-upstream-restacks
 
+# Head-only trigger marker: current-upstream MCP restack pass 1.
 on:
   pull_request:
     branches:
