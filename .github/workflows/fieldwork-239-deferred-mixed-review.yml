@@ -36,6 +36,7 @@ jobs:
         run: |
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_DEFERRED_MIXED_CARRIER_HEAD=$(git rev-parse HEAD)"
 
       - uses: ./.github/actions/setup-ci
 
@@ -160,19 +161,33 @@ jobs:
           set -euo pipefail
           cargo test -p codex-core --lib --locked tools::spec_plan::tests -- --nocapture
 
-      - name: Publish source-only successor
+      - name: Publish squashed source-only successor
         run: |
           set -euo pipefail
-          git add \
+          git diff --binary "$UPSTREAM_HEAD" -- \
             codex-rs/core/src/tools/spec_plan.rs \
-            codex-rs/core/src/tools/spec_plan_tests.rs
-          actual="$(git diff --cached --name-only | sort)"
+            codex-rs/core/src/tools/spec_plan_tests.rs > /tmp/deferred-mixed.patch
+          test -s /tmp/deferred-mixed.patch
+          git worktree add --detach /tmp/deferred-mixed-source "$UPSTREAM_HEAD"
+          cd /tmp/deferred-mixed-source
+          git apply /tmp/deferred-mixed.patch
+          cd codex-rs
+          cargo fmt --all -- --check
+          cd ..
+          actual="$(git diff --name-only "$UPSTREAM_HEAD" | sort)"
           expected="$(printf '%s\n' \
             codex-rs/core/src/tools/spec_plan.rs \
             codex-rs/core/src/tools/spec_plan_tests.rs | sort)"
           test "$actual" = "$expected"
-          git switch -C "$SOURCE_BRANCH"
+          git diff --check "$UPSTREAM_HEAD"
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git add \
+            codex-rs/core/src/tools/spec_plan.rs \
+            codex-rs/core/src/tools/spec_plan_tests.rs
+          test "$(git diff --cached --name-only | sort)" = "$expected"
           git commit -m 'core: expose deferred tools when no loader exists'
+          test "$(git rev-parse HEAD^)" = "$UPSTREAM_HEAD"
           git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
           echo "FIELDWORK_DEFERRED_MIXED_SOURCE=$(git rev-parse HEAD)"
           echo "FIELDWORK_DEFERRED_MIXED_SOURCE_BRANCH=$SOURCE_BRANCH"
