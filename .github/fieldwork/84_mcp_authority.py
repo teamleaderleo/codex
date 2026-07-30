@@ -49,10 +49,12 @@ text = replace_once(
 text = replace_once(
     text,
     """    let turn_context = &step_context.turn;
+    // Parse the `arguments` as JSON. An empty string is OK, but invalid JSON
 """,
     """    let turn_context = &step_context.turn;
     let server = advertised_tool.server_name.clone();
     let tool_name = advertised_tool.tool.name.to_string();
+    // Parse the `arguments` as JSON. An empty string is OK, but invalid JSON
 """,
     "turn context",
 )
