@@ -1961,23 +1961,8 @@ async fn drain_in_flight(
     while let Some(res) = in_flight.next().await {
         match res {
             Ok(response_input) => {
-                let call_id = response_input_tool_call_id(&response_input).map(str::to_string);
-                let response_item = response_input.into();
-                let result_persisted = sess
-                    .record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
+                record_direct_tool_result(sess.as_ref(), turn_context.as_ref(), response_input)
                     .await;
-                record_direct_tool_result_persistence(
-                    sess.as_ref(),
-                    call_id.as_deref(),
-                    result_persisted,
-                )
-                .await;
-                mark_thread_memory_mode_polluted_if_external_context(
-                    sess.as_ref(),
-                    turn_context.as_ref(),
-                    &response_item,
-                )
-                .await;
             }
             Err(err) => {
                 error_or_panic(format!("in-flight tool future failed during drain: {err}"));
@@ -1985,6 +1970,20 @@ async fn drain_in_flight(
         }
     }
     Ok(())
+}
+
+async fn record_direct_tool_result(
+    sess: &Session,
+    turn_context: &TurnContext,
+    response_input: ResponseInputItem,
+) {
+    let call_id = response_input_tool_call_id(&response_input).map(str::to_string);
+    let response_item = response_input.into();
+    let result_persisted = sess
+        .record_conversation_items(turn_context, std::slice::from_ref(&response_item))
+        .await;
+    record_direct_tool_result_persistence(sess, call_id.as_deref(), result_persisted).await;
+    mark_thread_memory_mode_polluted_if_external_context(sess, turn_context, &response_item).await;
 }
 
 fn response_input_tool_call_id(item: &ResponseInputItem) -> Option<&str> {

@@ -439,6 +439,8 @@ pub struct InMemoryThreadStore {
 #[derive(Default)]
 struct InMemoryThreadStoreState {
     calls: InMemoryThreadStoreCalls,
+    fail_next_append: Option<String>,
+    fail_next_append_after_write: Option<String>,
     created_threads: HashMap<ThreadId, CreateThreadParams>,
     histories: HashMap<ThreadId, Vec<RolloutItem>>,
     metadata_updates: HashMap<ThreadId, ThreadMetadataPatch>,
@@ -465,6 +467,24 @@ impl InMemoryThreadStore {
     /// Returns the calls observed by this store.
     pub async fn calls(&self) -> InMemoryThreadStoreCalls {
         self.state.lock().await.calls.clone()
+    }
+
+    /// Causes the next non-empty persisted append to fail before writing.
+    ///
+    /// This test/debug-only hook exercises production persistence error handling
+    /// without replacing `LiveThread`.
+    #[doc(hidden)]
+    pub async fn fail_next_append_for_test(&self, message: impl Into<String>) {
+        self.state.lock().await.fail_next_append = Some(message.into());
+    }
+
+    /// Causes the next non-empty append to persist and then return an error once.
+    ///
+    /// This test/debug-only hook models acknowledgement loss after the write became
+    /// authoritative. Callers must treat the append outcome as ambiguous.
+    #[doc(hidden)]
+    pub async fn fail_next_append_after_write_for_test(&self, message: impl Into<String>) {
+        self.state.lock().await.fail_next_append_after_write = Some(message.into());
     }
 
     async fn create_thread(&self, params: CreateThreadParams) -> ThreadStoreResult<()> {
@@ -535,11 +555,18 @@ impl InMemoryThreadStore {
             return Ok(());
         }
         state.calls.append_items += 1;
+        if let Some(message) = state.fail_next_append.take() {
+            return Err(ThreadStoreError::Internal { message });
+        }
+        let fail_after_write = state.fail_next_append_after_write.take();
         state
             .histories
             .entry(params.thread_id)
             .or_default()
             .extend(persisted_items);
+        if let Some(message) = fail_after_write {
+            return Err(ThreadStoreError::Internal { message });
+        }
         Ok(())
     }
 
