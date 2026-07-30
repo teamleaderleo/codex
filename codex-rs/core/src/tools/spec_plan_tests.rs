@@ -36,6 +36,7 @@ use crate::session::step_context::StepContext;
 use crate::session::tests::make_session_and_context;
 use crate::session::tests::mcp_config_for_test;
 use crate::session::turn_context::TurnContext;
+use crate::tools::context::ToolInvocation;
 use crate::tools::handlers::McpHandler;
 use crate::tools::handlers::ToolSearchHandlerCache;
 use crate::tools::handlers::WaitForEnvironmentHandler;
@@ -354,6 +355,39 @@ impl ToolExecutor<ExtensionToolCall> for DeferredExtensionTool {
         Box::pin(async { panic!("spec planning should not execute extension tools") })
     }
 }
+
+struct DeferredCoreToolWithoutSearchInfo;
+
+impl ToolExecutor<ToolInvocation> for DeferredCoreToolWithoutSearchInfo {
+    fn tool_name(&self) -> ToolName {
+        ToolName::plain("unsearchable_deferred")
+    }
+
+    fn spec(&self) -> ToolSpec {
+        ToolSpec::Function(ResponsesApiTool {
+            name: "unsearchable_deferred".to_string(),
+            description: "Deferred test tool without searchable metadata.".to_string(),
+            strict: true,
+            defer_loading: None,
+            parameters: codex_tools::JsonSchema::default(),
+            output_schema: None,
+        })
+    }
+
+    fn exposure(&self) -> ToolExposure {
+        ToolExposure::Deferred
+    }
+
+    fn search_info(&self) -> Option<codex_tools::ToolSearchInfo> {
+        None
+    }
+
+    fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+        Box::pin(async { panic!("spec planning should not execute core tools") })
+    }
+}
+
+impl CoreToolRuntime for DeferredCoreToolWithoutSearchInfo {}
 
 fn duplicate_primary_environment(turn: &mut TurnContext) {
     let mut second_environment = turn
@@ -2159,4 +2193,88 @@ async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates(
     })
     .await;
     unsupported_provider.assert_visible_lacks(&["web_search"]);
+}
+
+#[tokio::test]
+async fn deferred_extension_is_direct_when_search_is_unavailable() {
+    let plan = probe_with(
+        |turn| {
+            set_feature(turn, Feature::Collab, /*enabled*/ false);
+            turn.model_info.supports_search_tool = false;
+        },
+        ToolPlanInputs {
+            extension_tool_executors: vec![Arc::new(DeferredExtensionTool)],
+            ..ToolPlanInputs::default()
+        },
+    )
+    .await;
+
+    plan.assert_visible_contains(&["extension_echo"]);
+    plan.assert_visible_lacks(&["tool_search"]);
+    assert_eq!(plan.exposure("extension_echo"), ToolExposure::Direct);
+}
+
+#[tokio::test]
+async fn deferred_runtime_without_search_metadata_is_direct() {
+    let plan = probe_with(
+        |turn| {
+            set_feature(turn, Feature::Collab, /*enabled*/ false);
+            turn.model_info.supports_search_tool = true;
+        },
+        ToolPlanInputs {
+            tool_runtimes: vec![Arc::new(DeferredCoreToolWithoutSearchInfo)],
+            ..ToolPlanInputs::default()
+        },
+    )
+    .await;
+
+    plan.assert_visible_contains(&["unsearchable_deferred"]);
+    plan.assert_visible_lacks(&["tool_search"]);
+    assert_eq!(plan.exposure("unsearchable_deferred"), ToolExposure::Direct);
+}
+
+#[tokio::test]
+async fn code_mode_keeps_unsearchable_deferred_runtime_registered() {
+    let plan = probe_with(
+        |turn| {
+            set_feature(turn, Feature::CodeMode, /*enabled*/ true);
+            turn.model_info.tool_mode = Some(ToolMode::CodeMode);
+            turn.model_info.supports_search_tool = true;
+        },
+        ToolPlanInputs {
+            tool_runtimes: vec![Arc::new(DeferredCoreToolWithoutSearchInfo)],
+            ..ToolPlanInputs::default()
+        },
+    )
+    .await;
+
+    plan.assert_visible_contains(&[codex_code_mode::PUBLIC_TOOL_NAME]);
+    plan.assert_visible_lacks(&["unsearchable_deferred"]);
+    plan.assert_registered_contains(&["unsearchable_deferred"]);
+    assert_eq!(
+        plan.exposure("unsearchable_deferred"),
+        ToolExposure::Deferred
+    );
+}
+
+#[tokio::test]
+async fn mixed_deferred_catalogue_normalizes_per_runtime() {
+    let plan = probe_with(
+        |turn| {
+            set_feature(turn, Feature::Collab, /*enabled*/ false);
+            turn.model_info.supports_search_tool = true;
+        },
+        ToolPlanInputs {
+            tool_runtimes: vec![Arc::new(DeferredCoreToolWithoutSearchInfo)],
+            extension_tool_executors: vec![Arc::new(DeferredExtensionTool)],
+            ..ToolPlanInputs::default()
+        },
+    )
+    .await;
+
+    plan.assert_visible_contains(&["tool_search", "unsearchable_deferred"]);
+    plan.assert_visible_lacks(&["extension_echo"]);
+    plan.assert_registered_contains(&["extension_echo", "unsearchable_deferred"]);
+    assert_eq!(plan.exposure("extension_echo"), ToolExposure::Deferred);
+    assert_eq!(plan.exposure("unsearchable_deferred"), ToolExposure::Direct);
 }
