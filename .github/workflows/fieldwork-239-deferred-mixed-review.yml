@@ -16,9 +16,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  UPSTREAM_HEAD: 97576b1794872e342450ebd577123e052ab57626
-  REVIEWED_SOURCE: 2b9fd0fc597965341a1a9c61559b67135ed0a49d
-  SOURCE_BRANCH: fieldwork/239-deferred-loader-97576-v2
+  UPSTREAM_HEAD: a01a2d91461a57809e944de7758477b92617ab01
+  REVIEWED_SOURCE: 8f73d8e0bb9a61e7dec7b1367d13649a88615dea
+  SOURCE_BRANCH: fieldwork/239-deferred-loader-a01a-v2
 
 jobs:
   exact-review-and-publish:
@@ -29,14 +29,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 3
+          fetch-depth: 0
           persist-credentials: true
 
-      - name: Configure source identity
+      - name: Record exact inputs
         run: |
-          git config user.name fieldwork-ci
-          git config user.email fieldwork-ci@users.noreply.github.com
+          set -euo pipefail
+          git cat-file -e "${UPSTREAM_HEAD}^{commit}"
+          git cat-file -e "${REVIEWED_SOURCE}^{commit}"
+          test "$(git rev-parse "${REVIEWED_SOURCE}^")" = "$UPSTREAM_HEAD"
           echo "FIELDWORK_DEFERRED_MIXED_CARRIER_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_DEFERRED_MIXED_BASE=$UPSTREAM_HEAD"
+          echo "FIELDWORK_DEFERRED_MIXED_REVIEWED_SOURCE=$REVIEWED_SOURCE"
 
       - uses: ./.github/actions/setup-ci
 
@@ -45,12 +49,16 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
 
-      - name: Add mixed searchable and unsearchable deferred control
+      - name: Construct exact current source with mixed control
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$REVIEWED_SOURCE"
-          test "$(git rev-parse HEAD^^)" = "$UPSTREAM_HEAD"
-          git checkout --detach "$REVIEWED_SOURCE"
+          git diff --binary "$UPSTREAM_HEAD" "$REVIEWED_SOURCE" -- \
+            codex-rs/core/src/tools/spec_plan.rs \
+            codex-rs/core/src/tools/spec_plan_tests.rs > /tmp/reviewed-source.patch
+          test -s /tmp/reviewed-source.patch
+          git worktree add --detach /tmp/deferred-current-source "$UPSTREAM_HEAD"
+          cd /tmp/deferred-current-source
+          git apply /tmp/reviewed-source.patch
           python - <<'PY'
           from pathlib import Path
 
@@ -90,33 +98,22 @@ jobs:
           PY
           cd codex-rs
           cargo fmt --all
+          cargo fmt --all -- --check
           cd ..
-          git add codex-rs/core/src/tools/spec_plan_tests.rs
-          git diff --cached --check
-          actual="$(git diff --cached --name-only | sort)"
-          test "$actual" = 'codex-rs/core/src/tools/spec_plan_tests.rs'
-
-      - name: Verify exact two-file source fence
-        run: |
-          set -euo pipefail
           actual="$(git diff --name-only "$UPSTREAM_HEAD" | sort)"
           expected="$(printf '%s\n' \
             codex-rs/core/src/tools/spec_plan.rs \
             codex-rs/core/src/tools/spec_plan_tests.rs | sort)"
-          printf 'actual source files:\n%s\n' "$actual"
+          printf 'exact source files:\n%s\n' "$actual"
           test "$actual" = "$expected"
           git diff --check "$UPSTREAM_HEAD"
-          echo "FIELDWORK_DEFERRED_MIXED_BASE=$UPSTREAM_HEAD"
-
-      - name: Check formatting
-        working-directory: codex-rs
-        run: cargo fmt --all -- --check
+          echo 'FIELDWORK_DEFERRED_MIXED_SOURCE_FENCE=2/2'
 
       - name: Resolve and run five exact planner controls
-        working-directory: codex-rs
         run: |
           set -euo pipefail
-          cargo test -p codex-core --lib --locked -- --list > /tmp/unit-tests.list
+          cd /tmp/deferred-current-source/codex-rs
+          cargo test -p codex-core --lib --locked -- --list > /tmp/deferred-tests.list
           suffixes=(
             deferred_extension_is_direct_when_search_is_unavailable
             deferred_runtime_without_search_metadata_is_direct
@@ -126,7 +123,7 @@ jobs:
           )
           executed=0
           for suffix in "${suffixes[@]}"; do
-            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/unit-tests.list | grep "${suffix}$")
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/deferred-tests.list | grep "${suffix}$")
             printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
             test "${#matches[@]}" -eq 1
             cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
@@ -136,56 +133,46 @@ jobs:
           echo 'FIELDWORK_DEFERRED_MIXED_EXACT=5/5'
 
       - name: Classify optional Code Mode fallback
-        working-directory: codex-rs
         run: |
           set -euo pipefail
+          cd /tmp/deferred-current-source/codex-rs
           suffix=missing_process_host_falls_back_to_direct_tools_and_warns_once
-          cargo test -p codex-core --test all --locked -- --list > /tmp/integration-tests.list
-          mapfile -t matches < <(sed -n 's/: test$//p' /tmp/integration-tests.list | grep "${suffix}$")
+          cargo test -p codex-core --test all --locked -- --list > /tmp/deferred-integration.list
+          mapfile -t matches < <(sed -n 's/: test$//p' /tmp/deferred-integration.list | grep "${suffix}$")
           test "${#matches[@]}" -eq 1
           set +e
-          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/fallback-default.log
+          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/deferred-default.log
           default_status=${PIPESTATUS[0]}
-          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/fallback-large.log
+          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/deferred-large.log
           large_status=${PIPESTATUS[0]}
           set -e
           test "$large_status" -eq 0
           if test "$default_status" -ne 0; then
-            grep -E 'stack overflow|has overflowed its stack' /tmp/fallback-default.log
+            grep -E 'stack overflow|has overflowed its stack' /tmp/deferred-default.log
           fi
           echo "FIELDWORK_DEFERRED_MIXED_FALLBACK=default:${default_status};large:${large_status}"
 
       - name: Run focused spec-plan gate
-        working-directory: codex-rs
         run: |
           set -euo pipefail
+          cd /tmp/deferred-current-source/codex-rs
           cargo test -p codex-core --lib --locked tools::spec_plan::tests -- --nocapture
 
-      - name: Publish squashed source-only successor
+      - name: Publish validated exact-current source
         run: |
           set -euo pipefail
-          git diff --binary "$UPSTREAM_HEAD" -- \
-            codex-rs/core/src/tools/spec_plan.rs \
-            codex-rs/core/src/tools/spec_plan_tests.rs > /tmp/deferred-mixed.patch
-          test -s /tmp/deferred-mixed.patch
-          git worktree add --detach /tmp/deferred-mixed-source "$UPSTREAM_HEAD"
-          cd /tmp/deferred-mixed-source
-          git apply /tmp/deferred-mixed.patch
-          cd codex-rs
-          cargo fmt --all -- --check
-          cd ..
-          actual="$(git diff --name-only "$UPSTREAM_HEAD" | sort)"
-          expected="$(printf '%s\n' \
-            codex-rs/core/src/tools/spec_plan.rs \
-            codex-rs/core/src/tools/spec_plan_tests.rs | sort)"
-          test "$actual" = "$expected"
-          git diff --check "$UPSTREAM_HEAD"
+          cd /tmp/deferred-current-source
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
           git add \
             codex-rs/core/src/tools/spec_plan.rs \
             codex-rs/core/src/tools/spec_plan_tests.rs
-          test "$(git diff --cached --name-only | sort)" = "$expected"
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/tools/spec_plan.rs \
+            codex-rs/core/src/tools/spec_plan_tests.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
           git commit -m 'core: expose deferred tools when no loader exists'
           test "$(git rev-parse HEAD^)" = "$UPSTREAM_HEAD"
           git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
