@@ -1,6 +1,6 @@
 name: fieldwork-85-deferred-exact-review
 
-# Head-only trigger marker: exact source review pass 1.
+# Mica repair: verify immutable source commits instead of checkout-local branch names.
 on:
   pull_request:
     branches:
@@ -29,12 +29,21 @@ jobs:
           components: rustfmt
       - name: Verify exact source and diff
         run: |
-          git diff --check
-          git diff --name-only fieldwork/upstream-b545-source-base...fieldwork/85-deferred-loader-current-upstream > /tmp/source-files
+          set -euo pipefail
+          upstream=b545c94041017d000e2c8b2f6272705d21b85dfb
+          source=e8d14cd1e4e26f3963f318ceb9f7f7493df32eba
+          git cat-file -e "${upstream}^{commit}"
+          git cat-file -e "${source}^{commit}"
+          git merge-base --is-ancestor "$source" HEAD
+          git diff --check "${upstream}...${source}"
+          git diff --name-only "${upstream}...${source}" > /tmp/source-files
           cat /tmp/source-files
           test "$(wc -l < /tmp/source-files)" -eq 2
           grep -Fx 'codex-rs/core/src/tools/spec_plan.rs' /tmp/source-files
           grep -Fx 'codex-rs/core/src/tools/spec_plan_tests.rs' /tmp/source-files
+          git diff --exit-code "$source" -- \
+            codex-rs/core/src/tools/spec_plan.rs \
+            codex-rs/core/src/tools/spec_plan_tests.rs
       - name: Resolve and run four exact tests
         working-directory: codex-rs
         run: |
