@@ -1,11 +1,13 @@
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
+use ts_rs::TS;
 
 /// Current wire version for durable tool-operation receipt records.
 pub const TOOL_OPERATION_RECEIPT_VERSION: u8 = 1;
 
 /// Declares whether one logical tool operation can change state outside the transcript.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolOperationEffect {
     ReadOnly,
@@ -14,7 +16,7 @@ pub enum ToolOperationEffect {
 }
 
 /// Records the terminal state reported by the selected tool runtime.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolOperationTerminalState {
     #[default]
@@ -26,7 +28,7 @@ pub enum ToolOperationTerminalState {
 }
 
 /// Records whether one durable result is known to exist for the operation.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolOperationResultState {
     #[default]
@@ -39,7 +41,7 @@ pub enum ToolOperationResultState {
 ///
 /// This record contains no tool name, arguments, output, credential, resource name, or provider
 /// payload. The owning envelope supplies the logical operation identity and receipt epoch.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 pub struct ToolOperationReceipt {
     pub effect: ToolOperationEffect,
     pub terminal_state: ToolOperationTerminalState,
@@ -107,7 +109,7 @@ impl ToolOperationReceipt {
 ///
 /// Direct calls use the Responses call id. Nested Code Mode calls use the runtime identity scoped
 /// to one cell and deliberately exclude Codex's synthetic host call id.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, JsonSchema, PartialEq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ToolOperationId {
     Direct {
@@ -141,7 +143,7 @@ impl ToolOperationId {
 ///
 /// Replay must reject updates before activation and reset prior live state when a newer epoch is
 /// authoritatively installed.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 pub struct ToolOperationReceiptActivation {
     pub version: u8,
     pub epoch_id: String,
@@ -160,7 +162,7 @@ impl ToolOperationReceiptActivation {
 ///
 /// `sequence` is epoch-local. Replay may accept an identical duplicate sequence idempotently and
 /// must fail closed on gaps, regressions, or conflicting duplicates.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 pub struct ToolOperationReceiptUpdate {
     pub version: u8,
     pub epoch_id: String,
@@ -187,7 +189,7 @@ impl ToolOperationReceiptUpdate {
 }
 
 /// One operation entry carried by a compacted receipt checkpoint.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 pub struct ToolOperationReceiptCheckpointEntry {
     pub operation_id: ToolOperationId,
     pub receipt: ToolOperationReceipt,
@@ -197,7 +199,7 @@ pub struct ToolOperationReceiptCheckpointEntry {
 ///
 /// `next_sequence` is the first sequence number available after checkpoint installation.
 /// `coverage_lost` permanently fails closed for potentially mutating continuation.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize, TS)]
 pub struct ToolOperationReceiptCheckpoint {
     pub version: u8,
     pub epoch_id: String,
