@@ -1,0 +1,221 @@
+name: fieldwork-85-current-upstream-planner-restack
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-b545-planner-restack-base
+    paths:
+      - .github/workflows/fieldwork-85-current-upstream-planner-restack.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Apply direct/deferred invariant to current registry finalizer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          plan = Path('codex-rs/core/src/tools/spec_plan.rs')
+          text = plan.read_text(encoding='utf-8')
+          call_anchor = '''    apply_direct_model_only_namespace_overrides(turn_context, &mut registry);
+              let code_mode_enabled = matches!(
+          '''.replace('          ', '')
+          call_replacement = '''    apply_direct_model_only_namespace_overrides(turn_context, &mut registry);
+              normalize_unloadable_deferred_tools(turn_context, &mut registry);
+              let code_mode_enabled = matches!(
+          '''.replace('          ', '')
+          if text.count(call_anchor) != 1:
+              raise SystemExit('planner finalizer anchor changed')
+          text = text.replace(call_anchor, call_replacement, 1)
+
+          function_anchor = 'fn apply_direct_model_only_namespace_overrides(\n'
+          function = '''fn normalize_unloadable_deferred_tools(
+              turn_context: &TurnContext,
+              registry: &mut ToolRegistry,
+          ) {
+              if matches!(
+                  effective_tool_mode(turn_context),
+                  ToolMode::CodeMode | ToolMode::CodeModeOnly
+              ) {
+                  return;
+              }
+
+              let search_enabled = search_tool_enabled(turn_context);
+              for runtime in registry.runtimes_mut() {
+                  if runtime.exposure() != ToolExposure::Deferred {
+                      continue;
+                  }
+
+                  let has_executable_loader = search_enabled && runtime.search_info().is_some();
+                  if !has_executable_loader {
+                      *runtime = override_tool_exposure(Arc::clone(runtime), ToolExposure::Direct);
+                  }
+              }
+          }
+
+          '''.replace('          ', '')
+          if text.count(function_anchor) != 1:
+              raise SystemExit('direct namespace function anchor changed')
+          text = text.replace(function_anchor, function + function_anchor, 1)
+          plan.write_text(text, encoding='utf-8')
+
+          tests = Path('codex-rs/core/src/tools/spec_plan_tests.rs')
+          text = tests.read_text(encoding='utf-8')
+          import_anchor = 'use crate::session::turn_context::TurnContext;\n'
+          if text.count(import_anchor) != 1:
+              raise SystemExit('turn context import anchor changed')
+          text = text.replace(
+              import_anchor,
+              import_anchor + 'use crate::tools::context::ToolInvocation;\n',
+              1,
+          )
+
+          type_anchor = 'fn duplicate_primary_environment(turn: &mut TurnContext) {\n'
+          runtime_type = '''struct DeferredCoreToolWithoutSearchInfo;
+
+          impl ToolExecutor<ToolInvocation> for DeferredCoreToolWithoutSearchInfo {
+              fn tool_name(&self) -> ToolName {
+                  ToolName::plain("unsearchable_deferred")
+              }
+
+              fn spec(&self) -> ToolSpec {
+                  ToolSpec::Function(ResponsesApiTool {
+                      name: "unsearchable_deferred".to_string(),
+                      description: "Deferred test tool without searchable metadata.".to_string(),
+                      strict: true,
+                      defer_loading: None,
+                      parameters: codex_tools::JsonSchema::default(),
+                      output_schema: None,
+                  })
+              }
+
+              fn exposure(&self) -> ToolExposure {
+                  ToolExposure::Deferred
+              }
+
+              fn search_info(&self) -> Option<codex_tools::ToolSearchInfo> {
+                  None
+              }
+
+              fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+                  Box::pin(async { panic!("spec planning should not execute core tools") })
+              }
+          }
+
+          impl CoreToolRuntime for DeferredCoreToolWithoutSearchInfo {}
+
+          '''.replace('          ', '')
+          if text.count(type_anchor) != 1:
+              raise SystemExit('test runtime insertion anchor changed')
+          text = text.replace(type_anchor, runtime_type + type_anchor, 1)
+
+          test_name = 'deferred_extension_is_direct_when_search_is_unavailable'
+          if test_name in text:
+              raise SystemExit('current-upstream planner tests already installed')
+          additions = '''
+
+          #[tokio::test]
+          async fn deferred_extension_is_direct_when_search_is_unavailable() {
+              let plan = probe_with(
+                  |turn| {
+                      set_feature(turn, Feature::Collab, /*enabled*/ false);
+                      turn.model_info.supports_search_tool = false;
+                  },
+                  ToolPlanInputs {
+                      extension_tool_executors: vec![Arc::new(DeferredExtensionTool)],
+                      ..ToolPlanInputs::default()
+                  },
+              )
+              .await;
+
+              plan.assert_visible_contains(&["extension_echo"]);
+              plan.assert_visible_lacks(&["tool_search"]);
+              assert_eq!(plan.exposure("extension_echo"), ToolExposure::Direct);
+          }
+
+          #[tokio::test]
+          async fn deferred_runtime_without_search_metadata_is_direct() {
+              let plan = probe_with(
+                  |turn| {
+                      set_feature(turn, Feature::Collab, /*enabled*/ false);
+                      turn.model_info.supports_search_tool = true;
+                  },
+                  ToolPlanInputs {
+                      tool_runtimes: vec![Arc::new(DeferredCoreToolWithoutSearchInfo)],
+                      ..ToolPlanInputs::default()
+                  },
+              )
+              .await;
+
+              plan.assert_visible_contains(&["unsearchable_deferred"]);
+              plan.assert_visible_lacks(&["tool_search"]);
+              assert_eq!(plan.exposure("unsearchable_deferred"), ToolExposure::Direct);
+          }
+
+          #[tokio::test]
+          async fn code_mode_keeps_unsearchable_deferred_runtime_registered() {
+              let plan = probe_with(
+                  |turn| {
+                      set_feature(turn, Feature::CodeMode, /*enabled*/ true);
+                      turn.model_info.tool_mode = Some(ToolMode::CodeMode);
+                      turn.model_info.supports_search_tool = true;
+                  },
+                  ToolPlanInputs {
+                      tool_runtimes: vec![Arc::new(DeferredCoreToolWithoutSearchInfo)],
+                      ..ToolPlanInputs::default()
+                  },
+              )
+              .await;
+
+              plan.assert_visible_contains(&[codex_code_mode::PUBLIC_TOOL_NAME]);
+              plan.assert_visible_lacks(&["unsearchable_deferred"]);
+              plan.assert_registered_contains(&["unsearchable_deferred"]);
+              assert_eq!(
+                  plan.exposure("unsearchable_deferred"),
+                  ToolExposure::Deferred
+              );
+          }
+          '''.replace('          ', '')
+          tests.write_text(text + additions, encoding='utf-8')
+          PY
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Execute focused current-upstream controls
+        run: |
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+          cargo test -p codex-core deferred_extension_is_direct_when_search_is_unavailable --lib --locked
+          cargo test -p codex-core deferred_runtime_without_search_metadata_is_direct --lib --locked
+          cargo test -p codex-core code_mode_keeps_unsearchable_deferred_runtime_registered --lib --locked
+          cargo test -p codex-core mcp_and_tool_search_follow_direct_and_deferred_tool_exposure --lib --locked
+      - name: Publish source-only current-upstream branch
+        run: |
+          git diff -- \
+            codex-rs/core/src/tools/spec_plan.rs \
+            codex-rs/core/src/tools/spec_plan_tests.rs > /tmp/source.patch
+          test -s /tmp/source.patch
+          git checkout -B publish b545c94041017d000e2c8b2f6272705d21b85dfb
+          git apply /tmp/source.patch
+          git diff --check
+          git add \
+            codex-rs/core/src/tools/spec_plan.rs \
+            codex-rs/core/src/tools/spec_plan_tests.rs
+          git commit -m 'core: expose deferred tools when no loader exists'
+          git push --force origin HEAD:fieldwork/85-deferred-loader-current-upstream
