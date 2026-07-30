@@ -37,13 +37,41 @@ jobs:
           if test -f .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py; then
             python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           fi
-      - name: Format and validate
+      - name: Format candidate
         working-directory: codex-rs
         run: |
           cargo fmt --all
           cargo fmt --all -- --check
-          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked
+          git diff --check
+      - name: Lower-level first-generated and continuation controls
+        working-directory: codex-rs
+        run: |
           cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn --locked
           cargo test -p codex-core --test all responses_websocket_request_prewarm_reuses_connection --locked
-      - name: Check patch hygiene
-        run: git diff --check
+      - name: Full test_codex control on default worker stack
+        id: default_stack
+        continue-on-error: true
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked
+      - name: Full test_codex diagnostic on enlarged worker stack
+        id: enlarged_stack
+        continue-on-error: true
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: "16777216"
+        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked
+      - name: Classify stack diagnostic
+        env:
+          DEFAULT_OUTCOME: ${{ steps.default_stack.outcome }}
+          ENLARGED_OUTCOME: ${{ steps.enlarged_stack.outcome }}
+        run: |
+          echo "default_stack=${DEFAULT_OUTCOME}"
+          echo "enlarged_stack=${ENLARGED_OUTCOME}"
+          if test "$DEFAULT_OUTCOME" = failure && test "$ENLARGED_OUTCOME" = success; then
+            echo "classification=stack_depth_sensitive"
+            exit 1
+          fi
+          if test "$DEFAULT_OUTCOME" = failure; then
+            echo "classification=default_stack_failure_persists"
+            exit 1
+          fi
