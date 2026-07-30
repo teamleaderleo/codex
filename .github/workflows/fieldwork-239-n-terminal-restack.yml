@@ -1,9 +1,9 @@
 name: fieldwork-239-n-terminal-restack
 
 on:
-  push:
+  pull_request:
     branches:
-      - fieldwork/239-n-terminal-restack-carrier
+      - fieldwork/239-n-terminal-restack-carrier-base
     paths:
       - .github/workflows/fieldwork-239-n-terminal-restack.yml
 
