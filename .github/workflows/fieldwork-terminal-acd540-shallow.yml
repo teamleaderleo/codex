@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 1
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Extract reviewed source and execution scripts
+      - name: Extract reviewed source scripts
         shell: python
         run: |
           from pathlib import Path
@@ -42,7 +42,6 @@ jobs:
           steps = {
               'Restack historical source and preserve current source work': '/tmp/restack.sh',
               'Verify source fence and format': '/tmp/format.sh',
-              'Execute exact terminal and deque controls': '/tmp/exact.sh',
               'Execute focused codex-core target gate': '/tmp/focused.sh',
               'Publish source-only branch': '/tmp/publish.sh',
           }
@@ -96,17 +95,65 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
 
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: cargo-nextest
+
       - name: Reconstruct current source
         run: bash /tmp/restack.sh
 
       - name: Format and verify source fence
         run: bash /tmp/format.sh
 
-      - name: Run nine exact controls
+      - name: Resolve and run nine exact controls through the repository test entrypoint
         working-directory: codex-rs
         run: |
           set -euo pipefail
-          bash /tmp/exact.sh
+          cargo nextest list -p codex-core --lib --message-format json > /tmp/tests.json
+          python3 - <<'PY' > /tmp/resolved-tests
+          import json
+          from pathlib import Path
+
+          suffixes = (
+              'local_output_task_retains_stdout_before_best_effort_broadcast',
+              'local_output_task_retains_invalid_utf8_when_broadcast_lags',
+              'completed_item_includes_output_emitted_before_subscription',
+              'reconcile_transcript_replaces_partial_stream_with_authoritative_output',
+              'split_valid_utf8_prefix_respects_max_bytes_for_ascii',
+              'split_valid_utf8_prefix_avoids_splitting_utf8_codepoints',
+              'split_valid_utf8_prefix_makes_progress_on_invalid_utf8',
+              'split_valid_utf8_prefix_consumes_all_valid_bytes_before_invalid_utf8',
+              'split_invalid_utf8_advances_without_shifting_remaining_bytes',
+          )
+          listing = json.loads(Path('/tmp/tests.json').read_text(encoding='utf-8'))
+          tests = []
+          for suite in listing['rust-suites'].values():
+              for name, testcase in suite['testcases'].items():
+                  if testcase['filter-match']['status'] == 'matches':
+                      tests.append(name)
+
+          resolved = []
+          for suffix in suffixes:
+              matches = sorted(name for name in tests if name.endswith(suffix))
+              print(f'{suffix} matches: {matches}', file=__import__('sys').stderr)
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f'expected exactly one full test name for {suffix}, found {len(matches)}'
+                  )
+              resolved.append(matches[0])
+
+          if len(set(resolved)) != len(suffixes):
+              raise SystemExit('resolved test names are not unique')
+          print('\n'.join(resolved))
+          PY
+
+          count=0
+          while IFS= read -r test_name; do
+            printf 'exact test: %s\n' "$test_name"
+            just test -p codex-core --lib -E "test(=$test_name)" --no-tests=fail
+            count=$((count + 1))
+          done < /tmp/resolved-tests
+          test "$count" -eq 9
           echo 'FIELDWORK_TERMINAL_97576_EXACT=9/9'
 
       - name: Run focused codex-core gate
