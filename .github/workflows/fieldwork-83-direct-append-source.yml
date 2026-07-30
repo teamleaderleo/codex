@@ -49,6 +49,7 @@ jobs:
           REVIEWED_BASE: b545c94041017d000e2c8b2f6272705d21b85dfb
           REVIEWED_HEAD: 30a0a9b50da5fd2f7d58ee81315e0311e84e221e
         run: |
+          set -euo pipefail
           test "$(git rev-parse fieldwork/upstream-97576b-source-base)" = "$CURRENT_BASE"
           git diff --binary "$REVIEWED_BASE" "$REVIEWED_HEAD" -- \
             codex-rs/core/src/session/mod.rs \
@@ -66,23 +67,38 @@ jobs:
           test "$actual" = "$expected"
           git diff --cached --check
 
-      - name: Format-check and run exact append-outcome controls
+      - name: Format-check and run four exact append-outcome controls
         working-directory: codex-rs
         run: |
+          set -euo pipefail
           cargo fmt --all -- --check
-          cargo test -p codex-core append_outcome_ephemeral_history_is_authoritative --locked
-          cargo test -p codex-core append_outcome_reports_successful_live_append --locked
-          cargo test -p codex-core append_outcome_reports_prewrite_failure --locked
-          cargo test -p codex-core append_outcome_reports_commit_then_error_as_failure --locked
+          cargo test -p codex-core --lib --locked -- --list > /tmp/append-outcome-tests.list
+          suffixes=(
+            append_outcome_ephemeral_history_is_authoritative
+            append_outcome_reports_successful_live_append
+            append_outcome_reports_prewrite_failure
+            append_outcome_reports_commit_then_error_as_failure
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/append-outcome-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 4
           echo 'FIELDWORK_APPEND_OUTCOME_EXACT=4/4'
 
       - name: Run thread-store package tests
         working-directory: codex-rs
         run: |
+          set -euo pipefail
           cargo test -p codex-thread-store --locked
 
       - name: Preserve exact source fence
         run: |
+          set -euo pipefail
           git add \
             codex-rs/core/src/session/mod.rs \
             codex-rs/core/src/session/turn_tests.rs \
@@ -99,6 +115,9 @@ jobs:
         env:
           SOURCE_BRANCH: fieldwork/83-append-outcome-upstream-97576b
         run: |
+          set -euo pipefail
           git switch -C "$SOURCE_BRANCH"
           git commit -m 'core: propagate rollout append outcomes'
           git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=97576b1794872e342450ebd577123e052ab57626"
