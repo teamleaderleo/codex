@@ -55,7 +55,9 @@ async fn mcp_server_refresh_request_reconnects_ready_thread_clients() -> Result<
     let initial_attempts = initialize_attempts.load(Ordering::SeqCst);
     assert!(initial_attempts > 0);
 
-    let refresh_id = mcp.send_raw_request("mcpServer/refresh", None).await?;
+    let refresh_id = mcp
+        .send_raw_request("config/mcpServer/reload", None)
+        .await?;
     let response: serde_json::Value =
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(refresh_id)).await??;
     assert_eq!(response, json!({}));
