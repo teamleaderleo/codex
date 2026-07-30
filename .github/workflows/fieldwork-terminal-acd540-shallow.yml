@@ -1,0 +1,111 @@
+name: fieldwork-terminal-acd540-shallow
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-acd540-terminal-restack-base
+    paths:
+      - .github/workflows/fieldwork-terminal-acd540-shallow.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-terminal-acd540-shallow
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  UPSTREAM_HEAD: acd540f1581bf30f963fccbcce43ac494102242c
+  HISTORICAL_SOURCE: 7db66fe3f235df77c36a9db521677e23379bcac5
+  SOURCE_BRANCH: fieldwork/23-terminal-acd540-source
+
+jobs:
+  shallow-restack-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Extract reviewed source and execution scripts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path(
+              '.github/workflows/fieldwork-terminal-acd540-restack.yml'
+          ).read_text(encoding='utf-8').splitlines()
+          steps = {
+              'Restack historical source and preserve current source work': '/tmp/restack.sh',
+              'Verify source fence and format': '/tmp/format.sh',
+              'Execute exact terminal and deque controls': '/tmp/exact.sh',
+              'Execute focused codex-core target gate': '/tmp/focused.sh',
+              'Publish source-only branch': '/tmp/publish.sh',
+          }
+          for name, destination in steps.items():
+              step = workflow.index(f'      - name: {name}')
+              run_line = next(
+                  index
+                  for index in range(step + 1, len(workflow))
+                  if workflow[index].strip() == 'run: |'
+              )
+              end = next(
+                  (
+                      index
+                      for index in range(run_line + 1, len(workflow))
+                      if workflow[index].startswith('      - name: ')
+                  ),
+                  len(workflow),
+              )
+              script_lines = []
+              for line in workflow[run_line + 1 : end]:
+                  if line.startswith('          '):
+                      script_lines.append(line[10:])
+                  elif line.strip():
+                      raise SystemExit(
+                          f'unexpected indentation in {name}: {line!r}'
+                      )
+                  else:
+                      script_lines.append('')
+              script = '\n'.join(script_lines) + '\n'
+              compile(script, destination, 'exec') if name == 'Restack historical source and preserve current source work' and False else None
+              Path(destination).write_text(script, encoding='utf-8')
+
+      - name: Fetch exact source refs only
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin \
+            refs/heads/fieldwork/upstream-acd540-terminal-restack-base
+          git fetch --no-tags --depth=1 origin \
+            refs/heads/fieldwork/23-terminal-current-upstream
+          git checkout --detach "$UPSTREAM_HEAD"
+          test "$(git rev-parse HEAD)" = "$UPSTREAM_HEAD"
+          test "$(git rev-parse origin/fieldwork/23-terminal-current-upstream)" = "$HISTORICAL_SOURCE"
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Reconstruct current source
+        run: bash /tmp/restack.sh
+
+      - name: Format and verify source fence
+        run: bash /tmp/format.sh
+
+      - name: Run nine exact controls
+        working-directory: codex-rs
+        run: bash /tmp/exact.sh
+
+      - name: Run focused codex-core gate
+        working-directory: codex-rs
+        run: bash /tmp/focused.sh
+
+      - name: Publish source-only exact head
+        run: bash /tmp/publish.sh
