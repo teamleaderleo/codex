@@ -94,8 +94,9 @@ jobs:
       - name: Publish source-only exact head
         run: |
           set -euo pipefail
-          upstream=97576b1794872e342450ebd577123e052ab57626
-          target=fieldwork/239-lite-source-97576
+          upstream=e6cfd40c3f444aadd6017c9eeab01db70f48961a
+          target=fieldwork/239-lite-source-e6cfd
+          git cat-file -e "${upstream}^{commit}"
           git reset --hard "$upstream"
           git apply /tmp/source.patch
           cd codex-rs
