@@ -43,11 +43,6 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
 
-      - name: Install repository test runners
-        run: |
-          command -v just >/dev/null || cargo install --locked just
-          cargo nextest --version >/dev/null 2>&1 || cargo install --locked cargo-nextest
-
       - name: Apply reviewed append-outcome candidate to exact current upstream
         env:
           CURRENT_BASE: 97576b1794872e342450ebd577123e052ab57626
@@ -71,18 +66,20 @@ jobs:
           test "$actual" = "$expected"
           git diff --cached --check
 
-      - name: Format and run exact append-outcome controls
+      - name: Format-check and run exact append-outcome controls
+        working-directory: codex-rs
         run: |
-          just fmt
-          just test -p codex-core append_outcome_ephemeral_history_is_authoritative --exact
-          just test -p codex-core append_outcome_reports_successful_live_append --exact
-          just test -p codex-core append_outcome_reports_prewrite_failure --exact
-          just test -p codex-core append_outcome_reports_commit_then_error_as_failure --exact
+          cargo fmt --all -- --check
+          cargo test -p codex-core append_outcome_ephemeral_history_is_authoritative --locked
+          cargo test -p codex-core append_outcome_reports_successful_live_append --locked
+          cargo test -p codex-core append_outcome_reports_prewrite_failure --locked
+          cargo test -p codex-core append_outcome_reports_commit_then_error_as_failure --locked
           echo 'FIELDWORK_APPEND_OUTCOME_EXACT=4/4'
 
       - name: Run thread-store package tests
+        working-directory: codex-rs
         run: |
-          just test -p codex-thread-store
+          cargo test -p codex-thread-store --locked
 
       - name: Preserve exact source fence
         run: |
