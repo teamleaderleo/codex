@@ -1,0 +1,102 @@
+name: fieldwork-85-lite-phase-isolation-v2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-85-lite-phase-isolation-v2.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  phase-markers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Apply Responses Lite candidate
+        run: python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
+      - name: Add function-scoped phase markers
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('codex-rs/core/tests/suite/agent_websocket.rs')
+          text = path.read_text(encoding='utf-8')
+          start = text.index(
+              'async fn websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm()'
+          )
+          next_test = text.index('\n#[tokio::test', start)
+          segment = text[start:next_test]
+          replacements = [
+              (
+                  '    skip_if_no_network!(Ok(()));\n',
+                  '    eprintln!("FIELDWORK_PHASE=entered_test");\n'
+                  '    skip_if_no_network!(Ok(()));\n',
+              ),
+              (
+                  '    let server = start_websocket_server',
+                  '    eprintln!("FIELDWORK_PHASE=before_server");\n'
+                  '    let server = start_websocket_server',
+              ),
+              (
+                  '    .await;\n\n    let mut builder = test_codex()',
+                  '    .await;\n'
+                  '    eprintln!("FIELDWORK_PHASE=after_server");\n'
+                  '    eprintln!("FIELDWORK_PHASE=before_builder");\n\n'
+                  '    let mut builder = test_codex()',
+              ),
+              (
+                  '    let test = builder.build_with_websocket_server(&server).await?;\n',
+                  '    eprintln!("FIELDWORK_PHASE=before_build");\n'
+                  '    let test = builder.build_with_websocket_server(&server).await?;\n'
+                  '    eprintln!("FIELDWORK_PHASE=after_build");\n',
+              ),
+              (
+                  '    test.submit_turn_with_policy("hello", test.config.legacy_sandbox_policy())\n',
+                  '    eprintln!("FIELDWORK_PHASE=before_submit");\n'
+                  '    test.submit_turn_with_policy("hello", test.config.legacy_sandbox_policy())\n',
+              ),
+              (
+                  '        .await?;\n\n    assert_eq!(server.handshakes().len(), 1);',
+                  '        .await?;\n'
+                  '    eprintln!("FIELDWORK_PHASE=after_submit");\n\n'
+                  '    assert_eq!(server.handshakes().len(), 1);',
+              ),
+              (
+                  '    let warmup = connection\n',
+                  '    eprintln!("FIELDWORK_PHASE=before_body_json");\n'
+                  '    let warmup = connection\n',
+              ),
+              (
+                  '    assert_eq!(warmup["generate"].as_bool(), Some(false));\n',
+                  '    eprintln!("FIELDWORK_PHASE=before_assertions");\n'
+                  '    assert_eq!(warmup["generate"].as_bool(), Some(false));\n',
+              ),
+          ]
+          for old, new in replacements:
+              if segment.count(old) != 1:
+                  raise SystemExit(f'phase anchor changed: {old!r}')
+              segment = segment.replace(old, new, 1)
+          path.write_text(text[:start] + segment + text[next_test:], encoding='utf-8')
+          PY
+      - name: Format diagnostic source
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Run full regression with phase output
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
