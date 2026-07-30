@@ -67,7 +67,7 @@ jobs:
           done
           test "$executed" -eq 4
           echo "FIELDWORK_DEFERRED_EXACT=4/4"
-      - name: Verify unavailable optional Code Mode falls back to direct tools
+      - name: Classify unavailable optional Code Mode fallback
         working-directory: codex-rs
         run: |
           set -euo pipefail
@@ -76,5 +76,16 @@ jobs:
           mapfile -t matches < <(sed -n 's/: test$//p' /tmp/integration-tests.list | grep "${suffix}$")
           printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
           test "${#matches[@]}" -eq 1
-          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture
-          echo "FIELDWORK_CODE_MODE_FALLBACK_EXACT=1/1"
+
+          set +e
+          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/code-mode-default.log
+          default_status=${PIPESTATUS[0]}
+          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/code-mode-large.log
+          large_status=${PIPESTATUS[0]}
+          set -e
+
+          test "$large_status" -eq 0
+          if test "$default_status" -ne 0; then
+            grep -E 'stack overflow|has overflowed its stack' /tmp/code-mode-default.log
+          fi
+          echo "FIELDWORK_CODE_MODE_FALLBACK=default:${default_status};large:${large_status}"
