@@ -1,6 +1,6 @@
 name: fieldwork-85-box-new-turn-current-upstream
 
-# Head-only trigger marker: boxed new-turn pass 1.
+# Head-only trigger marker: boxed new-turn pass 2 with exact receipt.
 on:
   pull_request:
     branches:
@@ -30,21 +30,37 @@ jobs:
           git show d1045ae0001444549a4905715e7962e14c2ae163:.github/fieldwork/85_apply_lite_prewarm_full_first_turn.py > .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           python3 .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
           rm .github/fieldwork/85_apply_lite_prewarm_full_first_turn.py
-      - name: Box the new-turn future at the handler boundary
+      - name: Box and instrument the new-turn future boundary
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path('codex-rs/core/src/session/handlers.rs')
-          text = path.read_text(encoding='utf-8')
+          handlers = Path('codex-rs/core/src/session/handlers.rs')
+          text = handlers.read_text(encoding='utf-8')
           old = '    let Ok(current_context) = sess.new_turn_with_sub_id(sub_id.clone(), updates).await else {\n'
-          new = '''    let Ok(current_context) =
-              Box::pin(sess.new_turn_with_sub_id(sub_id.clone(), updates)).await
-          else {
+          new = '''    eprintln!("FIELDWORK_BOXED_NEW_TURN=before_await");
+              let Ok(current_context) =
+                  Box::pin(sess.new_turn_with_sub_id(sub_id.clone(), updates)).await
+              else {
           '''.replace('          ', '')
           if text.count(old) != 1:
               raise SystemExit('new-turn handler call changed')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          handlers.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          turn_context = Path('codex-rs/core/src/session/turn_context.rs')
+          text = turn_context.read_text(encoding='utf-8')
+          start = text.index('    pub(crate) async fn new_turn_with_sub_id(')
+          end = text.index('\n    pub(crate) async fn new_default_turn(', start)
+          segment = text[start:end]
+          opening = '    ) -> CodexResult<Arc<TurnContext>> {\n'
+          if segment.count(opening) != 1:
+              raise SystemExit('new-turn opening changed')
+          segment = segment.replace(
+              opening,
+              opening + '        eprintln!("FIELDWORK_BOXED_NEW_TURN=entered");\n',
+              1,
+          )
+          turn_context.write_text(text[:start] + segment + text[end:], encoding='utf-8')
           PY
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
         with:
@@ -56,14 +72,34 @@ jobs:
           cargo fmt --all
           cargo fmt --all -- --check
           git diff --check
-      - name: Classify boxed default versus enlarged stack
+      - name: Resolve one exact regression name
+        id: exact
         working-directory: codex-rs
         run: |
-          set +e
-          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
-          default_status=$?
-          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm --locked -- --nocapture
-          large_status=$?
+          set -euo pipefail
+          cargo test -p codex-core --test all --locked -- --list > /tmp/tests.list
+          mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep 'websocket_first_responses_lite_turn_sends_full_manifest_after_startup_prewarm$')
+          printf 'matched tests:\n%s\n' "${matches[*]:-<none>}"
+          test "${#matches[@]}" -eq 1
+          echo "name=${matches[0]}" >> "$GITHUB_OUTPUT"
+      - name: Classify boxed default versus enlarged stack
+        working-directory: codex-rs
+        env:
+          EXACT_TEST: ${{ steps.exact.outputs.name }}
+        run: |
+          set -uo pipefail
+          cargo test -p codex-core --test all --locked "$EXACT_TEST" -- --exact --nocapture 2>&1 | tee /tmp/default.log
+          default_status=${PIPESTATUS[0]}
+          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "$EXACT_TEST" -- --exact --nocapture 2>&1 | tee /tmp/large.log
+          large_status=${PIPESTATUS[0]}
           set -e
-          echo "FIELDWORK_BOXED_NEW_TURN=default:${default_status};large:${large_status}"
+
+          grep -F 'FIELDWORK_BOXED_NEW_TURN=before_await' /tmp/large.log
+          grep -F 'FIELDWORK_BOXED_NEW_TURN=entered' /tmp/large.log
           test "$large_status" -eq 0
+
+          if test "$default_status" -ne 0; then
+            grep -E 'stack overflow|has overflowed its stack' /tmp/default.log
+          fi
+
+          echo "FIELDWORK_BOXED_NEW_TURN=default:${default_status};large:${large_status}"
