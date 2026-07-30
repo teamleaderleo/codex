@@ -1,5 +1,6 @@
 name: fieldwork-upstream-b545-candidate-probes
 
+# Head-only trigger marker: bounded current-upstream probe pass 1.
 on:
   pull_request:
     branches:
