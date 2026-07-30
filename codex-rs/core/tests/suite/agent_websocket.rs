@@ -233,6 +233,85 @@ async fn websocket_first_turn_uses_startup_prewarm_and_create() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm()
+-> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_websocket_server(vec![vec![
+        vec![ev_response_created("warm-1"), ev_completed("warm-1")],
+        vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg_1", "hello"),
+            ev_completed("resp-1"),
+        ],
+    ]])
+    .await;
+
+    let mut builder = test_codex()
+        .with_model_info_override("gpt-5.4", |model_info| {
+            model_info.use_responses_lite = true;
+            model_info.tool_mode = Some(ToolMode::CodeMode);
+        })
+        .with_model("gpt-5.4");
+    let test = builder.build_with_websocket_server(&server).await?;
+    test.submit_turn_with_policy("hello", test.config.legacy_sandbox_policy())
+        .await?;
+
+    assert_eq!(server.handshakes().len(), 1);
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 2);
+    let warmup = connection
+        .first()
+        .expect("missing Responses Lite warmup request")
+        .body_json();
+    let generated = connection
+        .get(1)
+        .expect("missing Responses Lite generated request")
+        .body_json();
+
+    assert_eq!(warmup["generate"].as_bool(), Some(false));
+    assert_eq!(
+        warmup["input"][0]["type"].as_str(),
+        Some("additional_tools")
+    );
+    assert!(
+        warmup["input"][0]["tools"]
+            .as_array()
+            .is_some_and(|tools| !tools.is_empty()),
+        "prewarm should carry a nonempty Responses Lite tool manifest"
+    );
+
+    assert_eq!(generated.get("previous_response_id"), None);
+    assert_eq!(generated.get("tools"), None);
+    let warmup_input = warmup["input"]
+        .as_array()
+        .expect("warmup input should be an array");
+    let generated_input = generated["input"]
+        .as_array()
+        .expect("generated input should be an array");
+    assert!(
+        generated_input.starts_with(warmup_input),
+        "generated turn must preserve the exact Responses Lite manifest/instruction prefix"
+    );
+    let generated_suffix = &generated_input[warmup_input.len()..];
+    assert!(
+        generated_suffix
+            .iter()
+            .any(|item| { item.get("role").and_then(serde_json::Value::as_str) == Some("user") }),
+        "generated turn should append the submitted user message after the exact prewarm prefix"
+    );
+    assert_eq!(generated["model"], warmup["model"]);
+    assert_eq!(generated["reasoning"], warmup["reasoning"]);
+    assert_eq!(
+        generated["parallel_tool_calls"],
+        warmup["parallel_tool_calls"]
+    );
+
+    server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn websocket_first_turn_handles_handshake_delay_with_startup_prewarm() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
