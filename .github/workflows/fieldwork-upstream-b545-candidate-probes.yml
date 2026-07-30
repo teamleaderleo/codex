@@ -1,0 +1,101 @@
+name: fieldwork-upstream-b545-candidate-probes
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-b545-candidate-probe-base
+    paths:
+      - .github/workflows/fieldwork-upstream-b545-candidate-probes.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        candidate:
+          - result-persistence
+          - mcp-reconnect
+          - mcp-publication
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Apply bounded candidate diff
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          base=f7265553ea1510304f3091833dcbce65ef21f10c
+          case "$CANDIDATE" in
+            result-persistence)
+              head=a0ab863c8d9f90fd9bd284cc6b31049e2579da51
+              paths=(
+                codex-rs/thread-store/src/in_memory.rs
+                codex-rs/core/src/session/turn.rs
+                codex-rs/core/src/session/turn_tests.rs
+              )
+              ;;
+            mcp-reconnect)
+              head=a55767d8fb80f6dd18006d0cdabf19128cc546f3
+              paths=(
+                codex-rs/core/src/codex_thread.rs
+                codex-rs/core/tests/suite/mcp_tool_exposure.rs
+              )
+              ;;
+            mcp-publication)
+              head=e5774304cd8ca3c3f855c7eff17970e9d8557a08
+              paths=(codex-rs/codex-mcp/src/runtime.rs)
+              ;;
+          esac
+          git fetch origin "$base" "$head"
+          git diff --binary "$base" "$head" -- "${paths[@]}" > /tmp/candidate.patch
+          test -s /tmp/candidate.patch
+          git apply --3way /tmp/candidate.patch
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Execute focused gates
+        env:
+          CANDIDATE: ${{ matrix.candidate }}
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          case "$CANDIDATE" in
+            result-persistence)
+              cargo test -p codex-core direct_tool_result_persistence_ --locked
+              cargo test -p codex-thread-store in_memory --locked
+              ;;
+            mcp-reconnect)
+              set +e
+              cargo test -p codex-core --test all host_mcp_config_refresh_reconnects_ready_clients --locked -- --nocapture
+              default_reconnect=$?
+              cargo test -p codex-core --test all ordinary_runtime_config_refresh_reuses_ready_mcp_client --locked -- --nocapture
+              default_reuse=$?
+              RUST_MIN_STACK=16777216 cargo test -p codex-core --test all host_mcp_config_refresh_reconnects_ready_clients --locked -- --nocapture
+              large_reconnect=$?
+              RUST_MIN_STACK=16777216 cargo test -p codex-core --test all ordinary_runtime_config_refresh_reuses_ready_mcp_client --locked -- --nocapture
+              large_reuse=$?
+              set -e
+              echo "FIELDWORK_MCP_RECONNECT=default:${default_reconnect},${default_reuse};large:${large_reconnect},${large_reuse}"
+              test "$large_reconnect" -eq 0
+              test "$large_reuse" -eq 0
+              ;;
+            mcp-publication)
+              cargo test -p codex-mcp publication_state_ --locked
+              cargo test -p codex-mcp publication_gate_opens_only_for_the_winning_candidate --locked
+              ;;
+          esac
