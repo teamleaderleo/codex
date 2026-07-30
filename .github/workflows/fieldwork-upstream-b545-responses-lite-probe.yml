@@ -1,9 +1,9 @@
 name: fieldwork-upstream-b545-responses-lite-probe
 
 on:
-  push:
+  pull_request:
     branches:
-      - fieldwork/upstream-b545-responses-lite-probe
+      - fieldwork/upstream-b545-probe-base
     paths:
       - .github/workflows/fieldwork-upstream-b545-responses-lite-probe.yml
 
