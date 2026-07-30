@@ -1,0 +1,66 @@
+name: fieldwork-23-current-upstream-terminal-restack
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/upstream-b545-terminal-restack-base
+    paths:
+      - .github/workflows/fieldwork-23-current-upstream-terminal-restack.yml
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+      - name: Apply bounded terminal transcript candidate
+        run: |
+          git fetch origin 3725f02cf38d856bc82bb46dd68ab61bb96ec6fc 35a3d17475405cf8acb8fd9e83e8734851bc91ae
+          git diff --binary 3725f02cf38d856bc82bb46dd68ab61bb96ec6fc 35a3d17475405cf8acb8fd9e83e8734851bc91ae -- \
+            codex-rs/core/src/unified_exec/process.rs \
+            codex-rs/core/src/unified_exec/process_tests.rs \
+            codex-rs/core/src/unified_exec/async_watcher.rs \
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs > /tmp/terminal.patch
+          test -s /tmp/terminal.patch
+          git apply --3way /tmp/terminal.patch
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Execute focused terminal controls
+        run: |
+          cd codex-rs
+          cargo test -p codex-core --lib local_output_task_retains_stdout_before_best_effort_broadcast --locked
+          cargo test -p codex-core --lib completed_item_includes_output_emitted_before_subscription --locked
+          cargo test -p codex-core --lib reconcile_transcript_replaces_partial_stream_with_authoritative_output --locked
+      - name: Publish source-only current-upstream branch
+        run: |
+          git diff -- \
+            codex-rs/core/src/unified_exec/process.rs \
+            codex-rs/core/src/unified_exec/process_tests.rs \
+            codex-rs/core/src/unified_exec/async_watcher.rs \
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs > /tmp/source.patch
+          test -s /tmp/source.patch
+          git checkout -B publish b545c94041017d000e2c8b2f6272705d21b85dfb
+          git apply /tmp/source.patch
+          git diff --check
+          git add \
+            codex-rs/core/src/unified_exec/process.rs \
+            codex-rs/core/src/unified_exec/process_tests.rs \
+            codex-rs/core/src/unified_exec/async_watcher.rs \
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs
+          git commit -m 'core: retain terminal output before best-effort delivery'
+          git push --force origin HEAD:fieldwork/23-terminal-current-upstream
