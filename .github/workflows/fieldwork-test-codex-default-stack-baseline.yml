@@ -1,0 +1,54 @@
+name: fieldwork-test-codex-default-stack-baseline
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fieldwork-test-codex-default-stack-baseline.yml
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/test-codex-default-stack-baseline
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Add current-main builder-only control
+        run: |
+          cat >> codex-rs/core/tests/suite/agent_websocket.rs <<'RS'
+
+          #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+          async fn test_codex_websocket_builder_only_uses_default_stack() -> Result<()> {
+              skip_if_no_network!(Ok(()));
+              eprintln!("FIELDWORK_PHASE=baseline_before_server");
+              let server = start_websocket_server(vec![vec![]]).await;
+              eprintln!("FIELDWORK_PHASE=baseline_before_build");
+              let mut builder = test_codex().with_model("gpt-5.4");
+              let _test = builder.build_with_websocket_server(&server).await?;
+              eprintln!("FIELDWORK_PHASE=baseline_after_build");
+              server.shutdown().await;
+              Ok(())
+          }
+          RS
+      - name: Format baseline control
+        working-directory: codex-rs
+        run: |
+          cargo fmt --all
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Run builder-only current-main control
+        working-directory: codex-rs
+        run: cargo test -p codex-core --test all test_codex_websocket_builder_only_uses_default_stack --locked -- --nocapture
