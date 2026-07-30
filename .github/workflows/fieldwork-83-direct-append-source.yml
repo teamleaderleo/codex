@@ -1,11 +1,6 @@
 name: fieldwork-83-append-outcome-current-upstream
 
 on:
-  push:
-    branches:
-      - fieldwork/83-direct-append-carrier-20260731
-    paths:
-      - .github/workflows/fieldwork-83-direct-append-source.yml
   pull_request:
     branches:
       - main
