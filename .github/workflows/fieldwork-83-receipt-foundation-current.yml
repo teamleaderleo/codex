@@ -43,11 +43,6 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
 
-      - name: Install repository test runners
-        run: |
-          command -v just >/dev/null || cargo install --locked just
-          cargo nextest --version >/dev/null 2>&1 || cargo install --locked cargo-nextest
-
       - name: Apply merged receipt foundation to exact current upstream
         env:
           CURRENT_BASE: 97576b1794872e342450ebd577123e052ab57626
@@ -62,14 +57,15 @@ jobs:
           git apply --3way --index /tmp/fieldwork-83-receipt-foundation.patch
           git diff --cached --check
 
-      - name: Format and run receipt foundation controls
+      - name: Format-check and run receipt foundation controls
+        working-directory: codex-rs
         run: |
-          just fmt
-          just test -p codex-tools tool_operation
-          just test -p codex-core compaction_identity
-          just test -p codex-core tool_operation_receipts
-          just test -p codex-core receipt_before_dispatch
-          just test -p codex-core direct_tool_result_persistence_
+          cargo fmt --all -- --check
+          cargo test -p codex-tools tool_operation --locked
+          cargo test -p codex-core compaction_identity --locked
+          cargo test -p codex-core tool_operation_receipts --locked
+          cargo test -p codex-core receipt_before_dispatch --locked
+          cargo test -p codex-core direct_tool_result_persistence_ --locked
 
       - name: Preserve reviewed source fence
         run: |
