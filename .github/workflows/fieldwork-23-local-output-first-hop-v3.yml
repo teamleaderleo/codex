@@ -38,15 +38,17 @@ jobs:
           if spawn_segment.count(combiner) != 1:
               raise SystemExit('local combiner line changed')
           spawn_segment = spawn_segment.replace(combiner, '', 1)
-          call_old = '''        managed.output_task = Some(Self::spawn_local_output_task(
-              output_rx,
-              Arc::clone(&managed.output_buffer),
-          '''.replace('          ', '')
-          call_new = '''        managed.output_task = Some(Self::spawn_local_output_task(
-              stdout_rx,
-              stderr_rx,
-              Arc::clone(&managed.output_buffer),
-          '''.replace('          ', '')
+          call_old = (
+              '        managed.output_task = Some(Self::spawn_local_output_task(\n'
+              '            output_rx,\n'
+              '            Arc::clone(&managed.output_buffer),\n'
+          )
+          call_new = (
+              '        managed.output_task = Some(Self::spawn_local_output_task(\n'
+              '            stdout_rx,\n'
+              '            stderr_rx,\n'
+              '            Arc::clone(&managed.output_buffer),\n'
+          )
           if spawn_segment.count(call_old) != 1:
               raise SystemExit('local output task call changed')
           spawn_segment = spawn_segment.replace(call_old, call_new, 1)
@@ -97,7 +99,7 @@ jobs:
                   }
               })
           }
-          '''.replace('          ', '')
+          '''
           process.write_text(text[:task_start] + replacement + text[task_end:], encoding='utf-8')
 
           tests = Path('codex-rs/core/src/unified_exec/process_tests.rs')
