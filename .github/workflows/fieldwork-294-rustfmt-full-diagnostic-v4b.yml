@@ -1,0 +1,71 @@
+name: Fieldwork 294 full rustfmt diagnostic v4b
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/294-nonsettling-tool-cancellation-f0c30e
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: 6d5b78094adedc31e96894f263585a1cdce46bc1
+  MOD_FILE: codex-rs/core/src/tools/mod.rs
+  TEST_FILE: codex-rs/core/src/tools/nonsettling_cancellation_tests.rs
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out carrier head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact source head and one-workflow carrier diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${SOURCE_HEAD}"
+          mapfile -t changed_files < <(git diff --name-only "${SOURCE_HEAD}" HEAD)
+          test "${#changed_files[@]}" -eq 1
+          test "${changed_files[0]}" = ".github/workflows/fieldwork-294-rustfmt-full-diagnostic-v4b.yml"
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+
+      - name: Generate complete formatter repair artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=/tmp/fieldwork-294-rustfmt-full
+          mkdir -p "${out}"
+          cp "${MOD_FILE}" "${out}/mod-before.rs"
+          cp "${TEST_FILE}" "${out}/test-before.rs"
+          (
+            cd codex-rs
+            cargo fmt --all
+          )
+          cp "${MOD_FILE}" "${out}/mod-after.rs"
+          cp "${TEST_FILE}" "${out}/test-after.rs"
+          git diff --binary "${SOURCE_HEAD}" -- "${MOD_FILE}" "${TEST_FILE}" > "${out}/rustfmt-full.patch"
+          git diff --name-only "${SOURCE_HEAD}" > "${out}/changed-files.txt"
+          git diff --stat "${SOURCE_HEAD}" > "${out}/diff-stat.txt"
+          cat "${out}/changed-files.txt"
+          cat "${out}/diff-stat.txt"
+
+      - name: Upload complete formatter output
+        uses: actions/upload-artifact@v4
+        with:
+          name: fieldwork-294-rustfmt-full-v4b
+          path: /tmp/fieldwork-294-rustfmt-full
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require both source files to be already formatted
+        shell: bash
+        run: git diff --exit-code "${SOURCE_HEAD}" -- "${MOD_FILE}" "${TEST_FILE}"
