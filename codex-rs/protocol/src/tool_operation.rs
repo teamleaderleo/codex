@@ -88,21 +88,6 @@ impl ToolOperationReceipt {
     pub fn record_result_ambiguous(&mut self) {
         self.result_state = ToolOperationResultState::Ambiguous;
     }
-
-    /// Returns whether this receipt permits compaction of the represented operation.
-    pub fn is_compaction_ready(&self) -> bool {
-        match self.effect {
-            ToolOperationEffect::ReadOnly => true,
-            ToolOperationEffect::PotentialMutation => {
-                matches!(
-                    self.terminal_state,
-                    ToolOperationTerminalState::Completed
-                        | ToolOperationTerminalState::Failed
-                        | ToolOperationTerminalState::Aborted
-                ) && self.result_state == ToolOperationResultState::Persisted
-            }
-        }
-    }
 }
 
 /// Stable identity for one logical tool operation.
@@ -230,15 +215,19 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn potential_mutation_requires_terminal_and_persisted_result() {
+    fn potential_mutation_records_terminal_and_persisted_result() {
         let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
-        assert!(!receipt.is_compaction_ready());
+        assert_eq!(receipt.terminal_state, ToolOperationTerminalState::Pending);
+        assert_eq!(receipt.result_state, ToolOperationResultState::Pending);
 
         receipt.record_terminal_outcome(ToolOperationTerminalState::Completed);
-        assert!(!receipt.is_compaction_ready());
+        assert_eq!(
+            receipt.terminal_state,
+            ToolOperationTerminalState::Completed
+        );
 
         receipt.record_result_persisted();
-        assert!(receipt.is_compaction_ready());
+        assert_eq!(receipt.result_state, ToolOperationResultState::Persisted);
     }
 
     #[test]
@@ -249,7 +238,20 @@ mod tests {
         receipt.record_result_persisted();
 
         assert_eq!(receipt.result_state, ToolOperationResultState::Ambiguous);
-        assert!(!receipt.is_compaction_ready());
+    }
+
+    #[test]
+    fn wire_dto_preserves_unvalidated_state_for_domain_validation() -> Result<()> {
+        let receipt = serde_json::from_value::<ToolOperationReceipt>(json!({
+            "effect": "read_only",
+            "terminal_state": "pending",
+            "result_state": "pending",
+        }))?;
+
+        assert_eq!(receipt.effect, ToolOperationEffect::ReadOnly);
+        assert_eq!(receipt.terminal_state, ToolOperationTerminalState::Pending);
+        assert_eq!(receipt.result_state, ToolOperationResultState::Pending);
+        Ok(())
     }
 
     #[test]
