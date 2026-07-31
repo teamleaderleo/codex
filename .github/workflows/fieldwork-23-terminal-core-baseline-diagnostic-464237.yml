@@ -1,0 +1,152 @@
+name: fieldwork-23-terminal-core-baseline-diagnostic-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/23-terminal-464237-source
+    paths:
+      - .github/workflows/fieldwork-23-terminal-core-baseline-diagnostic-464237.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-23-terminal-core-baseline-diagnostic-464237
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  SOURCE_BASE: 4642370542739d5dd080b0c87a9de06a6435d3db
+  SOURCE_HEAD: 7f15307fd2c157d8a139310d2e8243f3f2b391a4
+
+jobs:
+  compare-core-gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out exact diagnostic carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact source ancestry and workflow-only fence
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$SOURCE_HEAD^1")" = "$SOURCE_BASE"
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          actual="$(git diff --name-only "$SOURCE_HEAD" HEAD)"
+          expected='.github/workflows/fieldwork-23-terminal-core-baseline-diagnostic-464237.yml'
+          printf 'diagnostic carrier files:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+          echo "FIELDWORK_TERMINAL_DIAGNOSTIC_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Check out exact terminal source
+        run: |
+          set -euo pipefail
+          git checkout --detach "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: cargo-nextest
+
+      - name: Install repository Python runner
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.3"
+
+      - name: Run exact source codex-core gate and retain output
+        working-directory: codex-rs
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/target-source
+        run: |
+          set +e
+          just test -p codex-core 2>&1 | tee "$RUNNER_TEMP/source-core.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$RUNNER_TEMP/source.status"
+          echo "FIELDWORK_TERMINAL_SOURCE_CORE_STATUS=$status"
+          exit 0
+
+      - name: Check out exact public base
+        run: |
+          set -euo pipefail
+          git checkout --detach "$SOURCE_BASE"
+          test "$(git rev-parse HEAD)" = "$SOURCE_BASE"
+
+      - name: Run exact base codex-core gate and retain output
+        working-directory: codex-rs
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/target-base
+        run: |
+          set +e
+          just test -p codex-core 2>&1 | tee "$RUNNER_TEMP/base-core.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$RUNNER_TEMP/base.status"
+          echo "FIELDWORK_TERMINAL_BASE_CORE_STATUS=$status"
+          exit 0
+
+      - name: Build exact comparison receipt
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          report = {
+              "schemaVersion": 1,
+              "evidenceClass": "diagnostic-comparison",
+              "sourceHead": os.environ["SOURCE_HEAD"],
+              "sourceBase": os.environ["SOURCE_BASE"],
+              "command": "just test -p codex-core",
+              "runs": {},
+          }
+          for label in ("source", "base"):
+              text = (root / f"{label}-core.log").read_text(encoding="utf-8", errors="replace")
+              status = int((root / f"{label}.status").read_text().strip())
+              lines = text.splitlines()
+              signals = [
+                  line for line in lines
+                  if "FAILED" in line
+                  or line.startswith("error:")
+                  or line.startswith("failures:")
+                  or "test result:" in line
+              ]
+              report["runs"][label] = {
+                  "exitStatus": status,
+                  "signalLines": signals[-200:],
+                  "tail": lines[-400:],
+              }
+          (root / "comparison.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          test -s "$RUNNER_TEMP/source-core.log"
+          test -s "$RUNNER_TEMP/base-core.log"
+          test -s "$RUNNER_TEMP/comparison.json"
+          echo 'FIELDWORK_TERMINAL_CORE_DIAGNOSTIC=CAPTURED'
+
+      - name: Upload exact source/base diagnostic
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: fieldwork-23-terminal-core-baseline-diagnostic
+          path: |
+            ${{ runner.temp }}/source-core.log
+            ${{ runner.temp }}/source.status
+            ${{ runner.temp }}/base-core.log
+            ${{ runner.temp }}/base.status
+            ${{ runner.temp }}/comparison.json
+          if-no-files-found: error
+          retention-days: 30
