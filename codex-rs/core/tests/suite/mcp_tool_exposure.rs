@@ -277,6 +277,54 @@ async fn rapid_mcp_refreshes_coalesce_to_the_latest_config() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn host_mcp_config_refresh_reconnects_ready_clients() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let (apps_server, startup_control) =
+        AppsTestServer::mount_with_startup_control(&server).await?;
+    let test = search_capable_apps_builder(apps_server.chatgpt_base_url.clone())
+        .build(&server)
+        .await?;
+    wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+
+    let initial_attempts = startup_control.initialize_attempts();
+    assert!(initial_attempts > 0);
+
+    test.codex.refresh_mcp_config(test.config.clone()).await;
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while startup_control.initialize_attempts() <= initial_attempts {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("host MCP config refresh should reconnect the ready client");
+    assert_eq!(startup_control.initialize_attempts(), initial_attempts + 1);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_runtime_config_refresh_reuses_ready_mcp_client() -> Result<()> {
+    let server = responses::start_mock_server().await;
+    let (apps_server, startup_control) =
+        AppsTestServer::mount_with_startup_control(&server).await?;
+    let test = search_capable_apps_builder(apps_server.chatgpt_base_url.clone())
+        .build(&server)
+        .await?;
+    wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+
+    let initial_attempts = startup_control.initialize_attempts();
+    assert!(initial_attempts > 0);
+
+    test.codex.refresh_runtime_config(test.config.clone()).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(startup_control.initialize_attempts(), initial_attempts);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn out_of_band_resource_read_reconciles_the_published_mcp_runtime() -> Result<()> {
     let server = responses::start_mock_server().await;
 
