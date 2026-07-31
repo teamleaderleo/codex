@@ -1,0 +1,94 @@
+name: fieldwork-83-tool-effect-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-tool-effect-464237
+    paths:
+      - .github/workflows/fieldwork-83-tool-effect-464237.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-83-tool-effect-464237
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record exact identities
+        run: |
+          set -euo pipefail
+          echo "FIELDWORK_TOOL_EFFECT_CARRIER_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_TOOL_EFFECT_SOURCE_HEAD=860f6babd420587dccc9e0d414f18ed157690958"
+          echo "FIELDWORK_TOOL_EFFECT_SOURCE_BASE=15414d7e5da8109e03dca24111664b272e4a5717"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Verify carrier and source fences
+        env:
+          SOURCE_BASE: 15414d7e5da8109e03dca24111664b272e4a5717
+          SOURCE_HEAD: 860f6babd420587dccc9e0d414f18ed157690958
+          WORKFLOW: .github/workflows/fieldwork-83-tool-effect-464237.yml
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
+
+          source_actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          source_expected="$(printf '%s\n' \
+            codex-rs/tools/src/lib.rs \
+            codex-rs/tools/src/tool_executor.rs \
+            codex-rs/tools/src/tool_executor_tests.rs | sort)"
+          test "$source_actual" = "$source_expected"
+
+          carrier_actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          test "$carrier_actual" = "$WORKFLOW"
+
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+          git diff --check "$SOURCE_HEAD" HEAD
+          echo 'FIELDWORK_TOOL_EFFECT_SOURCE_FENCE=3/3'
+          echo 'FIELDWORK_TOOL_EFFECT_CARRIER_FENCE=1/1'
+
+      - name: Format-check exact source
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Resolve and run two exact controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          mapfile -t declared <<'EOF'
+          unclassified_executor_is_potentially_mutating
+          executor_can_declare_read_only_effect
+          EOF
+
+          cargo test -p codex-tools --lib --locked -- --list > /tmp/codex-tools-tests.txt
+          count=0
+          for suffix in "${declared[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-tools-tests.txt | grep -E "(^|::)${suffix}$")
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-tools --lib --locked "${matches[0]}" -- --exact --nocapture
+            count=$((count + 1))
+          done
+          test "$count" -eq 2
+          echo "FIELDWORK_TOOL_EFFECT_EXACT=${count}/2"
+
+      - name: Run complete tools package
+        working-directory: codex-rs
+        run: cargo test -p codex-tools --locked
