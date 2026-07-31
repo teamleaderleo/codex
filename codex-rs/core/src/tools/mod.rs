@@ -8,6 +8,8 @@ pub(crate) mod hook_names;
 pub(crate) mod hosted_spec;
 pub(crate) mod lifecycle;
 pub(crate) mod network_approval;
+#[cfg(test)]
+mod nonsettling_cancellation_tests;
 pub(crate) mod orchestrator;
 pub(crate) mod parallel;
 pub(crate) mod registry;
