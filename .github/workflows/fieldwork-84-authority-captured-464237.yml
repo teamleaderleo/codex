@@ -75,6 +75,7 @@ jobs:
           RUST_MIN_STACK: 16777216
         run: |
           set -euo pipefail
+          exec > >(tee /tmp/fieldwork-84-authority-cargo.log) 2>&1
           cargo test -p codex-mcp --lib --locked -- --list > /tmp/codex-mcp-tests.list
           cargo test -p codex-core --test all --locked -- --list > /tmp/core-integration-tests.list
 
@@ -99,6 +100,14 @@ jobs:
           run_exact_lib prepared_call_keeps_captured_connection_and_authority_after_refresh
           run_exact_core regular_mcp_definition_cache_preserves_live_session_state
           echo 'FIELDWORK_MCP_AUTHORITY_CAPTURED_EXACT=4/4'
+
+      - name: Upload authority diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: fieldwork-84-authority-cargo-${{ github.run_id }}
+          path: /tmp/fieldwork-84-authority-cargo.log
+          if-no-files-found: error
 
       - name: Preserve source fence
         run: |
