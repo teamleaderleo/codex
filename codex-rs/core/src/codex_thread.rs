@@ -633,7 +633,15 @@ impl CodexThread {
     }
 
     /// Refresh MCP configuration and managed requirements without reloading unrelated settings.
+    ///
+    /// A host-requested MCP config reload is an explicit freshness boundary. Request fresh
+    /// connections before publishing the new config so a stable endpoint cannot retain its
+    /// startup-captured server identity and tool catalogue.
     pub async fn refresh_mcp_config(&self, next_config: crate::config::Config) {
+        self.session
+            .services
+            .mcp_runtime
+            .reconnect_on_next_refresh();
         self.session.refresh_mcp_config(next_config).await;
     }
 
