@@ -195,6 +195,7 @@ use codex_tools::ToolOperationReceipt;
 use codex_tools::ToolOperationTerminalState;
 
 use crate::context_manager::validate_compaction_call_output_identity;
+use crate::state::SessionState;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::Result as CodexResult;
 
@@ -223,19 +224,24 @@ replace_once(
 
     pub(crate) async fn validate_compaction_tool_operation_state(&self) -> CodexResult<()> {
         let state = self.state.lock().await;
-        validate_compaction_call_output_identity(state.history.raw_items())?;
-        if state
-            .tool_operation_receipts
-            .has_unreconciled_potential_mutation()
-        {
-            return Err(CodexErrorDetails::InvalidRequest(
-                "compaction paused because tool operation receipt state is unresolved"
-                    .to_string(),
-            )
-            .into());
-        }
-        Ok(())
+        validate_compaction_tool_operation_state_locked(&state)
     }
+}
+
+pub(crate) fn validate_compaction_tool_operation_state_locked(
+    state: &SessionState,
+) -> CodexResult<()> {
+    validate_compaction_call_output_identity(state.history.raw_items())?;
+    if state
+        .tool_operation_receipts
+        .has_unreconciled_potential_mutation()
+    {
+        return Err(CodexErrorDetails::InvalidRequest(
+            "compaction paused because tool operation receipt state is unresolved".to_string(),
+        )
+        .into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
