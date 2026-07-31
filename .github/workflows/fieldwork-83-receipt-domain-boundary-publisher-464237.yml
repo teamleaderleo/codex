@@ -1,0 +1,102 @@
+name: fieldwork-83-receipt-domain-boundary-publisher-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-tool-effect-fmt-464237
+    paths:
+      - .github/fieldwork/83_receipt_domain_boundary.py
+      - .github/workflows/fieldwork-83-receipt-domain-boundary-publisher-464237.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-receipt-domain-boundary-publisher-464237
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact repair publisher
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify publisher identity
+        env:
+          SOURCE_HEAD: b76d46832f8426cb8acb4031b00f41069c7d7014
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          expected="$(printf '%s\n' .github/fieldwork/83_receipt_domain_boundary.py .github/workflows/fieldwork-83-receipt-domain-boundary-publisher-464237.yml | sort)"
+          test "$actual" = "$expected"
+          echo "FIELDWORK_DOMAIN_BOUNDARY_PUBLISHER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply one-file domain-boundary repair
+        env:
+          SOURCE_HEAD: b76d46832f8426cb8acb4031b00f41069c7d7014
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          cp .github/fieldwork/83_receipt_domain_boundary.py /tmp/83_receipt_domain_boundary.py
+          git switch --detach "$SOURCE_HEAD"
+          python /tmp/83_receipt_domain_boundary.py
+          (cd codex-rs && cargo fmt --all)
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected='codex-rs/protocol/src/tool_operation.rs'
+          test "$actual" = "$expected"
+
+      - name: Run six exact protocol controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-protocol --lib --locked -- --list > /tmp/domain-boundary-tests.list
+          suffixes=(
+            potential_mutation_records_terminal_and_persisted_result
+            duplicate_result_becomes_ambiguous
+            wire_dto_preserves_inconsistent_state_for_domain_validation
+            code_mode_identity_excludes_synthetic_host_call_id
+            checkpoint_round_trips_receipt_state
+            unknown_version_remains_visible_to_replay_validation
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/domain-boundary-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-protocol --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 6
+          echo 'FIELDWORK_RECEIPT_DOMAIN_BOUNDARY_EXACT=6/6'
+
+      - name: Run complete protocol package
+        working-directory: codex-rs
+        run: cargo test -p codex-protocol --locked
+
+      - name: Publish repaired source branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-receipt-domain-boundary-464237
+        run: |
+          set -euo pipefail
+          git add codex-rs/protocol/src/tool_operation.rs
+          git commit -m 'protocol: move receipt decisions behind domain validation'
+          git switch -C "$SOURCE_BRANCH"
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_DOMAIN_BOUNDARY_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo 'FIELDWORK_DOMAIN_BOUNDARY_SOURCE_BASE=b76d46832f8426cb8acb4031b00f41069c7d7014'
