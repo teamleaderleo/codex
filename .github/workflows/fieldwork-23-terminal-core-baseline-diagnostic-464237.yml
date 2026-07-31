@@ -29,13 +29,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify exact source ancestry and workflow-only fence
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=2 origin "$SOURCE_HEAD"
           test "$(git rev-parse "$SOURCE_HEAD^1")" = "$SOURCE_BASE"
           test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
           actual="$(git diff --name-only "$SOURCE_HEAD" HEAD)"
