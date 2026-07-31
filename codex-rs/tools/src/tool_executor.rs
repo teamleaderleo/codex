@@ -1,5 +1,6 @@
 use crate::FunctionCallError;
 use crate::ToolName;
+use crate::ToolOperationEffect;
 use crate::ToolOutput;
 use crate::ToolSearchInfo;
 use crate::ToolSpec;
@@ -64,6 +65,15 @@ pub trait ToolExecutor<Invocation>: Send + Sync {
         ToolExposure::Direct
     }
 
+    /// Declares whether this runtime can change state outside the model transcript.
+    ///
+    /// Runtimes are conservative by default. Implementations should return
+    /// [`ToolOperationEffect::ReadOnly`] only when every invocation handled by the runtime is
+    /// side-effect free for receipt, compaction, and automatic-retry decisions.
+    fn operation_effect(&self) -> ToolOperationEffect {
+        ToolOperationEffect::PotentialMutation
+    }
+
     fn search_info(&self) -> Option<ToolSearchInfo> {
         let spec = self.spec();
         ToolSearchInfo::from_tool_spec(spec, /*source_info*/ None)
@@ -75,3 +85,7 @@ pub trait ToolExecutor<Invocation>: Send + Sync {
 
     fn handle(&self, invocation: Invocation) -> ToolExecutorFuture<'_>;
 }
+
+#[cfg(test)]
+#[path = "tool_executor_tests.rs"]
+mod tests;
