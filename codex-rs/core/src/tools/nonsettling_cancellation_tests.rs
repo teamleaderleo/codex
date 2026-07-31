@@ -81,8 +81,7 @@ impl CoreToolRuntime for NonSettlingCancellationHandler {
 }
 
 #[tokio::test]
-async fn cancellation_waiting_for_nonsettling_runtime_cleanup_has_no_terminal_receipt()
--> anyhow::Result<()> {
+async fn cancellation_waiting_for_nonsettling_runtime_cleanup_has_no_terminal_receipt() -> anyhow::Result<()> {
     let (session, turn_context) = crate::session::tests::make_session_and_context().await;
     let session = Arc::new(session);
     let turn_context = Arc::new(turn_context);
