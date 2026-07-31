@@ -1,0 +1,80 @@
+name: fieldwork-83-tool-effect-fmt-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-tool-effect-fmt-464237
+    paths:
+      - .github/workflows/fieldwork-83-tool-effect-fmt-464237.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-83-tool-effect-fmt-464237
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact source and carrier fences
+        env:
+          SOURCE_BASE: 8b31601977ccedce8a1c79c81b1b055d733402a9
+          SOURCE_HEAD: b76d46832f8426cb8acb4031b00f41069c7d7014
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$SOURCE_HEAD"
+          test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
+          source_actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          source_expected="$(printf '%s\n' codex-rs/tools/src/lib.rs codex-rs/tools/src/tool_executor.rs codex-rs/tools/src/tool_executor_tests.rs | sort)"
+          test "$source_actual" = "$source_expected"
+          carrier_actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          carrier_expected='.github/workflows/fieldwork-83-tool-effect-fmt-464237.yml'
+          test "$carrier_actual" = "$carrier_expected"
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+          echo "FIELDWORK_TOOL_EFFECT_SOURCE_HEAD=$SOURCE_HEAD"
+          echo "FIELDWORK_TOOL_EFFECT_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Format-check exact source
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Run two exact tool-effect controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-tools --lib --locked -- --list > /tmp/tool-effect-tests.list
+          suffixes=(
+            unclassified_executor_is_potentially_mutating
+            executor_can_declare_read_only_effect
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tool-effect-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-tools --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 2
+          echo 'FIELDWORK_TOOL_EFFECT_EXACT=2/2'
+
+      - name: Run complete tools package
+        working-directory: codex-rs
+        run: cargo test -p codex-tools --locked
