@@ -1,0 +1,49 @@
+name: Fieldwork 294 nonsettling cancellation characterization v3
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/294-nonsettling-tool-cancellation-f0c30e
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: 6d5b78094adedc31e96894f263585a1cdce46bc1
+
+jobs:
+  characterize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out carrier head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the exact source head and one-workflow carrier diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${SOURCE_HEAD}"
+          mapfile -t changed_files < <(git diff --name-only "${SOURCE_HEAD}" HEAD)
+          test "${#changed_files[@]}" -eq 1
+          test "${changed_files[0]}" = ".github/workflows/fieldwork-294-nonsettling-tool-cancellation-v3.yml"
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+
+      - name: Check Rust formatting
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Run non-settling cancellation characterization
+        working-directory: codex-rs
+        run: cargo test -p codex-core cancellation_waiting_for_nonsettling_runtime_cleanup_has_no_terminal_receipt -- --nocapture
+
+      - name: Run cooperative cancellation control
+        working-directory: codex-rs
+        run: cargo test -p codex-core tool_runtime_cancellation_cooperatively_cleans_up_before_returning_cancelled -- --nocapture
