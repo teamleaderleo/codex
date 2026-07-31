@@ -121,3 +121,16 @@ fn overflow_sets_coverage_lost_and_fails_closed_without_eviction() {
     assert!(receipts.receipt("call-0").is_some());
     assert!(receipts.receipt("overflow").is_none());
 }
+
+#[test]
+fn future_receipt_version_fails_closed() {
+    let mut receipts = ToolOperationReceipts::default();
+    receipts.begin("call-future".to_string(), ToolOperationEffect::ReadOnly);
+    receipts
+        .receipts
+        .get_mut("call-future")
+        .expect("receipt should exist")
+        .version = 99;
+
+    assert!(receipts.has_unreconciled_potential_mutation());
+}

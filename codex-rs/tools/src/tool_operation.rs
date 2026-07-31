@@ -90,24 +90,6 @@ impl ToolOperationReceipt {
     pub fn record_result_ambiguous(&mut self) {
         self.result_state = ToolOperationResultState::Ambiguous;
     }
-
-    /// Returns whether this receipt alone permits compaction.
-    ///
-    /// Read-only calls do not require a durable result to protect external state. Potential
-    /// mutations require one unambiguous terminal outcome and one persisted result.
-    pub fn is_compaction_ready(&self) -> bool {
-        match self.effect {
-            ToolOperationEffect::ReadOnly => true,
-            ToolOperationEffect::PotentialMutation => {
-                matches!(
-                    self.terminal_state,
-                    ToolOperationTerminalState::Completed
-                        | ToolOperationTerminalState::Failed
-                        | ToolOperationTerminalState::Aborted
-                ) && self.result_state == ToolOperationResultState::Persisted
-            }
-        }
-    }
 }
 
 #[cfg(test)]

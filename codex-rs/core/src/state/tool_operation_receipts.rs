@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use codex_tools::TOOL_OPERATION_RECEIPT_VERSION;
 use codex_tools::ToolOperationEffect;
 use codex_tools::ToolOperationReceipt;
+use codex_tools::ToolOperationResultState;
 use codex_tools::ToolOperationTerminalState;
 
 const MAX_RETAINED_TOOL_OPERATION_RECEIPTS: usize = 1024;
@@ -67,8 +69,9 @@ impl ToolOperationReceipts {
     pub(crate) fn has_unreconciled_potential_mutation(&self) -> bool {
         self.coverage_lost
             || self.receipts.values().any(|receipt| {
-                receipt.effect == ToolOperationEffect::PotentialMutation
-                    && !receipt.is_compaction_ready()
+                receipt.version != TOOL_OPERATION_RECEIPT_VERSION
+                    || (receipt.effect == ToolOperationEffect::PotentialMutation
+                        && !potential_mutation_is_reconciled(receipt))
             })
     }
 
@@ -92,6 +95,17 @@ impl ToolOperationReceipts {
         }
         self.receipts.get_mut(call_id)
     }
+}
+
+fn potential_mutation_is_reconciled(receipt: &ToolOperationReceipt) -> bool {
+    receipt.version == TOOL_OPERATION_RECEIPT_VERSION
+        && matches!(
+            receipt.terminal_state,
+            ToolOperationTerminalState::Completed
+                | ToolOperationTerminalState::Failed
+                | ToolOperationTerminalState::Aborted
+        )
+        && receipt.result_state == ToolOperationResultState::Persisted
 }
 
 #[cfg(test)]
