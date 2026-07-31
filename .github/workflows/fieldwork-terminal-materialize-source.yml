@@ -76,7 +76,13 @@ jobs:
           echo "FIELDWORK_TERMINAL_MATERIALIZED_HEAD=$(git rev-parse HEAD)"
           echo "FIELDWORK_TERMINAL_MATERIALIZED_TREE=$(git rev-parse HEAD^{tree})"
 
-      - name: Publish source-only branch
+      - name: Publish source-only branch with guarded lease
         run: |
           set -euo pipefail
-          git push origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          git fetch --no-tags origin "refs/heads/$SOURCE_BRANCH:refs/remotes/origin/$SOURCE_BRANCH"
+          remote_head=$(git rev-parse "refs/remotes/origin/$SOURCE_BRANCH")
+          test "$remote_head" = "$SOURCE_BASE"
+          git push \
+            --force-with-lease="refs/heads/$SOURCE_BRANCH:$SOURCE_BASE" \
+            origin \
+            "HEAD:refs/heads/$SOURCE_BRANCH"
