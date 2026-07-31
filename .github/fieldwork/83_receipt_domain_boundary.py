@@ -84,7 +84,7 @@ replace_once(
     fn code_mode_identity_excludes_synthetic_host_call_id() -> Result<()> {
 ''',
     '''    #[test]
-    fn wire_dto_preserves_inconsistent_state_for_domain_validation() -> Result<()> {
+    fn wire_dto_preserves_unvalidated_state_for_domain_validation() -> Result<()> {
         let receipt = serde_json::from_value::<ToolOperationReceipt>(json!({
             "effect": "read_only",
             "terminal_state": "pending",
