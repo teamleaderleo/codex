@@ -99,6 +99,14 @@ jobs:
           test "$executed" -eq 9
           echo 'FIELDWORK_RECEIPT_COVERAGE_STATE_EXACT=9/9'
 
+      - name: Run complete changed receipt test modules
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests -- --nocapture
+          cargo test -p codex-core --lib --locked session::tool_operation::tests -- --nocapture
+          echo 'FIELDWORK_RECEIPT_COVERAGE_MODULES=2/2'
+
       - name: Run core library compile gate
         working-directory: codex-rs
         run: cargo check -p codex-core --lib --locked
