@@ -1,0 +1,82 @@
+name: fieldwork-294-nonsettling-tool-cancellation-v2
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/294-nonsettling-tool-cancellation-f0c30e
+    paths:
+      - .github/workflows/fieldwork-294-nonsettling-tool-cancellation-v2.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-294-nonsettling-tool-cancellation-v2
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/294-nonsettling-tool-cancellation-carrier-v2
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Verify exact source ancestry and fence
+        env:
+          SOURCE_BASE: f0c30e528a54bdf0fa9a4d52ff74b34383434811
+          SOURCE_HEAD: f1cc087660aaa1bc7e34ebfc24924f0c05449df3
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
+          actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/tools/mod.rs \
+            codex-rs/core/src/tools/nonsettling_cancellation_tests.rs | sort)"
+          test "$actual" = "$expected"
+          carrier_actual="$(git diff --name-only "$SOURCE_HEAD" HEAD)"
+          test "$carrier_actual" = '.github/workflows/fieldwork-294-nonsettling-tool-cancellation-v2.yml'
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+          echo "FIELDWORK_294_NONSETTLING_SOURCE=$SOURCE_HEAD"
+          echo "FIELDWORK_294_NONSETTLING_CARRIER=$(git rev-parse HEAD)"
+
+      - name: Format-check exact source
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Run non-settling cleanup characterization
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core \
+            tools::nonsettling_cancellation_tests::cancellation_waiting_for_nonsettling_runtime_cleanup_has_no_terminal_receipt \
+            --locked -- --exact --nocapture
+          echo 'FIELDWORK_294_NONSETTLING=1/1'
+
+      - name: Run cooperative cleanup control
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core \
+            tools::parallel::tests::cancellation_waiting_for_runtime_cleanup_emits_only_aborted_lifecycle \
+            --locked -- --exact --nocapture
+          echo 'FIELDWORK_294_COOPERATIVE=1/1'
+
+      - name: Verify tracked diff hygiene
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --short --untracked-files=all)"
