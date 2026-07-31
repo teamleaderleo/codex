@@ -1,0 +1,67 @@
+name: Fieldwork 294 rustfmt diagnostic v4
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/294-nonsettling-tool-cancellation-f0c30e
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_HEAD: 6d5b78094adedc31e96894f263585a1cdce46bc1
+  TARGET_FILE: codex-rs/core/src/tools/nonsettling_cancellation_tests.rs
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out carrier head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact source head and one-workflow carrier diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "${SOURCE_HEAD}"
+          mapfile -t changed_files < <(git diff --name-only "${SOURCE_HEAD}" HEAD)
+          test "${#changed_files[@]}" -eq 1
+          test "${changed_files[0]}" = ".github/workflows/fieldwork-294-rustfmt-diagnostic-v4.yml"
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+
+      - name: Generate exact rustfmt repair artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fieldwork-294-rustfmt
+          cp "${TARGET_FILE}" /tmp/fieldwork-294-rustfmt/before.rs
+          (
+            cd codex-rs
+            cargo fmt --all
+          )
+          cp "${TARGET_FILE}" /tmp/fieldwork-294-rustfmt/after.rs
+          git diff --binary "${SOURCE_HEAD}" -- "${TARGET_FILE}" > /tmp/fieldwork-294-rustfmt/rustfmt.patch
+          git diff --name-only "${SOURCE_HEAD}" > /tmp/fieldwork-294-rustfmt/changed-files.txt
+          git diff --stat "${SOURCE_HEAD}" > /tmp/fieldwork-294-rustfmt/diff-stat.txt
+          cat /tmp/fieldwork-294-rustfmt/changed-files.txt
+          cat /tmp/fieldwork-294-rustfmt/diff-stat.txt
+
+      - name: Upload formatter output
+        uses: actions/upload-artifact@v4
+        with:
+          name: fieldwork-294-rustfmt-v4
+          path: /tmp/fieldwork-294-rustfmt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require source to be already formatted
+        shell: bash
+        run: git diff --exit-code "${SOURCE_HEAD}" -- "${TARGET_FILE}"
