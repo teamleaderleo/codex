@@ -95,12 +95,13 @@ async fn mcp_server_reload_config_failure_does_not_reconnect_ready_thread_client
             ..Default::default()
         })
         .await?;
+    let thread_id = thread.id;
 
     let _: McpServerToolCallResponse = mcp
         .request(|request_id| ClientRequest::McpServerToolCall {
             request_id,
             params: McpServerToolCallParams {
-                thread_id: thread.id,
+                thread_id: thread_id.clone(),
                 server: TEST_SERVER_NAME.to_string(),
                 tool: TEST_TOOL_NAME.to_string(),
                 arguments: Some(json!({"message": "prime ready client"})),
@@ -126,11 +127,24 @@ async fn mcp_server_reload_config_failure_does_not_reconnect_ready_thread_client
     .await??;
     assert!(!error.error.message.is_empty());
 
+    let _: McpServerToolCallResponse = mcp
+        .request(|request_id| ClientRequest::McpServerToolCall {
+            request_id,
+            params: McpServerToolCallParams {
+                thread_id,
+                server: TEST_SERVER_NAME.to_string(),
+                tool: TEST_TOOL_NAME.to_string(),
+                arguments: Some(json!({"message": "ready client survives failed reload"})),
+                meta: None,
+            },
+        })
+        .await?;
+
     tokio::time::sleep(Duration::from_millis(250)).await;
     assert_eq!(
         initialize_attempts.load(Ordering::SeqCst),
         1,
-        "failed reload planning must not reconnect the ready client"
+        "failed reload must preserve the ready client without reconnecting"
     );
 
     mcp_server_handle.abort();
