@@ -1,0 +1,165 @@
+name: fieldwork-83-receipt-coverage-state-publisher-f72655
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-current-main-domain-boundary-f72655
+    paths:
+      - .github/scripts/fieldwork_83_receipt_coverage_state.py
+      - .github/workflows/fieldwork-83-receipt-coverage-state-publisher-f72655.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-receipt-coverage-state-publisher-f72655
+  cancel-in-progress: true
+
+env:
+  SOURCE_HEAD: a7f1d4c3bb7681037c0231a3b8156c70b9fb99bf
+  SOURCE_BASE: f7265553ea1510304f3091833dcbce65ef21f10c
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact coverage publisher
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify publisher identity and fences
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$SOURCE_HEAD^1")" = "$SOURCE_BASE"
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/scripts/fieldwork_83_receipt_coverage_state.py \
+            .github/workflows/fieldwork-83-receipt-coverage-state-publisher-f72655.yml | sort)"
+          test "$actual" = "$expected"
+          echo "FIELDWORK_RECEIPT_COVERAGE_PUBLISHER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply coverage-state repair
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          cp .github/scripts/fieldwork_83_receipt_coverage_state.py /tmp/fieldwork_83_receipt_coverage_state.py
+          git switch --detach "$SOURCE_HEAD"
+          python3 /tmp/fieldwork_83_receipt_coverage_state.py
+          (cd codex-rs && cargo fmt --all)
+          (cd codex-rs && cargo fmt --all -- --check)
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/state/session.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs | sort)"
+          test "$actual" = "$expected"
+          test "$(git diff --numstat | wc -l)" -eq 5
+          echo 'FIELDWORK_RECEIPT_COVERAGE_SOURCE_FENCE=5/5'
+
+      - name: Verify exact coverage test identities
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked -- --list > /tmp/receipt-coverage-state-tests.list
+          tests=(
+            state::tool_operation_receipts::tests::unknown_coverage_fails_closed
+            state::tool_operation_receipts::tests::fresh_empty_history_establishes_complete_coverage
+            state::tool_operation_receipts::tests::fresh_coverage_cannot_be_claimed_after_an_observation
+            state::tool_operation_receipts::tests::read_only_receipt_does_not_block_complete_coverage
+            state::tool_operation_receipts::tests::future_receipt_version_fails_closed
+            session::tool_operation::tests::compaction_precondition_accepts_fresh_empty_receipt_state
+            session::tool_operation::tests::compaction_precondition_rejects_valid_history_without_receipt_coverage
+            session::tool_operation::tests::compaction_precondition_rejects_unreconciled_potential_mutation
+            session::tool_operation::tests::compaction_precondition_accepts_reconciled_potential_mutation
+          )
+          for test_name in "${tests[@]}"; do
+            test "$(grep -Fxc "$test_name: test" /tmp/receipt-coverage-state-tests.list)" -eq 1
+          done
+          echo 'FIELDWORK_RECEIPT_COVERAGE_IDENTITIES=9/9'
+
+      - name: Exact control - unknown coverage fails closed
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::unknown_coverage_fails_closed -- --exact --nocapture
+
+      - name: Exact control - fresh empty coverage
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::fresh_empty_history_establishes_complete_coverage -- --exact --nocapture
+
+      - name: Exact control - observation prevents fresh claim
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::fresh_coverage_cannot_be_claimed_after_an_observation -- --exact --nocapture
+
+      - name: Exact control - read only does not block
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::read_only_receipt_does_not_block_complete_coverage -- --exact --nocapture
+
+      - name: Exact control - future version fails closed
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::future_receipt_version_fails_closed -- --exact --nocapture
+
+      - name: Exact control - fresh compaction accepted
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_accepts_fresh_empty_receipt_state -- --exact --nocapture
+
+      - name: Exact control - uncovered history rejected
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_rejects_valid_history_without_receipt_coverage -- --exact --nocapture
+
+      - name: Exact control - unresolved mutation rejected
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_rejects_unreconciled_potential_mutation -- --exact --nocapture
+
+      - name: Exact control - reconciled mutation accepted
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_accepts_reconciled_potential_mutation -- --exact --nocapture
+
+      - name: Run complete changed receipt test modules
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests -- --nocapture
+          cargo test -p codex-core --lib --locked session::tool_operation::tests -- --nocapture
+          echo 'FIELDWORK_RECEIPT_COVERAGE_MODULES=2/2'
+
+      - name: Run core library compile gate
+        working-directory: codex-rs
+        run: cargo check -p codex-core --lib --locked
+
+      - name: Publish clean coverage source branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-receipt-coverage-state-f72655
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/state/session.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs | sort)"
+          test "$actual" = "$expected"
+          git add ${expected//$'\n'/ }
+          git commit -m 'receipts: distinguish fresh coverage from unknown history'
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD | sort)" = "$expected"
+          git switch -C "$SOURCE_BRANCH"
+          destination="refs/heads/$SOURCE_BRANCH"
+          expected_generation="$(git ls-remote --heads origin "$destination" | awk '{print $1}')"
+          git push --force-with-lease="$destination:$expected_generation" origin "HEAD:$destination"
+          echo "FIELDWORK_RECEIPT_COVERAGE_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_RECEIPT_COVERAGE_SOURCE_BASE=$SOURCE_HEAD"
