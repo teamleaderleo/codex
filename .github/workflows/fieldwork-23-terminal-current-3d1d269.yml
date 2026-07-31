@@ -1,0 +1,134 @@
+name: fieldwork-23-terminal-current-3d1d269
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/23-terminal-exec-base-3d1d269
+    paths:
+      - .github/workflows/fieldwork-23-terminal-current-3d1d269.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-23-terminal-current-3d1d269
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_MIN_STACK: "33554432"
+  SOURCE_BASE: 3d1d26915a303c3b4765828f973f5464f8c28c5c
+  SOURCE_HEAD: ee605985012dc1b768f03f6b450db16dd5c0467e
+
+jobs:
+  validate-current-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Check out exact current source candidate
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=2 origin "$SOURCE_HEAD"
+          git checkout --detach "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD^1)" = "$SOURCE_BASE"
+          echo "FIELDWORK_TERMINAL_CURRENT_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_TERMINAL_CURRENT_SOURCE_BASE=$(git rev-parse HEAD^1)"
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532
+        with:
+          tool: cargo-nextest
+
+      - name: Install repository Python runner
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.3"
+
+      - name: Verify exact source fence and formatting
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only "$SOURCE_BASE"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/unified_exec/async_watcher.rs \
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs \
+            codex-rs/core/src/unified_exec/process.rs \
+            codex-rs/core/src/unified_exec/process_tests.rs | sort)"
+          printf 'actual source files:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+          git diff --check "$SOURCE_BASE"...HEAD
+          cd codex-rs
+          just fmt
+          cd ..
+          git diff --exit-code
+          echo 'FIELDWORK_TERMINAL_CURRENT_SOURCE_FENCE=4/4'
+
+      - name: Resolve and run nine exact controls through just test
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo nextest list -p codex-core --lib --message-format json > /tmp/tests.json
+          python3 - <<'PY' > /tmp/resolved-tests
+          import json
+          from pathlib import Path
+
+          suffixes = (
+              'local_output_task_retains_stdout_before_best_effort_broadcast',
+              'local_output_task_retains_invalid_utf8_when_broadcast_lags',
+              'completed_item_includes_output_emitted_before_subscription',
+              'reconcile_transcript_replaces_partial_stream_with_authoritative_output',
+              'split_valid_utf8_prefix_respects_max_bytes_for_ascii',
+              'split_valid_utf8_prefix_avoids_splitting_utf8_codepoints',
+              'split_valid_utf8_prefix_makes_progress_on_invalid_utf8',
+              'split_valid_utf8_prefix_consumes_all_valid_bytes_before_invalid_utf8',
+              'split_invalid_utf8_advances_without_shifting_remaining_bytes',
+          )
+          listing = json.loads(Path('/tmp/tests.json').read_text(encoding='utf-8'))
+          tests = []
+          for suite in listing['rust-suites'].values():
+              for name, testcase in suite['testcases'].items():
+                  if testcase['filter-match']['status'] == 'matches':
+                      tests.append(name)
+
+          resolved = []
+          for suffix in suffixes:
+              matches = sorted(name for name in tests if name.endswith(suffix))
+              print(f'{suffix} matches: {matches}', file=__import__('sys').stderr)
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f'expected exactly one full test name for {suffix}, found {len(matches)}'
+                  )
+              resolved.append(matches[0])
+
+          if len(set(resolved)) != len(suffixes):
+              raise SystemExit('resolved test names are not unique')
+          print('\n'.join(resolved))
+          PY
+
+          count=0
+          while IFS= read -r test_name; do
+            printf 'exact test: %s\n' "$test_name"
+            just test -p codex-core --lib -E "test(=$test_name)" --no-tests=fail
+            count=$((count + 1))
+          done < /tmp/resolved-tests
+          test "$count" -eq 9
+          echo 'FIELDWORK_TERMINAL_CURRENT_EXACT=9/9'
+
+      - name: Run focused codex-core gate with raised stack
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          just test -p codex-core
+          echo 'FIELDWORK_TERMINAL_CURRENT_CORE_RAISED_STACK=PASS'
