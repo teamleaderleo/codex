@@ -69,7 +69,7 @@ jobs:
           suffixes=(
             potential_mutation_records_terminal_and_persisted_result
             duplicate_result_becomes_ambiguous
-            wire_dto_preserves_inconsistent_state_for_domain_validation
+            wire_dto_preserves_unvalidated_state_for_domain_validation
             code_mode_identity_excludes_synthetic_host_call_id
             checkpoint_round_trips_receipt_state
             unknown_version_remains_visible_to_replay_validation
@@ -97,6 +97,8 @@ jobs:
           git add codex-rs/protocol/src/tool_operation.rs
           git commit -m 'protocol: move receipt decisions behind domain validation'
           git switch -C "$SOURCE_BRANCH"
-          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          destination="refs/heads/$SOURCE_BRANCH"
+          expected_generation="$(git ls-remote --heads origin "$destination" | awk '{print $1}')"
+          git push --force-with-lease="$destination:$expected_generation" origin "HEAD:$destination"
           echo "FIELDWORK_DOMAIN_BOUNDARY_SOURCE_HEAD=$(git rev-parse HEAD)"
           echo 'FIELDWORK_DOMAIN_BOUNDARY_SOURCE_BASE=b76d46832f8426cb8acb4031b00f41069c7d7014'
