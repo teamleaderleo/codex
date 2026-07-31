@@ -1,0 +1,85 @@
+name: fieldwork-84-reconnect-quiescence-775fb21
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/84-mcp-reconnect-exec-base-775fb21
+    paths:
+      - .github/workflows/fieldwork-84-reconnect-quiescence-775fb21.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-84-reconnect-quiescence-775fb21
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_MIN_STACK: "33554432"
+  SOURCE_BASE: 775fb21d2af9b9936618fe22dd62e6f0cb3ba4a3
+  SOURCE_HEAD: 7cf6d7f0bc0274ad796a74b96b57017fd9e294a6
+
+jobs:
+  validate-current-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: Check out exact reconnect source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=2 origin "$SOURCE_HEAD"
+          git checkout --detach "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD^1)" = "$SOURCE_BASE"
+          echo "FIELDWORK_MCP_RECONNECT_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_MCP_RECONNECT_SOURCE_BASE=$(git rev-parse HEAD^1)"
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Verify exact source fence and formatting
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only "$SOURCE_BASE"...HEAD | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/app-server/tests/suite/v2/mcp_tool.rs \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs | sort)"
+          printf 'actual source files:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+          git diff --check "$SOURCE_BASE"...HEAD
+          cd codex-rs
+          cargo fmt --all -- --check
+          echo 'FIELDWORK_MCP_RECONNECT_SOURCE_FENCE=3/3'
+
+      - name: Resolve and run four exact reconnect controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --test all --locked -- --list > /tmp/core-integration-tests.list
+          cargo test -p codex-app-server --test all --locked -- --list > /tmp/appserver-integration-tests.list
+
+          run_exact() {
+            local package="$1"
+            local list_file="$2"
+            local suffix="$3"
+            mapfile -t matches < <(sed -n 's/: test$//p' "$list_file" | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p "$package" --test all --locked "${matches[0]}" -- --exact --nocapture
+          }
+
+          run_exact codex-core /tmp/core-integration-tests.list host_mcp_config_refresh_reconnects_ready_clients
+          run_exact codex-core /tmp/core-integration-tests.list ordinary_runtime_config_refresh_reuses_ready_mcp_client
+          run_exact codex-app-server /tmp/appserver-integration-tests.list mcp_server_refresh_request_reconnects_ready_thread_clients
+          run_exact codex-app-server /tmp/appserver-integration-tests.list mcp_server_reload_config_failure_does_not_reconnect_ready_thread_clients
+          echo 'FIELDWORK_MCP_RECONNECT_QUIESCENCE_EXACT=4/4'
