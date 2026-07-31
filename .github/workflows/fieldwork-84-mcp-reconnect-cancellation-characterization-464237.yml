@@ -1,0 +1,146 @@
+name: fieldwork-84-mcp-reconnect-cancellation-characterization-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/84-mcp-reconnect-appserver-464237
+    paths:
+      - .github/workflows/fieldwork-84-mcp-reconnect-cancellation-characterization-464237.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-84-mcp-reconnect-cancellation-characterization-464237
+  cancel-in-progress: true
+
+env:
+  SOURCE_BASE: 4642370542739d5dd080b0c87a9de06a6435d3db
+  SOURCE_HEAD: df954cf690e360771b3a2753eaee8a508da21d6c
+
+jobs:
+  characterize-reconnect-intent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact diagnostic carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact source and workflow-only carrier fences
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$SOURCE_HEAD^1")" = "$SOURCE_BASE"
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          carrier_actual="$(git diff --name-only "$SOURCE_HEAD" HEAD)"
+          carrier_expected='.github/workflows/fieldwork-84-mcp-reconnect-cancellation-characterization-464237.yml'
+          test "$carrier_actual" = "$carrier_expected"
+          source_actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          source_expected="$(printf '%s\n' \
+            codex-rs/app-server/tests/suite/v2/mcp_tool.rs \
+            codex-rs/core/src/codex_thread.rs \
+            codex-rs/core/tests/suite/mcp_tool_exposure.rs | sort)"
+          test "$source_actual" = "$source_expected"
+          echo "FIELDWORK_RECONNECT_CANCELLATION_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Check out exact reconnect source
+        run: |
+          set -euo pipefail
+          git checkout --detach "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Inject two private reconnect-intent characterizations
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("codex-rs/codex-mcp/src/runtime.rs")
+          text = path.read_text(encoding="utf-8")
+          marker = "\n}\n"
+          prefix, suffix = text.rsplit(marker, 1)
+          tests = r'''
+
+              #[test]
+              fn abandoned_reconnect_intent_is_claimed_by_later_refresh() {
+                  let runtime = McpRuntime::empty(false);
+                  runtime.reconnect_on_next_refresh();
+                  assert!(runtime.reconnect_pending.load(Ordering::Acquire));
+
+                  let mut reconnect = McpReconnectGuard {
+                      pending: &runtime.reconnect_pending,
+                      claimed: runtime.reconnect_pending.swap(false, Ordering::AcqRel),
+                  };
+                  assert!(reconnect.claimed);
+
+                  reconnect.claimed = false;
+                  drop(reconnect);
+                  assert!(!runtime.reconnect_pending.load(Ordering::Acquire));
+              }
+
+              #[test]
+              fn cancelled_refresh_claim_restores_reconnect_intent() {
+                  let runtime = McpRuntime::empty(false);
+                  runtime.reconnect_on_next_refresh();
+
+                  let reconnect = McpReconnectGuard {
+                      pending: &runtime.reconnect_pending,
+                      claimed: runtime.reconnect_pending.swap(false, Ordering::AcqRel),
+                  };
+                  assert!(reconnect.claimed);
+                  assert!(!runtime.reconnect_pending.load(Ordering::Acquire));
+
+                  drop(reconnect);
+                  assert!(runtime.reconnect_pending.load(Ordering::Acquire));
+              }
+          '''
+          path.write_text(prefix + tests + marker + suffix, encoding="utf-8")
+          PY
+          (cd codex-rs && cargo fmt --all)
+          git diff --check
+          actual="$(git diff --name-only)"
+          expected='codex-rs/codex-mcp/src/runtime.rs'
+          test "$actual" = "$expected"
+
+      - name: Run two exact reconnect-intent controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-mcp --lib --locked -- --list > /tmp/reconnect-intent-tests.list
+          suffixes=(
+            abandoned_reconnect_intent_is_claimed_by_later_refresh
+            cancelled_refresh_claim_restores_reconnect_intent
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/reconnect-intent-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-mcp --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 2
+          echo 'FIELDWORK_MCP_RECONNECT_CANCELLATION_EXACT=2/2'
+
+      - name: Run complete codex-mcp package
+        working-directory: codex-rs
+        run: cargo test -p codex-mcp --locked
+
+      - name: Confirm carrier remains read-only
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only)"
+          expected='codex-rs/codex-mcp/src/runtime.rs'
+          test "$actual" = "$expected"
+          git diff --check
