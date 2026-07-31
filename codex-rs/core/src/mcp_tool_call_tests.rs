@@ -2941,3 +2941,66 @@ async fn approve_mode_skips_guardian_in_every_permission_mode() {
         assert_eq!(decision, None);
     }
 }
+
+fn authority_test_tool(schema: serde_json::Value) -> ToolInfo {
+    ToolInfo {
+        server_name: "authority-server".to_string(),
+        supports_parallel_tool_calls: false,
+        server_origin: Some("stdio".to_string()),
+        callable_name: "echo".to_string(),
+        callable_namespace: "mcp__authority_server".to_string(),
+        namespace_description: Some("Authority fixture".to_string()),
+        tool: rmcp::model::Tool::new(
+            "echo".to_string(),
+            "Echo input".to_string(),
+            Arc::new(
+                schema
+                    .as_object()
+                    .expect("authority test schema object")
+                    .clone(),
+            ),
+        ),
+        openai_file_input_optional_fields: HashMap::new(),
+        connector_id: Some("connector-a".to_string()),
+        connector_name: Some("Connector A".to_string()),
+        plugin_display_names: vec!["Plugin A".to_string()],
+    }
+}
+
+#[test]
+fn mcp_tool_authority_accepts_identical_advertisement() {
+    let advertised = authority_test_tool(serde_json::json!({
+        "type": "object",
+        "properties": {"message": {"type": "string"}}
+    }));
+    let live = advertised.clone();
+
+    assert!(mcp_tool_authority_matches(&advertised, &live));
+}
+
+#[test]
+fn mcp_tool_authority_rejects_schema_and_connector_drift() {
+    let advertised = authority_test_tool(serde_json::json!({
+        "type": "object",
+        "properties": {"message": {"type": "string"}}
+    }));
+    let mut schema_drift = advertised.clone();
+    schema_drift.tool = rmcp::model::Tool::new(
+        "echo".to_string(),
+        "Echo input".to_string(),
+        Arc::new(
+            serde_json::json!({
+                "type": "object",
+                "properties": {"count": {"type": "integer"}}
+            })
+            .as_object()
+            .expect("schema drift object")
+            .clone(),
+        ),
+    );
+    let mut connector_drift = advertised.clone();
+    connector_drift.connector_id = Some("connector-b".to_string());
+
+    assert!(!mcp_tool_authority_matches(&advertised, &schema_drift));
+    assert!(!mcp_tool_authority_matches(&advertised, &connector_drift));
+}

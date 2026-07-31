@@ -36,6 +36,7 @@ use codex_mcp::MCP_TOOL_CODEX_APPS_META_KEY;
 use codex_mcp::McpPermissionPromptAutoApproveContext;
 use codex_mcp::PreparedMcpCall;
 use codex_mcp::SandboxState;
+use codex_mcp::ToolInfo;
 use codex_mcp::auth_elicitation_completed_result;
 use codex_mcp::build_auth_elicitation_plan;
 use codex_mcp::mcp_permission_prompt_is_auto_approved;
@@ -105,18 +106,26 @@ const MCP_RESULT_TELEMETRY_SERVER_USER_FLOW_SPAN_ATTR: &str =
 const MCP_RESULT_TELEMETRY_TARGET_ID_MAX_CHARS: usize = 256;
 const MCP_TOOL_CALL_EVENT_RESULT_MAX_BYTES: usize = DEFAULT_OUTPUT_BYTES_CAP;
 
+fn mcp_tool_authority_matches(advertised: &ToolInfo, live: &ToolInfo) -> bool {
+    match (serde_json::to_value(advertised), serde_json::to_value(live)) {
+        (Ok(advertised), Ok(live)) => advertised == live,
+        _ => false,
+    }
+}
+
 /// Handles the specified tool call and dispatches the appropriate MCP tool-call
 /// item lifecycle events to the `Session`.
 pub(crate) async fn handle_mcp_tool_call(
     sess: Arc<Session>,
     step_context: &Arc<StepContext>,
     call_id: String,
-    server: String,
-    tool_name: String,
+    advertised_tool: ToolInfo,
     hook_tool_name: HookToolName,
     arguments: String,
 ) -> HandledMcpToolCall {
     let turn_context = &step_context.turn;
+    let server = advertised_tool.server_name.clone();
+    let tool_name = advertised_tool.tool.name.to_string();
     // Parse the `arguments` as JSON. An empty string is OK, but invalid JSON
     // is not.
     let arguments_value = if arguments.trim().is_empty() {
@@ -168,6 +177,28 @@ pub(crate) async fn handle_mcp_tool_call(
                 .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new())),
         };
     };
+    if !mcp_tool_authority_matches(&advertised_tool, prepared_call.tool_info()) {
+        let item_metadata =
+            McpToolCallItemMetadata::from_tool_metadata(&server, /*metadata*/ None);
+        let result = notify_mcp_tool_call_skip(
+            sess.as_ref(),
+            turn_context.as_ref(),
+            &call_id,
+            invocation,
+            item_metadata,
+            format!(
+                "MCP tool `{server}/{tool_name}` blocked because its live authority differs from the model-advertised catalogue"
+            ),
+            /*already_started*/ false,
+        )
+        .await;
+        return HandledMcpToolCall {
+            result: CallToolResult::from_result(result),
+            tool_input: arguments_value
+                .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new())),
+        };
+    }
+
     let metadata = mcp_tool_metadata(&prepared_call);
     let item_metadata = McpToolCallItemMetadata::from_tool_metadata(&server, Some(&metadata));
     let runtime_config = prepared_call.config();

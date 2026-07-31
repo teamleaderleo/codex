@@ -150,8 +150,7 @@ impl McpHandler {
             Arc::clone(&session),
             &step_context,
             call_id.clone(),
-            self.tool_info.server_name.clone(),
-            self.tool_info.tool.name.to_string(),
+            self.tool_info.clone(),
             self.hook_tool_name(),
             payload,
         )
