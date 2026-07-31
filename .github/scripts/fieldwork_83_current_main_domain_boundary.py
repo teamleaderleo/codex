@@ -91,7 +91,7 @@ fn repeated_terminal_outcome_is_idempotent() {
 
 #[test]
 fn future_version_remains_visible_to_domain_validation() {
-    let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::PotentialMutation);
+    let mut receipt = ToolOperationReceipt::pending(ToolOperationEffect::ReadOnly);
     receipt.version = 99;
 
     assert_eq!(receipt.version, 99);
@@ -127,8 +127,9 @@ replace_once(
     '''    pub(crate) fn has_unreconciled_potential_mutation(&self) -> bool {
         self.coverage_lost
             || self.receipts.values().any(|receipt| {
-                receipt.effect == ToolOperationEffect::PotentialMutation
-                    && !potential_mutation_is_reconciled(receipt)
+                receipt.version != TOOL_OPERATION_RECEIPT_VERSION
+                    || (receipt.effect == ToolOperationEffect::PotentialMutation
+                        && !potential_mutation_is_reconciled(receipt))
             })
     }
 ''',
@@ -169,9 +170,7 @@ state_tests.write_text(
 #[test]
 fn future_receipt_version_fails_closed() {
     let mut receipts = ToolOperationReceipts::default();
-    receipts.begin("call-future".to_string(), ToolOperationEffect::PotentialMutation);
-    receipts.record_terminal("call-future", ToolOperationTerminalState::Completed);
-    receipts.record_result_persisted("call-future");
+    receipts.begin("call-future".to_string(), ToolOperationEffect::ReadOnly);
     receipts
         .receipts
         .get_mut("call-future")
@@ -230,7 +229,7 @@ replace_once(
             .has_unreconciled_potential_mutation()
         {
             return Err(CodexErrorDetails::InvalidRequest(
-                "compaction paused because a potentially mutating tool operation is unreconciled"
+                "compaction paused because tool operation receipt state is unresolved"
                     .to_string(),
             )
             .into());
@@ -268,7 +267,7 @@ mod tests {
             .await
             .expect_err("pending mutation should block compaction");
 
-        assert!(error.to_string().contains("potentially mutating"));
+        assert!(error.to_string().contains("receipt state"));
     }
 
     #[tokio::test]
