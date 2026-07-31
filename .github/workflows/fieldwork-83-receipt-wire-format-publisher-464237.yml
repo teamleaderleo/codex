@@ -1,0 +1,77 @@
+name: fieldwork-83-receipt-wire-format-publisher-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-receipt-wire-v1-464237
+    paths:
+      - .github/workflows/fieldwork-83-receipt-wire-format-publisher-464237.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-receipt-wire-format-publisher-464237
+  cancel-in-progress: true
+
+jobs:
+  format-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact formatter carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify carrier identity
+        env:
+          SOURCE_HEAD: 15414d7e5da8109e03dca24111664b272e4a5717
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$SOURCE_HEAD"
+          actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          expected='.github/workflows/fieldwork-83-receipt-wire-format-publisher-464237.yml'
+          test "$actual" = "$expected"
+          echo "FIELDWORK_FORMATTER_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust formatter
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Format exact source and verify fence
+        env:
+          SOURCE_HEAD: 15414d7e5da8109e03dca24111664b272e4a5717
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git switch --detach "$SOURCE_HEAD"
+          (cd codex-rs && cargo fmt --all)
+          git diff --check
+          mapfile -t changed < <(git diff --name-only | sort)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              codex-rs/protocol/src/lib.rs|codex-rs/protocol/src/tool_operation.rs) ;;
+              *) echo "unexpected formatted path: $path" >&2; exit 1 ;;
+            esac
+          done
+          printf 'FIELDWORK_FORMATTED_SOURCE_FILES\n%s\n' "${changed[@]}"
+
+      - name: Publish clean formatted source
+        env:
+          SOURCE_BRANCH: fieldwork/83-receipt-wire-v1-fmt-464237
+        run: |
+          set -euo pipefail
+          git add codex-rs/protocol/src/lib.rs codex-rs/protocol/src/tool_operation.rs
+          git commit -m 'protocol: format versioned mutation receipt wire contract'
+          git switch -C "$SOURCE_BRANCH"
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_FORMATTED_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo 'FIELDWORK_FORMATTED_SOURCE_BASE=4642370542739d5dd080b0c87a9de06a6435d3db'
