@@ -10,16 +10,6 @@ def replace_once(path: str, old: str, new: str) -> None:
     file_path.write_text(text.replace(old, new, 1))
 
 
-def append_once(path: str, marker: str, addition: str) -> None:
-    file_path = Path(path)
-    text = file_path.read_text()
-    if addition in text:
-        raise SystemExit(f"addition already present in {path}")
-    if marker not in text:
-        raise SystemExit(f"missing append marker in {path}")
-    file_path.write_text(text.replace(marker, marker + addition, 1))
-
-
 replace_once(
     "codex-rs/tools/src/tool_operation.rs",
     '''    /// Returns whether this receipt alone permits compaction.
@@ -171,12 +161,6 @@ mod tests;
 ''',
 )
 
-append_once(
-    "codex-rs/core/src/state/tool_operation_receipts_tests.rs",
-    '''fn overflow_sets_coverage_lost_and_fails_closed_without_eviction() {''',
-    "",
-)
-
 state_tests = Path("codex-rs/core/src/state/tool_operation_receipts_tests.rs")
 state_tests.write_text(
     state_tests.read_text()
@@ -186,10 +170,7 @@ state_tests.write_text(
 fn future_receipt_version_fails_closed() {
     let mut receipts = ToolOperationReceipts::default();
     receipts.begin("call-future".to_string(), ToolOperationEffect::PotentialMutation);
-    receipts.record_terminal(
-        "call-future",
-        ToolOperationTerminalState::Completed,
-    );
+    receipts.record_terminal("call-future", ToolOperationTerminalState::Completed);
     receipts.record_result_persisted("call-future");
     receipts
         .receipts
