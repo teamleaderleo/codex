@@ -1,0 +1,109 @@
+name: fieldwork-bazel-binary-unit-tests-publisher-f72655
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/scripts/fieldwork_bazel_binary_unit_tests.py
+      - .github/workflows/fieldwork-bazel-binary-unit-tests-publisher-f72655.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-bazel-binary-unit-tests-publisher-f72655
+  cancel-in-progress: true
+
+env:
+  SOURCE_HEAD: f7265553ea1510304f3091833dcbce65ef21f10c
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact Bazel publisher
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify publisher identity and fence
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          expected="$(printf '%s\n' \
+            .github/scripts/fieldwork_bazel_binary_unit_tests.py \
+            .github/workflows/fieldwork-bazel-binary-unit-tests-publisher-f72655.yml | sort)"
+          test "$actual" = "$expected"
+          echo "FIELDWORK_BAZEL_BINARY_PUBLISHER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Apply accepted public Bazel contract
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          cp .github/scripts/fieldwork_bazel_binary_unit_tests.py /tmp/fieldwork_bazel_binary_unit_tests.py
+          git switch --detach "$SOURCE_HEAD"
+          python3 /tmp/fieldwork_bazel_binary_unit_tests.py
+          git diff --check
+          test "$(git diff --name-only)" = 'defs.bzl'
+          test "$(git diff --numstat | wc -l)" -eq 1
+          echo 'FIELDWORK_BAZEL_BINARY_SOURCE_FENCE=1/1'
+
+      - name: Prepare Bazel CI
+        uses: ./.github/actions/prepare-bazel-ci
+        with:
+          target: x86_64-unknown-linux-gnu
+          cache-scope: fieldwork-bazel-binary-unit-tests
+
+      - name: Validate package analysis and generated targets
+        run: |
+          set -euo pipefail
+          bazel query //codex-rs/windows-sandbox-rs:all > /tmp/windows-sandbox-targets.txt
+          expected="$(printf '%s\n' \
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests \
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests-bin \
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests \
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests-bin | sort)"
+          actual="$(grep -- '-bin-unit-tests' /tmp/windows-sandbox-targets.txt | sort)"
+          test "$actual" = "$expected"
+          grep -Fx '//codex-rs/windows-sandbox-rs:codex-command-runner' /tmp/windows-sandbox-targets.txt
+          grep -Fx '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup' /tmp/windows-sandbox-targets.txt
+          echo 'FIELDWORK_BAZEL_BINARY_TARGETS=4/4'
+
+      - name: Validate Linux compatibility graph
+        run: |
+          set -euo pipefail
+          bazel cquery \
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests \
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests \
+            //codex-rs/windows-sandbox-rs:codex-command-runner \
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup \
+            --platforms=@rules_rust//rust/platform:x86_64-unknown-linux-gnu \
+            --output=label > /tmp/windows-sandbox-cquery.txt
+          grep -F 'codex-command-runner-bin-unit-tests' /tmp/windows-sandbox-cquery.txt
+          grep -F 'codex-windows-sandbox-setup-bin-unit-tests' /tmp/windows-sandbox-cquery.txt
+          grep -F '//codex-rs/windows-sandbox-rs:codex-command-runner' /tmp/windows-sandbox-cquery.txt
+          grep -F '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup' /tmp/windows-sandbox-cquery.txt
+          echo 'FIELDWORK_BAZEL_BINARY_CQUERY=PASS'
+
+      - name: Publish clean Bazel source branch
+        env:
+          SOURCE_BRANCH: fieldwork/bazel-binary-unit-tests-f72655
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = 'defs.bzl'
+          git add defs.bzl
+          git commit -m 'bazel: restore binary unit-test target contract'
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD)" = 'defs.bzl'
+          git switch -C "$SOURCE_BRANCH"
+          destination="refs/heads/$SOURCE_BRANCH"
+          expected_generation="$(git ls-remote --heads origin "$destination" | awk '{print $1}')"
+          git push --force-with-lease="$destination:$expected_generation" origin "HEAD:$destination"
+          echo "FIELDWORK_BAZEL_BINARY_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_BAZEL_BINARY_SOURCE_BASE=$SOURCE_HEAD"
