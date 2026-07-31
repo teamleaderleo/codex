@@ -1,0 +1,96 @@
+name: fieldwork-83-receipt-wire-v1-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-receipt-wire-v1-464237
+    paths:
+      - .github/workflows/fieldwork-83-receipt-wire-v1-464237.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-83-receipt-wire-v1-464237
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record exact identities
+        run: |
+          set -euo pipefail
+          echo "FIELDWORK_RECEIPT_WIRE_CARRIER_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_RECEIPT_WIRE_SOURCE_HEAD=15414d7e5da8109e03dca24111664b272e4a5717"
+          echo "FIELDWORK_RECEIPT_WIRE_SOURCE_BASE=4642370542739d5dd080b0c87a9de06a6435d3db"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Verify carrier and source fences
+        env:
+          SOURCE_BASE: 4642370542739d5dd080b0c87a9de06a6435d3db
+          SOURCE_HEAD: 15414d7e5da8109e03dca24111664b272e4a5717
+          WORKFLOW: .github/workflows/fieldwork-83-receipt-wire-v1-464237.yml
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          test "$(git merge-base "$SOURCE_HEAD" "$SOURCE_BASE")" = "$SOURCE_BASE"
+
+          source_actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          source_expected="$(printf '%s\n' \
+            codex-rs/protocol/src/lib.rs \
+            codex-rs/protocol/src/tool_operation.rs | sort)"
+          test "$source_actual" = "$source_expected"
+
+          carrier_actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          test "$carrier_actual" = "$WORKFLOW"
+
+          git diff --check "$SOURCE_BASE" "$SOURCE_HEAD"
+          git diff --check "$SOURCE_HEAD" HEAD
+          echo 'FIELDWORK_RECEIPT_WIRE_SOURCE_FENCE=2/2'
+          echo 'FIELDWORK_RECEIPT_WIRE_CARRIER_FENCE=1/1'
+
+      - name: Format-check exact source
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Resolve and run five exact receipt controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          mapfile -t declared <<'EOF'
+          potential_mutation_requires_terminal_and_persisted_result
+          duplicate_result_becomes_ambiguous
+          code_mode_identity_excludes_synthetic_host_call_id
+          checkpoint_round_trips_receipt_state
+          unknown_version_remains_visible_to_replay_validation
+          EOF
+
+          cargo test -p codex-protocol --lib --locked -- --list > /tmp/codex-protocol-tests.txt
+          count=0
+          for suffix in "${declared[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-protocol-tests.txt | grep -E "(^|::)${suffix}$")
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-protocol --lib --locked "${matches[0]}" -- --exact --nocapture
+            count=$((count + 1))
+          done
+          test "$count" -eq 5
+          echo "FIELDWORK_RECEIPT_WIRE_EXACT=${count}/5"
+
+      - name: Run complete protocol package
+        working-directory: codex-rs
+        run: cargo test -p codex-protocol --locked
