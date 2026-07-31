@@ -72,32 +72,62 @@ jobs:
           test "$(git diff --numstat | wc -l)" -eq 5
           echo 'FIELDWORK_RECEIPT_COVERAGE_SOURCE_FENCE=5/5'
 
-      - name: Run nine exact coverage controls
+      - name: Verify exact coverage test identities
         working-directory: codex-rs
         run: |
           set -euo pipefail
           cargo test -p codex-core --lib --locked -- --list > /tmp/receipt-coverage-state-tests.list
-          suffixes=(
-            unknown_coverage_fails_closed
-            fresh_empty_history_establishes_complete_coverage
-            fresh_coverage_cannot_be_claimed_after_an_observation
-            read_only_receipt_does_not_block_complete_coverage
-            future_receipt_version_fails_closed
-            compaction_precondition_accepts_fresh_empty_receipt_state
-            compaction_precondition_rejects_valid_history_without_receipt_coverage
-            compaction_precondition_rejects_unreconciled_potential_mutation
-            compaction_precondition_accepts_reconciled_potential_mutation
+          tests=(
+            state::tool_operation_receipts::tests::unknown_coverage_fails_closed
+            state::tool_operation_receipts::tests::fresh_empty_history_establishes_complete_coverage
+            state::tool_operation_receipts::tests::fresh_coverage_cannot_be_claimed_after_an_observation
+            state::tool_operation_receipts::tests::read_only_receipt_does_not_block_complete_coverage
+            state::tool_operation_receipts::tests::future_receipt_version_fails_closed
+            session::tool_operation::tests::compaction_precondition_accepts_fresh_empty_receipt_state
+            session::tool_operation::tests::compaction_precondition_rejects_valid_history_without_receipt_coverage
+            session::tool_operation::tests::compaction_precondition_rejects_unreconciled_potential_mutation
+            session::tool_operation::tests::compaction_precondition_accepts_reconciled_potential_mutation
           )
-          executed=0
-          for suffix in "${suffixes[@]}"; do
-            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/receipt-coverage-state-tests.list | grep "${suffix}$")
-            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
-            test "${#matches[@]}" -eq 1
-            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
-            executed=$((executed + 1))
+          for test_name in "${tests[@]}"; do
+            test "$(grep -Fxc "$test_name: test" /tmp/receipt-coverage-state-tests.list)" -eq 1
           done
-          test "$executed" -eq 9
-          echo 'FIELDWORK_RECEIPT_COVERAGE_STATE_EXACT=9/9'
+          echo 'FIELDWORK_RECEIPT_COVERAGE_IDENTITIES=9/9'
+
+      - name: Exact control - unknown coverage fails closed
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::unknown_coverage_fails_closed -- --exact --nocapture
+
+      - name: Exact control - fresh empty coverage
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::fresh_empty_history_establishes_complete_coverage -- --exact --nocapture
+
+      - name: Exact control - observation prevents fresh claim
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::fresh_coverage_cannot_be_claimed_after_an_observation -- --exact --nocapture
+
+      - name: Exact control - read only does not block
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::read_only_receipt_does_not_block_complete_coverage -- --exact --nocapture
+
+      - name: Exact control - future version fails closed
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked state::tool_operation_receipts::tests::future_receipt_version_fails_closed -- --exact --nocapture
+
+      - name: Exact control - fresh compaction accepted
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_accepts_fresh_empty_receipt_state -- --exact --nocapture
+
+      - name: Exact control - uncovered history rejected
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_rejects_valid_history_without_receipt_coverage -- --exact --nocapture
+
+      - name: Exact control - unresolved mutation rejected
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_rejects_unreconciled_potential_mutation -- --exact --nocapture
+
+      - name: Exact control - reconciled mutation accepted
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked session::tool_operation::tests::compaction_precondition_accepts_reconciled_potential_mutation -- --exact --nocapture
 
       - name: Run complete changed receipt test modules
         working-directory: codex-rs
