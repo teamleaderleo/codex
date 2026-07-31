@@ -128,10 +128,7 @@ impl ToolOperationId {
         }
     }
 
-    pub fn code_mode(
-        cell_id: impl Into<String>,
-        runtime_tool_call_id: impl Into<String>,
-    ) -> Self {
+    pub fn code_mode(cell_id: impl Into<String>, runtime_tool_call_id: impl Into<String>) -> Self {
         Self::CodeMode {
             cell_id: cell_id.into(),
             runtime_tool_call_id: runtime_tool_call_id.into(),
