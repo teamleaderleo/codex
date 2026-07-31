@@ -1,0 +1,129 @@
+name: fieldwork-84-authority-captured-464237
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/84-authority-captured-carrier-base-464237
+    paths:
+      - .github/fieldwork/84_mcp_authority_captured.py
+      - .github/workflows/fieldwork-84-authority-captured-464237.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-84-authority-captured-464237
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure validation identity
+        run: |
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          echo "FIELDWORK_MCP_AUTHORITY_CAPTURED_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply captured-authority candidate
+        env:
+          CURRENT_BASE: 4642370542739d5dd080b0c87a9de06a6435d3db
+        run: |
+          set -euo pipefail
+          cp .github/fieldwork/84_mcp_authority_captured.py /tmp/84_mcp_authority_captured.py
+          git switch --detach "$CURRENT_BASE"
+          python /tmp/84_mcp_authority_captured.py
+          git diff --check
+
+      - name: Format and verify exact source fence
+        env:
+          CURRENT_BASE: 4642370542739d5dd080b0c87a9de06a6435d3db
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cd ..
+          actual="$(git diff --name-only "$CURRENT_BASE" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/codex-mcp/src/tools.rs \
+            codex-rs/codex-mcp/src/tools_tests.rs \
+            codex-rs/core/src/mcp_tool_call.rs \
+            codex-rs/core/src/tools/handlers/mcp.rs | sort)"
+          printf 'actual source files:\n%s\n' "$actual"
+          test "$actual" = "$expected"
+          git diff --check "$CURRENT_BASE"
+
+      - name: Resolve and run four exact authority controls
+        working-directory: codex-rs
+        env:
+          RUST_MIN_STACK: 16777216
+        run: |
+          set -euo pipefail
+          cargo test -p codex-mcp --lib --locked -- --list > /tmp/codex-mcp-tests.list
+          cargo test -p codex-core --test all --locked -- --list > /tmp/core-integration-tests.list
+
+          run_exact_lib() {
+            local suffix="$1"
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/codex-mcp-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-mcp --lib --locked "${matches[0]}" -- --exact --nocapture
+          }
+
+          run_exact_core() {
+            local suffix="$1"
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/core-integration-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture
+          }
+
+          run_exact_lib callable_authority_allows_descriptive_and_cached_read_only_drift
+          run_exact_lib callable_authority_rejects_schema_and_execution_metadata_drift
+          run_exact_lib prepared_call_keeps_captured_connection_and_authority_after_refresh
+          run_exact_core regular_mcp_definition_cache_preserves_live_session_state
+          echo 'FIELDWORK_MCP_AUTHORITY_CAPTURED_EXACT=4/4'
+
+      - name: Preserve source fence
+        run: |
+          set -euo pipefail
+          git add \
+            codex-rs/codex-mcp/src/tools.rs \
+            codex-rs/codex-mcp/src/tools_tests.rs \
+            codex-rs/core/src/mcp_tool_call.rs \
+            codex-rs/core/src/tools/handlers/mcp.rs
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/codex-mcp/src/tools.rs \
+            codex-rs/codex-mcp/src/tools_tests.rs \
+            codex-rs/core/src/mcp_tool_call.rs \
+            codex-rs/core/src/tools/handlers/mcp.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Publish current source-only branch
+        env:
+          SOURCE_BRANCH: fieldwork/84-mcp-call-authority-464237
+        run: |
+          set -euo pipefail
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: preserve captured MCP call authority'
+          git push --force origin "HEAD:refs/heads/$SOURCE_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo "FIELDWORK_SOURCE_BASE=4642370542739d5dd080b0c87a9de06a6435d3db"
