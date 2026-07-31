@@ -64,7 +64,7 @@ jobs:
       - name: Validate package analysis and generated targets
         run: |
           set -euo pipefail
-          bazel query //codex-rs/windows-sandbox-rs:all > /tmp/windows-sandbox-targets.txt
+          bazel query //codex-rs/windows-sandbox-rs:all | tee /tmp/windows-sandbox-targets.txt
           expected="$(printf '%s\n' \
             //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests \
             //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests-bin \
@@ -76,29 +76,47 @@ jobs:
           grep -Fx '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup' /tmp/windows-sandbox-targets.txt
           echo 'FIELDWORK_BAZEL_BINARY_TARGETS=4/4'
 
-      - name: Validate Linux raw unit-test graph
+      - name: Prove Linux rejects Windows test wrappers
+        run: |
+          set -euo pipefail
+          wrappers=(
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests
+          )
+          for wrapper in "${wrappers[@]}"; do
+            log="/tmp/$(basename "$wrapper")-linux-incompatible.txt"
+            if bazel build "$wrapper" \
+              --platforms=@rules_rust//rust/platform:x86_64-unknown-linux-gnu \
+              >"$log" 2>&1; then
+              cat "$log"
+              echo "unexpected Linux compatibility for $wrapper" >&2
+              exit 1
+            fi
+            cat "$log"
+            grep -Eiq 'incompatible|target_compatible_with' "$log"
+          done
+          echo 'FIELDWORK_BAZEL_BINARY_LINUX_WRAPPERS_INCOMPATIBLE=2/2'
+
+      - name: Analyze Windows wrappers and backing test crates
         run: |
           set -euo pipefail
           query='set(
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests
             //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests-bin
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests
             //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests-bin
           )'
           bazel cquery "$query" \
-            --platforms=@rules_rust//rust/platform:x86_64-unknown-linux-gnu \
-            --output=label > /tmp/windows-sandbox-raw-tests-cquery.txt
-          grep -F '//codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests-bin' /tmp/windows-sandbox-raw-tests-cquery.txt
-          grep -F '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests-bin' /tmp/windows-sandbox-raw-tests-cquery.txt
-          echo 'FIELDWORK_BAZEL_BINARY_RAW_CQUERY=2/2'
-
-      - name: Execute Linux raw unit tests
-        run: |
-          set -euo pipefail
-          bazel test \
+            --platforms=@rules_rust//rust/platform:x86_64-pc-windows-msvc \
+            --output=label | tee /tmp/windows-sandbox-windows-cquery.txt
+          expected="$(printf '%s\n' \
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests \
             //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests-bin \
-            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests-bin \
-            --platforms=@rules_rust//rust/platform:x86_64-unknown-linux-gnu \
-            --test_output=errors
-          echo 'FIELDWORK_BAZEL_BINARY_RAW_TESTS=2/2'
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests \
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests-bin | sort)"
+          actual="$(grep -- '-bin-unit-tests' /tmp/windows-sandbox-windows-cquery.txt | sed 's/ .*//' | sort)"
+          test "$actual" = "$expected"
+          echo 'FIELDWORK_BAZEL_BINARY_WINDOWS_CQUERY=4/4'
 
       - name: Validate Linux helper binaries
         run: |
@@ -109,7 +127,7 @@ jobs:
           )'
           bazel cquery "$query" \
             --platforms=@rules_rust//rust/platform:x86_64-unknown-linux-gnu \
-            --output=label > /tmp/windows-sandbox-helpers-cquery.txt
+            --output=label | tee /tmp/windows-sandbox-helpers-cquery.txt
           grep -F '//codex-rs/windows-sandbox-rs:codex-command-runner' /tmp/windows-sandbox-helpers-cquery.txt
           grep -F '//codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup' /tmp/windows-sandbox-helpers-cquery.txt
           bazel build \
