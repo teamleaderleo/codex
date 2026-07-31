@@ -79,11 +79,13 @@ jobs:
       - name: Validate Linux compatibility graph
         run: |
           set -euo pipefail
-          bazel cquery \
-            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests \
-            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests \
-            //codex-rs/windows-sandbox-rs:codex-command-runner \
-            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup \
+          query='set(
+            //codex-rs/windows-sandbox-rs:codex-command-runner-bin-unit-tests
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup-bin-unit-tests
+            //codex-rs/windows-sandbox-rs:codex-command-runner
+            //codex-rs/windows-sandbox-rs:codex-windows-sandbox-setup
+          )'
+          bazel cquery "$query" \
             --platforms=@rules_rust//rust/platform:x86_64-unknown-linux-gnu \
             --output=label > /tmp/windows-sandbox-cquery.txt
           grep -F 'codex-command-runner-bin-unit-tests' /tmp/windows-sandbox-cquery.txt
