@@ -1,0 +1,153 @@
+name: fieldwork-83-receipt-coverage-characterization-f72655
+
+on:
+  pull_request:
+    branches:
+      - fieldwork/83-current-main-domain-boundary-f72655
+    paths:
+      - .github/workflows/fieldwork-83-receipt-coverage-characterization-f72655.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fieldwork-83-receipt-coverage-characterization-f72655
+  cancel-in-progress: true
+
+env:
+  SOURCE_BASE: f7265553ea1510304f3091833dcbce65ef21f10c
+  SOURCE_HEAD: a7f1d4c3bb7681037c0231a3b8156c70b9fb99bf
+
+jobs:
+  characterize-receipt-coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact diagnostic carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact source and workflow-only carrier fences
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$SOURCE_HEAD^1")" = "$SOURCE_BASE"
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          carrier_actual="$(git diff --name-only "$SOURCE_HEAD" HEAD)"
+          carrier_expected='.github/workflows/fieldwork-83-receipt-coverage-characterization-f72655.yml'
+          test "$carrier_actual" = "$carrier_expected"
+          source_actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          source_expected="$(printf '%s\n' \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs \
+            codex-rs/tools/src/tool_operation.rs \
+            codex-rs/tools/src/tool_operation_tests.rs | sort)"
+          test "$source_actual" = "$source_expected"
+          echo "FIELDWORK_RECEIPT_COVERAGE_CARRIER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Check out exact receipt-boundary source
+        run: |
+          set -euo pipefail
+          git checkout --detach "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Inject missing-coverage characterization
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("codex-rs/core/src/session/tool_operation.rs")
+          text = path.read_text(encoding="utf-8")
+          marker = "\n}\n"
+          prefix, suffix = text.rsplit(marker, 1)
+          test = r'''
+
+              #[tokio::test]
+              async fn compaction_precondition_accepts_valid_history_without_receipt_coverage() {
+                  let (session, _) = crate::session::tests::make_session_and_context().await;
+                  let call_id = "call-resumed-without-receipt";
+                  {
+                      let mut state = session.state.lock().await;
+                      state.replace_history(
+                          vec![
+                              codex_protocol::models::ResponseItem::FunctionCall {
+                                  id: None,
+                                  name: "set_marker".to_string(),
+                                  namespace: None,
+                                  arguments: "{}".to_string(),
+                                  call_id: call_id.to_string(),
+                                  internal_chat_message_metadata_passthrough: None,
+                              },
+                              codex_protocol::models::ResponseItem::FunctionCallOutput {
+                                  id: None,
+                                  call_id: call_id.to_string(),
+                                  output: codex_protocol::models::FunctionCallOutputPayload::from_text(
+                                      "ok".to_string(),
+                                  ),
+                                  internal_chat_message_metadata_passthrough: None,
+                              },
+                          ],
+                          None,
+                      );
+                  }
+
+                  assert!(session.tool_operation_receipt(call_id).await.is_none());
+                  session
+                      .validate_compaction_tool_operation_state()
+                      .await
+                      .expect(
+                          "current validator accepts structurally valid history without receipt coverage",
+                      );
+              }
+          '''
+          path.write_text(prefix + test + marker + suffix, encoding="utf-8")
+          PY
+          (cd codex-rs && cargo fmt --all)
+          git diff --check
+          actual="$(git diff --name-only)"
+          expected='codex-rs/core/src/session/tool_operation.rs'
+          test "$actual" = "$expected"
+
+      - name: Run exact coverage characterization and receipt control
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked -- --list > /tmp/receipt-coverage-tests.list
+          suffixes=(
+            compaction_precondition_accepts_valid_history_without_receipt_coverage
+            compaction_precondition_rejects_unreconciled_potential_mutation
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/receipt-coverage-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 2
+          echo 'FIELDWORK_RECEIPT_COVERAGE_EXACT=2/2'
+
+      - name: Re-run core library compile gate
+        working-directory: codex-rs
+        run: cargo check -p codex-core --lib --locked
+
+      - name: Confirm carrier remains read-only
+        run: |
+          set -euo pipefail
+          actual="$(git diff --name-only)"
+          expected='codex-rs/core/src/session/tool_operation.rs'
+          test "$actual" = "$expected"
+          git diff --check
