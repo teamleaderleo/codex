@@ -1,0 +1,138 @@
+name: fieldwork-83-current-main-domain-boundary-f72655
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/scripts/fieldwork_83_current_main_domain_boundary.py
+      - .github/workflows/fieldwork-83-current-main-domain-boundary-f72655.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-current-main-domain-boundary-f72655
+  cancel-in-progress: true
+
+jobs:
+  validate-and-publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out exact publisher
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify publisher identity
+        env:
+          SOURCE_HEAD: f7265553ea1510304f3091833dcbce65ef21f10c
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD "$SOURCE_HEAD")" = "$SOURCE_HEAD"
+          actual="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          expected="$(printf '%s\n' .github/scripts/fieldwork_83_current_main_domain_boundary.py .github/workflows/fieldwork-83-current-main-domain-boundary-f72655.yml | sort)"
+          test "$actual" = "$expected"
+          echo "FIELDWORK_CURRENT_MAIN_BOUNDARY_PUBLISHER_HEAD=$(git rev-parse HEAD)"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply bounded decision-boundary repair
+        env:
+          SOURCE_HEAD: f7265553ea1510304f3091833dcbce65ef21f10c
+        run: |
+          set -euo pipefail
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          cp .github/scripts/fieldwork_83_current_main_domain_boundary.py /tmp/fieldwork_83_current_main_domain_boundary.py
+          git switch --detach "$SOURCE_HEAD"
+          python /tmp/fieldwork_83_current_main_domain_boundary.py
+          (cd codex-rs && cargo fmt --all)
+          git diff --check
+          actual="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs \
+            codex-rs/tools/src/tool_operation.rs \
+            codex-rs/tools/src/tool_operation_tests.rs | sort)"
+          test "$actual" = "$expected"
+
+      - name: Run five exact DTO controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-tools --lib --locked -- --list > /tmp/current-main-boundary-tools.list
+          suffixes=(
+            pending_receipt_records_current_version_and_states
+            duplicate_result_becomes_ambiguous
+            conflicting_terminal_outcomes_become_ambiguous
+            repeated_terminal_outcome_is_idempotent
+            future_version_remains_visible_to_domain_validation
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/current-main-boundary-tools.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-tools --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 5
+          echo 'FIELDWORK_CURRENT_MAIN_DTO_EXACT=5/5'
+
+      - name: Run four exact core controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked -- --list > /tmp/current-main-boundary-core.list
+          suffixes=(
+            future_receipt_version_fails_closed
+            compaction_precondition_accepts_empty_receipt_state
+            compaction_precondition_rejects_unreconciled_potential_mutation
+            compaction_precondition_accepts_reconciled_potential_mutation
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/current-main-boundary-core.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 4
+          echo 'FIELDWORK_CURRENT_MAIN_CORE_BOUNDARY_EXACT=4/4'
+
+      - name: Run package and compile gates
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo test -p codex-tools --locked
+          cargo check -p codex-core --lib --locked
+
+      - name: Publish clean source branch
+        env:
+          SOURCE_BRANCH: fieldwork/83-current-main-domain-boundary-f72655
+        run: |
+          set -euo pipefail
+          git add \
+            codex-rs/core/src/session/tool_operation.rs \
+            codex-rs/core/src/state/tool_operation_receipts.rs \
+            codex-rs/core/src/state/tool_operation_receipts_tests.rs \
+            codex-rs/tools/src/tool_operation.rs \
+            codex-rs/tools/src/tool_operation_tests.rs
+          git commit -m 'receipts: move compaction decisions into core validation'
+          git switch -C "$SOURCE_BRANCH"
+          destination="refs/heads/$SOURCE_BRANCH"
+          expected_generation="$(git ls-remote --heads origin "$destination" | awk '{print $1}')"
+          git push --force-with-lease="$destination:$expected_generation" origin "HEAD:$destination"
+          echo "FIELDWORK_CURRENT_MAIN_BOUNDARY_SOURCE_HEAD=$(git rev-parse HEAD)"
+          echo 'FIELDWORK_CURRENT_MAIN_BOUNDARY_SOURCE_BASE=f7265553ea1510304f3091833dcbce65ef21f10c'
