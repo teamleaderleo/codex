@@ -1,0 +1,116 @@
+name: fieldwork-435-unit-24-current-exact
+
+on:
+  pull_request:
+    branches:
+      - fix/responses-lite-first-request
+    paths:
+      - .github/workflows/fieldwork-435-unit-24-current-exact.yml
+
+concurrency:
+  group: fieldwork-435-unit-24-current-exact
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  SOURCE_HEAD: 2c3f21d38056d2d77215cd9dce820a680d11cfe8
+
+jobs:
+  exact-current-head:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable source and carrier fences
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = "$SOURCE_HEAD"
+          carrier_files="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
+          test "$carrier_files" = '.github/workflows/fieldwork-435-unit-24-current-exact.yml'
+
+          source_files="$(git diff --name-only "${SOURCE_HEAD}^" "$SOURCE_HEAD" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/client.rs \
+            codex-rs/core/tests/suite/agent_websocket.rs \
+            codex-rs/core/tests/suite/client_websockets.rs | sort)"
+          printf 'source files:\n%s\n' "$source_files"
+          test "$source_files" = "$expected"
+          echo 'FIELDWORK_LITE_CURRENT_SOURCE_FENCE=3/3'
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Check formatting
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          cargo fmt --all -- --check
+          echo 'FIELDWORK_LITE_CURRENT_FORMAT=PASS'
+
+      - name: Resolve and run exact client controls
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          cargo test -p codex-core --test all --locked -- --list > /tmp/lite-tests.list
+          suffixes=(
+            responses_lite_reuses_generated_response_after_full_first_turn
+            responses_lite_retries_full_first_turn_after_failed_generation
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/lite-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 2
+          echo 'FIELDWORK_LITE_CURRENT_CLIENT_EXACT=2/2'
+
+      - name: Run exact agent control and classify default stack
+        run: |
+          set -euo pipefail
+          cd codex-rs
+          suffix=websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm
+          cargo test -p codex-core --test all --locked -- --list > /tmp/lite-agent-tests.list
+          mapfile -t matches < <(sed -n 's/: test$//p' /tmp/lite-agent-tests.list | grep "${suffix}$")
+          printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+          test "${#matches[@]}" -eq 1
+
+          set +e
+          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/lite-default.log
+          default_status=${PIPESTATUS[0]}
+          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/lite-large.log
+          large_status=${PIPESTATUS[0]}
+          set -e
+
+          test "$large_status" -eq 0
+          if test "$default_status" -ne 0; then
+            grep -E 'stack overflow|has overflowed its stack' /tmp/lite-default.log
+          fi
+          echo "FIELDWORK_LITE_CURRENT_AGENT=default:${default_status};large:${large_status}"
+
+      - name: Run focused codex-core ordinary gate with raised worker stack
+        env:
+          RUST_MIN_STACK: 33554432
+        run: |
+          set -euo pipefail
+          just test -p codex-core
+          echo 'FIELDWORK_LITE_CURRENT_CORE_RAISED_STACK=PASS'
+
+      - name: Verify clean carrier worktree
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          echo 'FIELDWORK_LITE_CURRENT_WORKTREE=CLEAN'
