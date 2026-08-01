@@ -1,0 +1,37 @@
+name: fieldwork-435-unit-23-pr
+
+on:
+  pull_request:
+    branches:
+      - fix/session-durable-append-acknowledgement
+    paths:
+      - .github/fieldwork/unit23_materialize.sh
+      - .github/workflows/fieldwork-435-unit-23-pr.yml
+      - .github/workflows/fieldwork-435-unit-23-materialize.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-435-unit-23-pr
+  cancel-in-progress: true
+
+jobs:
+  materialize-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Materialize, test, and publish clean source
+        run: bash .github/fieldwork/unit23_materialize.sh
