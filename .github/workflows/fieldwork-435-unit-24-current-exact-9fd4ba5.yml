@@ -112,8 +112,15 @@ jobs:
           just test -p codex-core
           echo 'FIELDWORK_LITE_CURRENT_CORE_RAISED_STACK=PASS'
 
+      - name: Run target-native codex-core fix gate
+        run: |
+          set -euo pipefail
+          just fix -p codex-core
+          echo 'FIELDWORK_LITE_CURRENT_FIX=PASS'
+
       - name: Verify clean carrier worktree
         run: |
           set -euo pipefail
+          git diff --check
           test -z "$(git status --porcelain)"
           echo 'FIELDWORK_LITE_CURRENT_WORKTREE=CLEAN'
