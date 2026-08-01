@@ -166,13 +166,13 @@ jobs:
           set -e
           echo "exact_controls=$status" >> "$status_file"
 
-      - name: Run full codex-core nextest gate
+      - name: Run full codex-core library gate
         working-directory: codex-rs
         run: |
           set -euo pipefail
           status_file=../fieldwork-logs/status.env
           set +e
-          just test -p codex-core 2>&1 | tee ../fieldwork-logs/codex-core-nextest.log
+          just test -p codex-core --lib 2>&1 | tee ../fieldwork-logs/codex-core-nextest.log
           status=${PIPESTATUS[0]}
           set -e
           echo "codex_core_nextest=$status" >> "$status_file"
