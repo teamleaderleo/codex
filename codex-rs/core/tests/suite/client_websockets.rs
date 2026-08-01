@@ -544,6 +544,216 @@ async fn responses_websocket_request_prewarm_reuses_connection() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_reuses_generated_response_after_full_first_turn() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server(vec![vec![
+        vec![ev_response_created("warm-1"), ev_completed("warm-1")],
+        vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg_1", "assistant output"),
+            ev_completed("resp-1"),
+        ],
+        vec![ev_response_created("resp-2"), ev_completed("resp-2")],
+    ]])
+    .await;
+
+    let mut provider = websocket_provider(&server);
+    provider.name = ModelProviderInfo::create_openai_provider(/*base_url*/ None).name;
+    let harness = websocket_harness_with_provider_options(
+        provider,
+        /*runtime_metrics_enabled*/ true,
+        /*concurrent_reasoning_summaries_enabled*/ true,
+        /*enabled_features*/ &[],
+    )
+    .await;
+    let mut lite_model_info = harness.model_info.clone();
+    lite_model_info.use_responses_lite = true;
+    let mut client_session = harness.client.new_session();
+    let prompt_one = prompt_with_input(vec![message_item("hello")]);
+    let prompt_two = prompt_with_input(vec![
+        message_item("hello"),
+        assistant_message_item("1", "assistant output"),
+        message_item("second"),
+    ]);
+
+    client_session
+        .prewarm_websocket(
+            &prompt_one,
+            &lite_model_info,
+            &harness.session_telemetry,
+            harness.effort.clone(),
+            harness.summary,
+            /*service_tier*/ None,
+            &prewarm_metadata(&harness, /*turn_id*/ None),
+        )
+        .await
+        .expect("Responses Lite websocket prewarm failed");
+    stream_until_complete_with_model_info(
+        &mut client_session,
+        &harness,
+        &prompt_one,
+        &lite_model_info,
+        "resp-1",
+    )
+    .await;
+    stream_until_complete_with_model_info(
+        &mut client_session,
+        &harness,
+        &prompt_two,
+        &lite_model_info,
+        "resp-2",
+    )
+    .await;
+
+    assert_eq!(server.handshakes().len(), 1);
+    let connection = server.single_connection();
+    assert_eq!(connection.len(), 3);
+    let warmup = connection
+        .first()
+        .expect("missing Responses Lite warmup request")
+        .body_json();
+    let first_generated = connection
+        .get(1)
+        .expect("missing first generated Responses Lite request")
+        .body_json();
+    let continuation = connection
+        .get(2)
+        .expect("missing Responses Lite continuation request")
+        .body_json();
+
+    assert_eq!(first_generated.get("previous_response_id"), None);
+    assert_eq!(first_generated["input"], warmup["input"]);
+    assert_eq!(first_generated["model"], warmup["model"]);
+    assert_eq!(
+        continuation["previous_response_id"].as_str(),
+        Some("resp-1")
+    );
+    assert_eq!(
+        continuation["input"],
+        serde_json::to_value(&prompt_two.input[2..]).expect("serialize Lite continuation")
+    );
+    assert!(
+        continuation["input"]
+            .as_array()
+            .is_some_and(|items| items.iter().all(|item| {
+                item.get("type").and_then(serde_json::Value::as_str) != Some("additional_tools")
+            })),
+        "ordinary continuation should not retransmit the full Lite manifest"
+    );
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_lite_retries_full_first_turn_after_failed_generation() {
+    skip_if_no_network!();
+
+    let server = start_websocket_server(vec![
+        vec![
+            vec![ev_response_created("warm-1"), ev_completed("warm-1")],
+            vec![json!({
+                "type": "response.failed",
+                "response": {
+                    "error": {
+                        "code": "invalid_prompt",
+                        "message": "synthetic first-generation failure"
+                    }
+                }
+            })],
+        ],
+        vec![vec![ev_response_created("resp-2"), ev_completed("resp-2")]],
+    ])
+    .await;
+
+    let mut provider = websocket_provider(&server);
+    provider.name = ModelProviderInfo::create_openai_provider(/*base_url*/ None).name;
+    let harness = websocket_harness_with_provider_options(
+        provider,
+        /*runtime_metrics_enabled*/ true,
+        /*concurrent_reasoning_summaries_enabled*/ true,
+        /*enabled_features*/ &[],
+    )
+    .await;
+    let mut lite_model_info = harness.model_info.clone();
+    lite_model_info.use_responses_lite = true;
+    let mut client_session = harness.client.new_session();
+    let prompt = prompt_with_input(vec![message_item("hello")]);
+
+    client_session
+        .prewarm_websocket(
+            &prompt,
+            &lite_model_info,
+            &harness.session_telemetry,
+            harness.effort.clone(),
+            harness.summary,
+            /*service_tier*/ None,
+            &prewarm_metadata(&harness, /*turn_id*/ None),
+        )
+        .await
+        .expect("Responses Lite websocket prewarm failed");
+
+    let responses_metadata = turn_metadata(&harness, /*turn_id*/ None);
+    let mut failed_stream = client_session
+        .stream(
+            &prompt,
+            &lite_model_info,
+            &harness.session_telemetry,
+            harness.effort.clone(),
+            harness.summary,
+            /*service_tier*/ None,
+            &responses_metadata,
+            &codex_rollout_trace::InferenceTraceContext::disabled(),
+        )
+        .await
+        .expect("first generated websocket request should produce a stream");
+    let mut saw_error = false;
+    while let Some(event) = failed_stream.next().await {
+        if event.is_err() {
+            saw_error = true;
+            break;
+        }
+    }
+    assert!(saw_error, "expected first generated request to fail");
+
+    stream_until_complete_with_model_info(
+        &mut client_session,
+        &harness,
+        &prompt,
+        &lite_model_info,
+        "resp-2",
+    )
+    .await;
+
+    assert_eq!(server.handshakes().len(), 2);
+    let connections = server.connections();
+    assert_eq!(connections.len(), 2);
+    let first_connection = connections.first().expect("missing first connection");
+    assert_eq!(first_connection.len(), 2);
+    let warmup = first_connection
+        .first()
+        .expect("missing warmup request")
+        .body_json();
+    let failed_generated = first_connection
+        .get(1)
+        .expect("missing failed generated request")
+        .body_json();
+    let retry = connections
+        .get(1)
+        .and_then(|connection| connection.first())
+        .expect("missing retried generated request")
+        .body_json();
+
+    assert_eq!(failed_generated.get("previous_response_id"), None);
+    assert_eq!(failed_generated["input"], warmup["input"]);
+    assert_eq!(retry.get("previous_response_id"), None);
+    assert_eq!(retry["input"], failed_generated["input"]);
+    assert_eq!(retry["model"], failed_generated["model"]);
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn responses_websocket_request_prewarm_uses_caller_supplied_metadata() {
     skip_if_no_network!();
 
