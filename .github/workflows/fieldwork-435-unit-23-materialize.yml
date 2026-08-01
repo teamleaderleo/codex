@@ -1,0 +1,184 @@
+name: fieldwork-435-unit-23-materialize
+
+on:
+  push:
+    branches:
+      - fieldwork/435-unit-23-materializer
+    paths:
+      - .github/workflows/fieldwork-435-unit-23-materialize.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-435-unit-23-materialize
+  cancel-in-progress: true
+
+jobs:
+  materialize-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out materializer
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: fieldwork/435-unit-23-materializer
+          fetch-depth: 0
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Reconstruct clean current source
+        env:
+          PUBLIC_BASE: 670f69416bf91c5dfd8b58669e78050b584ff053
+          VALIDATED_SOURCE: 926e0bc5a32b136f31b9eaae75e2de4abc20fa95
+        run: |
+          set -euo pipefail
+          git fetch origin fieldwork/83-append-outcome-464237
+          test "$(git rev-parse FETCH_HEAD)" = "$VALIDATED_SOURCE"
+          git checkout --detach "$PUBLIC_BASE"
+          git checkout "$VALIDATED_SOURCE" -- \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("codex-rs/core/src/session/mod.rs")
+          text = path.read_text()
+          replacements = [
+              (
+                  """    pub(crate) async fn record_conversation_items(
+                  &self,
+                  turn_context: &TurnContext,
+                  items: &[ResponseItem],
+              ) {
+          """,
+                  """    pub(crate) async fn record_conversation_items(
+                  &self,
+                  turn_context: &TurnContext,
+                  items: &[ResponseItem],
+              ) -> bool {
+          """,
+              ),
+              (
+                  """        self.persist_rollout_response_items(items).await;
+                  self.send_raw_response_items(turn_context, items).await;
+              }
+          """,
+                  """        let persisted = self.persist_rollout_response_items(items).await;
+                  self.send_raw_response_items(turn_context, items).await;
+                  persisted
+              }
+          """,
+              ),
+              (
+                  """    async fn persist_rollout_response_items(&self, items: &[ResponseItem]) {
+                  let rollout_items: Vec<RolloutItem> = items
+                      .iter()
+                      .cloned()
+                      .map(RolloutItem::ResponseItem)
+                      .collect();
+                  self.persist_rollout_items(&rollout_items).await;
+              }
+          """,
+                  """    async fn persist_rollout_response_items(&self, items: &[ResponseItem]) -> bool {
+                  let rollout_items: Vec<RolloutItem> = items
+                      .iter()
+                      .cloned()
+                      .map(RolloutItem::ResponseItem)
+                      .collect();
+                  self.persist_rollout_items_checked(&rollout_items).await
+              }
+          """,
+              ),
+              (
+                  """    #[tracing::instrument(level = \"trace\", skip_all, fields(item_count = items.len()))]
+              pub(crate) async fn persist_rollout_items(&self, items: &[RolloutItem]) {
+                  if let Some(live_thread) = self.live_thread()
+                      && let Err(e) = live_thread.append_items(items).await
+                  {
+                      error!(\"failed to record rollout items: {e:#}\");
+                  }
+              }
+          """,
+                  """    #[tracing::instrument(level = \"trace\", skip_all, fields(item_count = items.len()))]
+              pub(crate) async fn persist_rollout_items(&self, items: &[RolloutItem]) {
+                  let _ = self.persist_rollout_items_checked(items).await;
+              }
+
+              async fn persist_rollout_items_checked(&self, items: &[RolloutItem]) -> bool {
+                  let Some(live_thread) = self.live_thread() else {
+                      return true;
+                  };
+                  if let Err(e) = live_thread.append_items(items).await {
+                      error!(\"failed to record rollout items: {e:#}\");
+                      return false;
+                  }
+                  true
+              }
+          """,
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one replacement, found {count}: {old.splitlines()[0]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          test "$(git diff --name-only "$PUBLIC_BASE" | sort)" = "$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)"
+          git diff --check "$PUBLIC_BASE"
+
+      - name: Format-check exact source
+        working-directory: codex-rs
+        run: cargo fmt --all -- --check
+
+      - name: Resolve and run four exact append controls
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          mapfile -t declared <<'EOF'
+          append_outcome_ephemeral_history_is_authoritative
+          append_outcome_reports_successful_live_append
+          append_outcome_reports_prewrite_failure
+          append_outcome_reports_commit_then_error_as_failure
+          EOF
+          cargo test -p codex-core --lib --locked -- --list > /tmp/append-outcome-tests.txt
+          count=0
+          for suffix in "${declared[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/append-outcome-tests.txt | grep -E "(^|::)${suffix}$")
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+            count=$((count + 1))
+          done
+          test "$count" -eq 4
+          echo "FIELDWORK_APPEND_OUTCOME_EXACT=${count}/4"
+
+      - name: Run complete thread-store package
+        working-directory: codex-rs
+        run: cargo test -p codex-thread-store --locked
+
+      - name: Publish clean source commit
+        env:
+          PUBLIC_BASE: 670f69416bf91c5dfd8b58669e78050b584ff053
+          TARGET_BRANCH: fix/session-durable-append-acknowledgement
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs
+          git commit -m "fix(core): return durable append acknowledgement from session writes"
+          test "$(git rev-parse HEAD^)" = "$PUBLIC_BASE"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH" --force
+          echo "FIELDWORK_UNIT23_SOURCE_HEAD=$(git rev-parse HEAD)"
