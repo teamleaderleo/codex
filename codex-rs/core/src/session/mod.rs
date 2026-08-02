@@ -2968,7 +2968,7 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         items: &[ResponseItem],
-    ) {
+    ) -> bool {
         let (items, image_preparations) =
             self.prepare_conversation_items_for_history(turn_context, items);
         let items = items.as_ref();
@@ -2988,8 +2988,9 @@ impl Session {
                     metadata: image,
                 });
         }
-        self.persist_rollout_response_items(items).await;
+        let persisted = self.persist_rollout_response_items(items).await;
         self.send_raw_response_items(turn_context, items).await;
+        persisted
     }
 
     pub(crate) async fn record_step_world_state_if_changed(
@@ -3281,13 +3282,13 @@ impl Session {
         }
     }
 
-    async fn persist_rollout_response_items(&self, items: &[ResponseItem]) {
+    async fn persist_rollout_response_items(&self, items: &[ResponseItem]) -> bool {
         let rollout_items: Vec<RolloutItem> = items
             .iter()
             .cloned()
             .map(RolloutItem::ResponseItem)
             .collect();
-        self.persist_rollout_items(&rollout_items).await;
+        self.persist_rollout_items_checked(&rollout_items).await
     }
 
     pub fn enabled(&self, feature: Feature) -> bool {
@@ -3597,11 +3598,18 @@ impl Session {
 
     #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]
     pub(crate) async fn persist_rollout_items(&self, items: &[RolloutItem]) {
-        if let Some(live_thread) = self.live_thread()
-            && let Err(e) = live_thread.append_items(items).await
-        {
+        let _ = self.persist_rollout_items_checked(items).await;
+    }
+
+    async fn persist_rollout_items_checked(&self, items: &[RolloutItem]) -> bool {
+        let Some(live_thread) = self.live_thread() else {
+            return true;
+        };
+        if let Err(e) = live_thread.append_items(items).await {
             error!("failed to record rollout items: {e:#}");
+            return false;
         }
+        true
     }
 
     pub(crate) async fn clone_history(&self) -> ContextManager {
