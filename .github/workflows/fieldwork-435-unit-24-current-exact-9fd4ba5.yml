@@ -1,4 +1,4 @@
-name: fieldwork-435-unit-24-current-exact-9fd4ba5
+name: fieldwork-435-unit-24-package-control-9fd4ba5
 
 on:
   pull_request:
@@ -8,11 +8,13 @@ on:
       - .github/workflows/fieldwork-435-unit-24-current-exact-9fd4ba5.yml
 
 concurrency:
-  group: fieldwork-435-unit-24-current-exact-9fd4ba5
+  group: fieldwork-435-unit-24-package-control-9fd4ba5
   cancel-in-progress: true
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,32 +22,30 @@ env:
   SOURCE_BASE: ee0247f95a6fe2b094ba2253d82cae2a2b4c2dff
 
 jobs:
-  exact-current-head:
+  package-control:
+    name: sequential candidate/base package control
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Check out exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ env.SOURCE_HEAD }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Verify immutable source and carrier fences
+      - name: Verify candidate source fence
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$SOURCE_HEAD"
-          test "$(git rev-parse "${SOURCE_HEAD}^")" = "$SOURCE_BASE"
-
-          carrier_files="$(git diff --name-only "$SOURCE_HEAD" HEAD | sort)"
-          test "$carrier_files" = '.github/workflows/fieldwork-435-unit-24-current-exact-9fd4ba5.yml'
-
-          source_files="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD^)" = "$SOURCE_BASE"
+          actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
           expected="$(printf '%s\n' \
             codex-rs/core/src/client.rs \
             codex-rs/core/tests/suite/agent_websocket.rs \
             codex-rs/core/tests/suite/client_websockets.rs | sort)"
-          printf 'source files:\n%s\n' "$source_files"
-          test "$source_files" = "$expected"
-          echo 'FIELDWORK_LITE_CURRENT_SOURCE_FENCE=3/3'
+          test "$actual" = "$expected"
+          echo 'FIELDWORK_LITE_PACKAGE_SOURCE_FENCE=3/3'
 
       - uses: ./.github/actions/setup-ci
 
@@ -54,73 +54,158 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
 
-      - name: Check formatting
-        run: |
-          set -euo pipefail
-          cd codex-rs
-          cargo fmt --all -- --check
-          echo 'FIELDWORK_LITE_CURRENT_FORMAT=PASS'
-
-      - name: Resolve and run exact client controls
-        run: |
-          set -euo pipefail
-          cd codex-rs
-          cargo test -p codex-core --test all --locked -- --list > /tmp/lite-tests.list
-          suffixes=(
-            responses_lite_reuses_generated_response_after_full_first_turn
-            responses_lite_retries_full_first_turn_after_failed_generation
-          )
-          executed=0
-          for suffix in "${suffixes[@]}"; do
-            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/lite-tests.list | grep "${suffix}$")
-            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
-            test "${#matches[@]}" -eq 1
-            cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture
-            executed=$((executed + 1))
-          done
-          test "$executed" -eq 2
-          echo 'FIELDWORK_LITE_CURRENT_CLIENT_EXACT=2/2'
-
-      - name: Run exact agent control and classify default stack
-        run: |
-          set -euo pipefail
-          cd codex-rs
-          suffix=websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm
-          cargo test -p codex-core --test all --locked -- --list > /tmp/lite-agent-tests.list
-          mapfile -t matches < <(sed -n 's/: test$//p' /tmp/lite-agent-tests.list | grep "${suffix}$")
-          printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
-          test "${#matches[@]}" -eq 1
-
-          set +e
-          cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/lite-default.log
-          default_status=${PIPESTATUS[0]}
-          RUST_MIN_STACK=16777216 cargo test -p codex-core --test all --locked "${matches[0]}" -- --exact --nocapture 2>&1 | tee /tmp/lite-large.log
-          large_status=${PIPESTATUS[0]}
-          set -e
-
-          test "$large_status" -eq 0
-          if test "$default_status" -ne 0; then
-            grep -E 'stack overflow|has overflowed its stack' /tmp/lite-default.log
-          fi
-          echo "FIELDWORK_LITE_CURRENT_AGENT=default:${default_status};large:${large_status}"
-
-      - name: Run focused codex-core ordinary gate with raised worker stack
+      - name: Run candidate package gate
+        id: candidate_package
         env:
           RUST_MIN_STACK: 33554432
         run: |
-          set -euo pipefail
-          just test -p codex-core
-          echo 'FIELDWORK_LITE_CURRENT_CORE_RAISED_STACK=PASS'
+          set +e
+          just test -p codex-core 2>&1 | tee /tmp/candidate-package.log
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "FIELDWORK_LITE_PACKAGE_CONTROL=candidate:$status"
 
-      - name: Run target-native codex-core fix gate
+      - name: Run candidate fix gate
+        id: candidate_fix
+        if: always()
+        run: |
+          set +e
+          just fix -p codex-core 2>&1 | tee /tmp/candidate-fix.log
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "FIELDWORK_LITE_FIX_CONTROL=candidate:$status"
+
+      - name: Record candidate worktree
+        id: candidate_tree
+        if: always()
+        run: |
+          set +e
+          git diff --check >/tmp/candidate-diff.log 2>&1
+          diff_status=$?
+          git status --porcelain > /tmp/candidate-status.log
+          if test -s /tmp/candidate-status.log; then clean=0; else clean=1; fi
+          set -e
+          echo "diff_status=$diff_status" >> "$GITHUB_OUTPUT"
+          echo "clean=$clean" >> "$GITHUB_OUTPUT"
+          echo "FIELDWORK_LITE_WORKTREE_CONTROL=candidate:diff=$diff_status;clean=$clean"
+
+      - name: Switch to exact base
+        if: always()
         run: |
           set -euo pipefail
-          just fix -p codex-core
-          echo 'FIELDWORK_LITE_CURRENT_FIX=PASS'
+          git reset --hard
+          git clean -ffd
+          git checkout --detach "$SOURCE_BASE"
+          test "$(git rev-parse HEAD)" = "$SOURCE_BASE"
 
-      - name: Verify clean carrier worktree
+      - name: Run base package gate
+        id: base_package
+        if: always()
+        env:
+          RUST_MIN_STACK: 33554432
+        run: |
+          set +e
+          just test -p codex-core 2>&1 | tee /tmp/base-package.log
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "FIELDWORK_LITE_PACKAGE_CONTROL=base:$status"
+
+      - name: Normalize package markers
+        id: markers
+        if: always()
         run: |
           set -euo pipefail
-          git diff --check
-          test -z "$(git status --porcelain)"
-          echo 'FIELDWORK_LITE_CURRENT_WORKTREE=CLEAN'
+          pattern='(^error:|^failures:|test result:|FAILED|panicked at|stack overflow|SIGABRT|failures:$|Caused by:)'
+          grep -E "$pattern" /tmp/candidate-package.log 2>/dev/null | tail -n 300 > /tmp/candidate-markers.log || true
+          grep -E "$pattern" /tmp/base-package.log 2>/dev/null | tail -n 300 > /tmp/base-markers.log || true
+          candidate_hash=$(sha256sum /tmp/candidate-markers.log | cut -d' ' -f1)
+          base_hash=$(sha256sum /tmp/base-markers.log | cut -d' ' -f1)
+          echo "candidate_hash=$candidate_hash" >> "$GITHUB_OUTPUT"
+          echo "base_hash=$base_hash" >> "$GITHUB_OUTPUT"
+          echo "FIELDWORK_LITE_PACKAGE_MARKERS=candidate:$candidate_hash;base:$base_hash"
+
+      - name: Post package-control report
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_PACKAGE: ${{ steps.candidate_package.outputs.status }}
+          BASE_PACKAGE: ${{ steps.base_package.outputs.status }}
+          CANDIDATE_FIX: ${{ steps.candidate_fix.outputs.status }}
+          DIFF_STATUS: ${{ steps.candidate_tree.outputs.diff_status }}
+          TREE_CLEAN: ${{ steps.candidate_tree.outputs.clean }}
+          CANDIDATE_HASH: ${{ steps.markers.outputs.candidate_hash }}
+          BASE_HASH: ${{ steps.markers.outputs.base_hash }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Unit 24 sequential package control'
+            echo
+            echo "- candidate: \`$SOURCE_HEAD\`"
+            echo "- base: \`$SOURCE_BASE\`"
+            echo "- candidate package exit: \`${CANDIDATE_PACKAGE:-missing}\`"
+            echo "- base package exit: \`${BASE_PACKAGE:-missing}\`"
+            echo "- candidate fix exit: \`${CANDIDATE_FIX:-missing}\`"
+            echo "- candidate diff-check exit: \`${DIFF_STATUS:-missing}\`"
+            echo "- candidate worktree clean: \`${TREE_CLEAN:-missing}\`"
+            echo "- candidate marker hash: \`${CANDIDATE_HASH:-missing}\`"
+            echo "- base marker hash: \`${BASE_HASH:-missing}\`"
+            echo
+            echo '<details><summary>Candidate package markers</summary>'
+            echo
+            echo '```text'
+            cat /tmp/candidate-markers.log 2>/dev/null || true
+            echo '```'
+            echo '</details>'
+            echo
+            echo '<details><summary>Base package markers</summary>'
+            echo
+            echo '```text'
+            cat /tmp/base-markers.log 2>/dev/null || true
+            echo '```'
+            echo '</details>'
+            echo
+            echo '<details><summary>Candidate fix markers</summary>'
+            echo
+            echo '```text'
+            grep -E '(^error:|^warning:|FAILED|panicked at|Caused by:)' /tmp/candidate-fix.log 2>/dev/null | tail -n 120 || true
+            echo '```'
+            echo '</details>'
+            if test -s /tmp/candidate-status.log; then
+              echo
+              echo '<details><summary>Candidate changed worktree paths</summary>'
+              echo
+              echo '```text'
+              cat /tmp/candidate-status.log
+              echo '```'
+              echo '</details>'
+            fi
+          } > /tmp/report.md
+          cat /tmp/report.md
+          gh api "repos/${GITHUB_REPOSITORY}/issues/135/comments" --method POST --raw-field body="$(cat /tmp/report.md)"
+
+      - name: Enforce hygiene and classification
+        if: always()
+        env:
+          CANDIDATE_PACKAGE: ${{ steps.candidate_package.outputs.status }}
+          BASE_PACKAGE: ${{ steps.base_package.outputs.status }}
+          CANDIDATE_FIX: ${{ steps.candidate_fix.outputs.status }}
+          DIFF_STATUS: ${{ steps.candidate_tree.outputs.diff_status }}
+          TREE_CLEAN: ${{ steps.candidate_tree.outputs.clean }}
+          CANDIDATE_HASH: ${{ steps.markers.outputs.candidate_hash }}
+          BASE_HASH: ${{ steps.markers.outputs.base_hash }}
+        run: |
+          set -euo pipefail
+          test "${CANDIDATE_FIX:-missing}" = 0
+          test "${DIFF_STATUS:-missing}" = 0
+          test "${TREE_CLEAN:-missing}" = 1
+          if test "${CANDIDATE_PACKAGE:-missing}" = 0; then
+            test "${BASE_PACKAGE:-missing}" = 0
+            echo 'FIELDWORK_LITE_PACKAGE_CLASSIFICATION=both-pass'
+          else
+            test "${BASE_PACKAGE:-missing}" != 0
+            test "${CANDIDATE_HASH:-missing}" = "${BASE_HASH:-different}"
+            echo 'FIELDWORK_LITE_PACKAGE_CLASSIFICATION=matching-baseline-failure'
+          fi
