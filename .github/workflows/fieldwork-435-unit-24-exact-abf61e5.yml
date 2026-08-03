@@ -1,0 +1,78 @@
+name: fieldwork-435-unit-24-exact-abf61e5
+
+on:
+  push:
+    branches:
+      - fieldwork/435-unit-24-exec-abf61e5
+
+concurrency:
+  group: fieldwork-435-unit-24-exact-abf61e5
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  SOURCE_HEAD: abf61e5fb8505181e071674ce224faff17e79d77
+  SOURCE_BASE: e4e0c7070e53cf9535fd0083d8fb840b6cd410cf
+  RUST_MIN_STACK: 16777216
+
+jobs:
+  exact-head:
+    name: exact Responses Lite controls
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ env.SOURCE_HEAD }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify immutable source fence
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_HEAD"
+          test "$(git rev-parse HEAD^)" = "$SOURCE_BASE"
+          actual="$(git diff --name-only "$SOURCE_BASE" "$SOURCE_HEAD" | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/client.rs \
+            codex-rs/core/tests/suite/agent_websocket.rs \
+            codex-rs/core/tests/suite/client_websockets.rs | sort)"
+          test "$actual" = "$expected"
+          echo 'FIELDWORK_LITE_SOURCE_FENCE=3/3'
+
+      - uses: ./.github/actions/setup-ci
+
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run first-turn and retry controls
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn -- --nocapture
+          cargo test -p codex-core --test all responses_lite_retries_full_first_turn_after_failed_generation -- --nocapture
+          echo 'FIELDWORK_LITE_CLIENT_EXACT=2/2'
+
+      - name: Run full-agent request-shape control
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm -- --nocapture
+          echo 'FIELDWORK_LITE_AGENT_EXACT=1/1'
+
+      - name: Run scoped fix gate
+        run: just fix -p codex-core
+
+      - name: Verify clean source worktree
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+          echo 'FIELDWORK_LITE_WORKTREE=clean'
