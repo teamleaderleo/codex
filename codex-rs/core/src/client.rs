@@ -1609,8 +1609,19 @@ impl ModelClientSession {
                 Err(err) => return Err(self.client.state.provider.map_api_error(err)),
             }
 
+            let force_full_after_responses_lite_prewarm = !warmup
+                && model_info.use_responses_lite
+                && self.websocket_session.last_response_from_untraced_warmup;
             let (incremental_request, previous_response_id_from_untraced_warmup) =
-                self.prepare_websocket_request(&request);
+                if force_full_after_responses_lite_prewarm {
+                    // Responses Lite carries its tool manifest in the input prefix. End the
+                    // untraced warmup chain so the first generated turn sends its current
+                    // request identity in full and any retry remains independent of warmup state.
+                    self.websocket_session.last_response_rx = None;
+                    (None, false)
+                } else {
+                    self.prepare_websocket_request(&request)
+                };
             let inference_trace_attempt = if warmup {
                 // Prewarm sends `generate=false`; it is connection setup, not a
                 // model inference attempt that should appear in rollout traces.
