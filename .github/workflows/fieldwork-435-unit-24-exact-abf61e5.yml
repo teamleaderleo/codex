@@ -57,9 +57,11 @@ jobs:
           components: rustfmt
 
       - name: Check formatting
+        working-directory: codex-rs
         run: cargo fmt --all -- --check
 
       - name: Run first-turn and retry controls
+        working-directory: codex-rs
         run: |
           set -euo pipefail
           cargo test -p codex-core --test all responses_lite_reuses_generated_response_after_full_first_turn -- --nocapture
@@ -69,6 +71,7 @@ jobs:
       - name: Run full-agent request-shape control
         id: agent_control
         continue-on-error: true
+        working-directory: codex-rs
         run: |
           set -o pipefail
           RUST_BACKTRACE=1 cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm -- --nocapture 2>&1 | tee agent-test.log
@@ -83,7 +86,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: unit-24-agent-test-log
-          path: agent-test.log
+          path: codex-rs/agent-test.log
           if-no-files-found: error
           retention-days: 3
 
@@ -92,6 +95,7 @@ jobs:
         run: exit 1
 
       - name: Run scoped fix gate
+        working-directory: codex-rs
         run: just fix -p codex-core
 
       - name: Verify clean source worktree
