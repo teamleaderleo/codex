@@ -4,9 +4,14 @@ on:
   push:
     branches:
       - fieldwork/435-unit-24-exec-abf61e5
+  pull_request:
+    branches:
+      - fix/responses-lite-first-request-e4e0c70
+    paths:
+      - .github/workflows/fieldwork-435-unit-24-exact-abf61e5.yml
 
 concurrency:
-  group: fieldwork-435-unit-24-exact-abf61e5
+  group: fieldwork-435-unit-24-exact-abf61e5-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
