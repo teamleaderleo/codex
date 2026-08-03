@@ -67,10 +67,29 @@ jobs:
           echo 'FIELDWORK_LITE_CLIENT_EXACT=2/2'
 
       - name: Run full-agent request-shape control
+        id: agent_control
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm -- --nocapture
-          echo 'FIELDWORK_LITE_AGENT_EXACT=1/1'
+          set -o pipefail
+          RUST_BACKTRACE=1 cargo test -p codex-core --test all websocket_first_responses_lite_turn_sends_exact_current_request_after_startup_prewarm -- --nocapture 2>&1 | tee agent-test.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            echo 'FIELDWORK_LITE_AGENT_EXACT=1/1'
+          fi
+          exit "$status"
+
+      - name: Upload agent-test diagnostic
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: unit-24-agent-test-log
+          path: agent-test.log
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Fail if full-agent control failed
+        if: steps.agent_control.outcome != 'success'
+        run: exit 1
 
       - name: Run scoped fix gate
         run: just fix -p codex-core
