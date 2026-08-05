@@ -65,28 +65,32 @@ jobs:
           path = Path("codex-rs/core/src/session/mod.rs")
           text = path.read_text(encoding="utf-8")
 
-          old_method = '''    #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]
-              pub(crate) async fn record_conversation_items(
-          '''
-          new_method = '''    /// Records items in live history and reports whether the rollout append was acknowledged.
-              ///
-              /// `false` does not prove durable absence: the append may have committed before
-              /// acknowledgement failed.
-              #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]
-              pub(crate) async fn record_conversation_items(
-          '''
+          old_method = (
+              '    #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]\n'
+              '    pub(crate) async fn record_conversation_items(\n'
+          )
+          new_method = (
+              '    /// Records items in live history and reports whether the rollout append was acknowledged.\n'
+              '    ///\n'
+              '    /// `false` does not prove durable absence: the append may have committed before\n'
+              '    /// acknowledgement failed.\n'
+              '    #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]\n'
+              '    pub(crate) async fn record_conversation_items(\n'
+          )
           if text.count(old_method) != 1:
               raise SystemExit(f"expected one record method, found {text.count(old_method)}")
           text = text.replace(old_method, new_method, 1)
 
-          old_return = '''        let persisted = self.persist_rollout_response_items(items).await;
-                  self.send_raw_response_items(turn_context, items).await;
-                  persisted
-          '''
-          new_return = '''        let append_acknowledged = self.persist_rollout_response_items(items).await;
-                  self.send_raw_response_items(turn_context, items).await;
-                  append_acknowledged
-          '''
+          old_return = (
+              '        let persisted = self.persist_rollout_response_items(items).await;\n'
+              '        self.send_raw_response_items(turn_context, items).await;\n'
+              '        persisted\n'
+          )
+          new_return = (
+              '        let append_acknowledged = self.persist_rollout_response_items(items).await;\n'
+              '        self.send_raw_response_items(turn_context, items).await;\n'
+              '        append_acknowledged\n'
+          )
           if text.count(old_return) != 1:
               raise SystemExit(f"expected one ambiguous local name, found {text.count(old_return)}")
           text = text.replace(old_return, new_return, 1)
@@ -100,11 +104,13 @@ jobs:
               "append_rollout_items_acknowledged",
           )
 
-          old_helper = '''    async fn append_rollout_items_acknowledged(&self, items: &[RolloutItem]) -> bool {
-          '''
-          new_helper = '''    /// Returns whether the append was acknowledged, not whether durable absence is known.
-              async fn append_rollout_items_acknowledged(&self, items: &[RolloutItem]) -> bool {
-          '''
+          old_helper = (
+              '    async fn append_rollout_items_acknowledged(&self, items: &[RolloutItem]) -> bool {\n'
+          )
+          new_helper = (
+              '    /// Returns whether the append was acknowledged, not whether durable absence is known.\n'
+              '    async fn append_rollout_items_acknowledged(&self, items: &[RolloutItem]) -> bool {\n'
+          )
           if text.count(old_helper) != 1:
               raise SystemExit(f"expected one acknowledgement helper, found {text.count(old_helper)}")
           path.write_text(text.replace(old_helper, new_helper, 1), encoding="utf-8")
