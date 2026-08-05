@@ -1,0 +1,125 @@
+name: Validate current rollout append outcomes
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/fieldwork-83-append-outcome-current.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fieldwork-83-append-outcome-current-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CURRENT_BASE: bd36d69aaee5dc39f2dc86b2da88e35ca445887c
+  REVIEWED_BASE: a01a2d91461a57809e944de7758477b92617ab01
+  REVIEWED_HEAD: d8299b7fdf3aaf7ebc46d2cac840828cf97fc2a2
+  SOURCE_BRANCH: source/83-append-outcome-current
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out exact carrier
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify carrier fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git merge-base HEAD "$CURRENT_BASE")" = "$CURRENT_BASE"
+          test "$(git diff --name-only "$CURRENT_BASE..HEAD")" = .github/workflows/fieldwork-83-append-outcome-current.yml
+          git diff --check "$CURRENT_BASE..HEAD"
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Apply accepted three-file source to current public head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary "$REVIEWED_BASE" "$REVIEWED_HEAD" -- \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs \
+            > /tmp/append-outcome.patch
+          test -s /tmp/append-outcome.patch
+
+          git switch --detach "$CURRENT_BASE"
+          git apply --3way --index /tmp/append-outcome.patch
+
+          expected=$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)
+          actual=$(git diff --cached --name-only | sort)
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git diff --cached > /tmp/append-outcome-current.diff
+
+      - name: Format-check and run four exact controls
+        shell: bash
+        working-directory: codex-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test -p codex-core --lib --locked -- --list > /tmp/append-outcome-tests.list
+          suffixes=(
+            append_outcome_ephemeral_history_is_authoritative
+            append_outcome_reports_successful_live_append
+            append_outcome_reports_prewrite_failure
+            append_outcome_reports_commit_then_error_as_failure
+          )
+          executed=0
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/append-outcome-tests.list | grep "${suffix}$")
+            printf '%s matches: %s\n' "$suffix" "${matches[*]:-<none>}"
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+            executed=$((executed + 1))
+          done
+          test "$executed" -eq 4
+
+      - name: Run complete thread-store package
+        shell: bash
+        working-directory: codex-rs
+        run: cargo test -p codex-thread-store --locked
+
+      - name: Publish current clean source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)
+          actual=$(git diff --cached --name-only | sort)
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name 'Fieldwork Agent'
+          git config user.email 'fieldwork-agent@users.noreply.github.com'
+          git switch -C "$SOURCE_BRANCH"
+          git commit -m 'core: propagate rollout append outcomes'
+          git push --force-with-lease origin "HEAD:refs/heads/$SOURCE_BRANCH"
+
+      - name: Upload current-head receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: codex-append-outcome-current
+          if-no-files-found: warn
+          path: |
+            /tmp/append-outcome.patch
+            /tmp/append-outcome-current.diff
+            /tmp/append-outcome-tests.list
