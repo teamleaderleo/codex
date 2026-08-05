@@ -45,7 +45,7 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt
 
-      - name: Apply accepted three-file source to current public head
+      - name: Apply and clarify accepted three-file source on current public head
         shell: bash
         run: |
           set -euo pipefail
@@ -58,6 +58,62 @@ jobs:
 
           git switch --detach "$CURRENT_BASE"
           git apply --3way --index /tmp/append-outcome.patch
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("codex-rs/core/src/session/mod.rs")
+          text = path.read_text(encoding="utf-8")
+
+          old_method = '''    #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]
+              pub(crate) async fn record_conversation_items(
+          '''
+          new_method = '''    /// Records items in live history and reports whether the rollout append was acknowledged.
+              ///
+              /// `false` does not prove durable absence: the append may have committed before
+              /// acknowledgement failed.
+              #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]
+              pub(crate) async fn record_conversation_items(
+          '''
+          if text.count(old_method) != 1:
+              raise SystemExit(f"expected one record method, found {text.count(old_method)}")
+          text = text.replace(old_method, new_method, 1)
+
+          old_return = '''        let persisted = self.persist_rollout_response_items(items).await;
+                  self.send_raw_response_items(turn_context, items).await;
+                  persisted
+          '''
+          new_return = '''        let append_acknowledged = self.persist_rollout_response_items(items).await;
+                  self.send_raw_response_items(turn_context, items).await;
+                  append_acknowledged
+          '''
+          if text.count(old_return) != 1:
+              raise SystemExit(f"expected one ambiguous local name, found {text.count(old_return)}")
+          text = text.replace(old_return, new_return, 1)
+
+          if text.count("persist_rollout_items_checked") != 3:
+              raise SystemExit(
+                  f"expected three helper references, found {text.count('persist_rollout_items_checked')}"
+              )
+          text = text.replace(
+              "persist_rollout_items_checked",
+              "append_rollout_items_acknowledged",
+          )
+
+          old_helper = '''    async fn append_rollout_items_acknowledged(&self, items: &[RolloutItem]) -> bool {
+          '''
+          new_helper = '''    /// Returns whether the append was acknowledged, not whether durable absence is known.
+              async fn append_rollout_items_acknowledged(&self, items: &[RolloutItem]) -> bool {
+          '''
+          if text.count(old_helper) != 1:
+              raise SystemExit(f"expected one acknowledgement helper, found {text.count(old_helper)}")
+          path.write_text(text.replace(old_helper, new_helper, 1), encoding="utf-8")
+          PY
+
+          git add \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs
 
           expected=$(printf '%s\n' \
             codex-rs/core/src/session/mod.rs \
@@ -110,7 +166,7 @@ jobs:
           git config user.name 'Fieldwork Agent'
           git config user.email 'fieldwork-agent@users.noreply.github.com'
           git switch -C "$SOURCE_BRANCH"
-          git commit -m 'core: propagate rollout append outcomes'
+          git commit -m 'core: propagate rollout append acknowledgements'
           git push --force-with-lease origin "HEAD:refs/heads/$SOURCE_BRANCH"
 
       - name: Upload current-head receipt
