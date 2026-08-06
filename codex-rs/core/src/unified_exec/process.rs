@@ -56,7 +56,44 @@ pub(crate) struct NoopSpawnLifecycle;
 
 impl SpawnLifecycle for NoopSpawnLifecycle {}
 
-pub(crate) type OutputBuffer = Arc<Mutex<HeadTailBuffer>>;
+#[derive(Debug, Default)]
+struct OutputState {
+    output: HeadTailBuffer,
+    completion: HeadTailBuffer,
+}
+
+#[derive(Clone, Copy)]
+enum OutputBufferKind {
+    Output,
+    Completion,
+}
+
+pub(crate) struct OutputBufferView {
+    state: Arc<Mutex<OutputState>>,
+    kind: OutputBufferKind,
+}
+
+impl OutputBufferView {
+    fn new(state: Arc<Mutex<OutputState>>, kind: OutputBufferKind) -> Self {
+        Self { state, kind }
+    }
+
+    pub(crate) async fn lock(
+        &self,
+    ) -> tokio::sync::MappedMutexGuard<'_, HeadTailBuffer> {
+        let guard = self.state.lock().await;
+        match self.kind {
+            OutputBufferKind::Output => {
+                tokio::sync::MutexGuard::map(guard, |state| &mut state.output)
+            }
+            OutputBufferKind::Completion => {
+                tokio::sync::MutexGuard::map(guard, |state| &mut state.completion)
+            }
+        }
+    }
+}
+
+pub(crate) type OutputBuffer = Arc<OutputBufferView>;
 /// Shared output state exposed to polling and streaming consumers.
 pub(crate) struct OutputHandles {
     pub(crate) output_buffer: OutputBuffer,
@@ -120,8 +157,15 @@ impl UnifiedExecProcess {
         sandbox_type: SandboxType,
         spawn_lifecycle: Option<SpawnLifecycleHandle>,
     ) -> Self {
-        let output_buffer = Arc::new(Mutex::new(HeadTailBuffer::default()));
-        let completion_buffer = Arc::new(Mutex::new(HeadTailBuffer::default()));
+        let output_state = Arc::new(Mutex::new(OutputState::default()));
+        let output_buffer = Arc::new(OutputBufferView::new(
+            Arc::clone(&output_state),
+            OutputBufferKind::Output,
+        ));
+        let completion_buffer = Arc::new(OutputBufferView::new(
+            output_state,
+            OutputBufferKind::Completion,
+        ));
         let output_notify = Arc::new(Notify::new());
         let output_closed = Arc::new(AtomicBool::new(false));
         let output_closed_notify = Arc::new(Notify::new());
@@ -446,8 +490,13 @@ impl UnifiedExecProcess {
         completion_buffer: &OutputBuffer,
         chunk: &[u8],
     ) {
-        completion_buffer.lock().await.push_chunk(chunk.to_vec());
-        output_buffer.lock().await.push_chunk(chunk.to_vec());
+        debug_assert!(Arc::ptr_eq(
+            &output_buffer.state,
+            &completion_buffer.state
+        ));
+        let mut state = output_buffer.state.lock().await;
+        state.completion.push_chunk(chunk.to_vec());
+        state.output.push_chunk(chunk.to_vec());
     }
 
     fn spawn_exec_server_output_task(
