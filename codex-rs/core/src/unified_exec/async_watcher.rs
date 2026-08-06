@@ -17,6 +17,7 @@ use tokio::time::Instant;
 use tokio::time::Sleep;
 
 use super::UnifiedExecContext;
+use super::process::OutputBuffer;
 use super::process::OutputHandles;
 use super::process::UnifiedExecProcess;
 use crate::exec::MAX_EXEC_OUTPUT_DELTAS_PER_CALL;
@@ -222,7 +223,7 @@ pub(crate) fn spawn_exit_watcher(
 
 async fn reconcile_transcript(
     transcript: &Arc<Mutex<HeadTailBuffer>>,
-    completion_buffer: &Arc<Mutex<HeadTailBuffer>>,
+    completion_buffer: &OutputBuffer,
 ) {
     let authoritative = completion_buffer.lock().await.drain();
     *transcript.lock().await = authoritative;
