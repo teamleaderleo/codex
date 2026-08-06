@@ -78,9 +78,7 @@ impl OutputBufferView {
         Self { state, kind }
     }
 
-    pub(crate) async fn lock(
-        &self,
-    ) -> tokio::sync::MappedMutexGuard<'_, HeadTailBuffer> {
+    pub(crate) async fn lock(&self) -> tokio::sync::MappedMutexGuard<'_, HeadTailBuffer> {
         let guard = self.state.lock().await;
         match self.kind {
             OutputBufferKind::Output => {
@@ -490,10 +488,7 @@ impl UnifiedExecProcess {
         completion_buffer: &OutputBuffer,
         chunk: &[u8],
     ) {
-        debug_assert!(Arc::ptr_eq(
-            &output_buffer.state,
-            &completion_buffer.state
-        ));
+        debug_assert!(Arc::ptr_eq(&output_buffer.state, &completion_buffer.state));
         let mut state = output_buffer.state.lock().await;
         state.completion.push_chunk(chunk.to_vec());
         state.output.push_chunk(chunk.to_vec());
