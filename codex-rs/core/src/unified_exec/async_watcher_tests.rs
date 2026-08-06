@@ -140,8 +140,11 @@ async fn completed_item_includes_output_emitted_before_subscription() -> anyhow:
 
 #[tokio::test]
 async fn reconcile_transcript_replaces_partial_stream_with_authoritative_output() {
+    let StreamingOutputHarness { process, .. } = unstarted_streaming_output_harness()
+        .await
+        .expect("create output harness");
     let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
-    let completion_buffer = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
+    let completion_buffer = process.completion_buffer();
 
     for index in 0..128 {
         let chunk = format!("chunk-{index:04}\n").into_bytes();
@@ -187,7 +190,6 @@ async fn streaming_output_finishes_on_close_without_waiting_for_grace() -> anyho
     (&mut drained).await;
     let elapsed = Instant::now().saturating_duration_since(exited_at);
     tokio::time::resume();
-
     assert!(
         elapsed >= Duration::from_millis(50) && elapsed < TRAILING_OUTPUT_GRACE,
         "output close should finish before the grace fallback: {elapsed:?}"
