@@ -1,0 +1,91 @@
+name: fieldwork-83-append-outcome-4ef
+
+on:
+  push:
+    branches:
+      - carrier/83-append-outcome-4ef
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out owned carrier
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Preserve exact old patch and reset to public current main
+        shell: bash
+        env:
+          OLD_BASE: a01a2d91461a57809e944de7758477b92617ab01
+          OLD_HEAD: d8299b7fdf3aaf7ebc46d2cac840828cf97fc2a2
+          CURRENT_BASE: 4ef836f883c38ba6d39e6920f335ce6452b7de33
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse "$OLD_HEAD")" = "$OLD_HEAD"
+          git diff --binary "$OLD_BASE".."$OLD_HEAD" -- \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs \
+            > /tmp/append-outcome.patch
+          test -s /tmp/append-outcome.patch
+          git fetch --no-tags https://github.com/openai/codex.git "$CURRENT_BASE"
+          git switch --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$CURRENT_BASE"
+          git apply --3way --index /tmp/append-outcome.patch
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+
+      - name: Install repository Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format-check and run exact append controls
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test -p codex-core --lib --locked -- --list > /tmp/append-outcome-tests.list
+          suffixes=(
+            append_outcome_ephemeral_history_is_authoritative
+            append_outcome_reports_successful_live_append
+            append_outcome_reports_prewrite_failure
+            append_outcome_reports_commit_then_error_as_failure
+          )
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/append-outcome-tests.list | grep "${suffix}$")
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+          done
+
+      - name: Run thread-store package tests
+        working-directory: codex-rs
+        run: cargo test -p codex-thread-store --locked
+
+      - name: Publish clean current-main source
+        shell: bash
+        env:
+          TARGET_BRANCH: candidate/83-append-outcome-4ef
+          CURRENT_BASE: 4ef836f883c38ba6d39e6920f335ce6452b7de33
+        run: |
+          set -euo pipefail
+          git diff --cached --check
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git commit -m 'core: propagate rollout append outcomes on current main'
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$CURRENT_BASE" origin "HEAD:refs/heads/$TARGET_BRANCH" || \
+            git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
