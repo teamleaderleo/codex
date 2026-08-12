@@ -35,7 +35,7 @@ jobs:
       - name: Materialize current API repair
         run: python3 /tmp/materialize.py
 
-      - name: Verify exact three-file source fence
+      - name: Verify exact three-file pre-format source fence
         shell: bash
         run: |
           set -euo pipefail
@@ -45,7 +45,8 @@ jobs:
             codex-rs/core/src/session/turn_tests.rs \
             codex-rs/thread-store/src/in_memory.rs | sort > /tmp/expected
           diff -u /tmp/expected /tmp/actual
-          git diff --check
+          echo 'Pre-format diff check (diagnostic only):'
+          git diff --check || true
 
       - name: Install repository Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -67,6 +68,7 @@ jobs:
             codex-rs/thread-store/src/in_memory.rs | sort > /tmp/expected
           diff -u /tmp/expected /tmp/actual
           git diff --check
+          test -z "$(git ls-files --others --exclude-standard)"
 
       - name: Run exact append-outcome controls
         working-directory: codex-rs
@@ -99,6 +101,8 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
+          git diff --name-only | sort > /tmp/actual
+          diff -u /tmp/expected /tmp/actual
           git config user.name fieldwork-ci
           git config user.email fieldwork-ci@users.noreply.github.com
           git add \
