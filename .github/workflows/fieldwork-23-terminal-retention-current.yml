@@ -1,0 +1,153 @@
+name: Fieldwork 23 terminal retention current
+
+on:
+  push:
+    branches:
+      - carrier/23-terminal-retention-4ef
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CURRENT_BASE: 4ef836f883c38ba6d39e6920f335ce6452b7de33
+  TARGET_BRANCH: candidate/23-terminal-retention-4ef
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out carrier head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Preserve materializer and reset to exact current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show HEAD:.github/fieldwork/materialize-terminal-retention-4ef.py > /tmp/materialize.py
+          git reset --hard "$CURRENT_BASE"
+          git clean -fdx
+          test "$(git rev-parse HEAD)" = "$CURRENT_BASE"
+
+      - name: Disambiguate carrier-only local anchor
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('codex-rs/core/src/unified_exec/process.rs')
+          text = path.read_text()
+          start = text.index('    fn spawn_local_output_task(\n')
+          end = text.index('\n    fn signal_exit', start)
+          local = text[start:end]
+          old = '''        let OutputHandles {
+              output_buffer,
+              output_notify,
+          '''
+          assert local.count(old) == 1, local.count(old)
+          local = local.replace(
+              old,
+              '''        let OutputHandles {
+              output_buffer,
+              // fieldwork-local-anchor
+              output_notify,
+          ''',
+              1,
+          )
+          path.write_text(text[:start] + local + text[end:])
+          PY
+
+      - name: Materialize current semantic restack
+        run: python3 /tmp/materialize.py
+
+      - name: Verify exact four-file pre-format fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            git diff --name-only
+            git ls-files --others --exclude-standard
+          } | sort -u > /tmp/actual
+          printf '%s\n' \
+            codex-rs/core/src/unified_exec/async_watcher.rs \
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs \
+            codex-rs/core/src/unified_exec/process.rs \
+            codex-rs/core/src/unified_exec/process_tests.rs \
+            | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          ! grep -R 'fieldwork-local-anchor' codex-rs/core/src/unified_exec
+          git diff --check || true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format source
+        working-directory: codex-rs
+        run: cargo fmt --all
+
+      - name: Verify formatted exact source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            git diff --name-only
+            git ls-files --others --exclude-standard
+          } | sort -u > /tmp/actual
+          diff -u /tmp/expected /tmp/actual
+          git diff --check
+          ! grep -R 'fieldwork-local-anchor' codex-rs/core/src/unified_exec
+
+      - name: Run exact terminal retention controls
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked -- --list > /tmp/tests.list
+          suffixes=(
+            local_output_task_retains_stdout_before_best_effort_broadcast
+            local_output_task_retains_invalid_utf8_when_broadcast_lags
+            completed_item_includes_output_emitted_before_subscription
+            reconcile_transcript_replaces_partial_stream_with_authoritative_output
+            streaming_output_finishes_on_close_without_waiting_for_grace
+            streaming_output_keeps_grace_as_fallback_without_close
+            exit_watcher_waits_for_late_network_denial_before_classifying_end
+          )
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+          done
+
+      - name: Run unified-exec library slice
+        working-directory: codex-rs
+        run: cargo test -p codex-core --lib --locked unified_exec -- --nocapture
+
+      - name: Run codex-core check
+        working-directory: codex-rs
+        run: cargo check -p codex-core --locked
+
+      - name: Publish exact tested current-main source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --name-only | sort > /tmp/actual
+          diff -u /tmp/expected /tmp/actual
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git add \
+            codex-rs/core/src/unified_exec/async_watcher.rs \
+            codex-rs/core/src/unified_exec/async_watcher_tests.rs \
+            codex-rs/core/src/unified_exec/process.rs \
+            codex-rs/core/src/unified_exec/process_tests.rs
+          git commit -m 'core: retain terminal output before best-effort broadcast'
+          git push \
+            --force-with-lease="refs/heads/$TARGET_BRANCH:$CURRENT_BASE" \
+            origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
