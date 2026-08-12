@@ -45,16 +45,16 @@ jobs:
           end = text.index('\n    fn signal_exit', start)
           local = text[start:end]
           old = '''        let OutputHandles {
-              output_buffer,
-              output_notify,
+            output_buffer,
+            output_notify,
           '''
           assert local.count(old) == 1, local.count(old)
           local = local.replace(
               old,
               '''        let OutputHandles {
-              output_buffer,
-              // fieldwork-local-anchor
-              output_notify,
+            output_buffer,
+            // fieldwork-local-anchor
+            output_notify,
           ''',
               1,
           )
