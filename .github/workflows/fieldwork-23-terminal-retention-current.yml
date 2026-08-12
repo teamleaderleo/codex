@@ -33,14 +33,16 @@ jobs:
           git clean -fdx
           test "$(git rev-parse HEAD)" = "$CURRENT_BASE"
 
-      - name: Disambiguate carrier-only local anchor
+      - name: Normalize carrier-only materializer anchors
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('codex-rs/core/src/unified_exec/process.rs')
-          text = path.read_text()
+          import re
+
+          process_path = Path('codex-rs/core/src/unified_exec/process.rs')
+          text = process_path.read_text()
           start = text.index('    fn spawn_local_output_task(\n')
           end = text.index('\n    fn signal_exit', start)
           local = text[start:end]
@@ -58,7 +60,19 @@ jobs:
           ''',
               1,
           )
-          path.write_text(text[:start] + local + text[end:])
+          process_path.write_text(text[:start] + local + text[end:])
+
+          watcher_path = Path('codex-rs/core/src/unified_exec/async_watcher.rs')
+          watcher = watcher_path.read_text()
+          pattern = re.compile(r'(?m)^\s*&mut pending,\n\s*&transcript,\n\s*&call_id,')
+          replacement = (
+              '                        &mut pending,\n'
+              '                        &transcript,\n'
+              '                        &call_id,'
+          )
+          watcher, count = pattern.subn(replacement, watcher)
+          assert count == 2, count
+          watcher_path.write_text(watcher)
           PY
 
       - name: Materialize current semantic restack
