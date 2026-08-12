@@ -1,0 +1,112 @@
+name: Fieldwork 83 append outcome current repair
+
+on:
+  push:
+    branches:
+      - carrier/83-append-outcome-current-repair
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CURRENT_BASE: 4ef836f883c38ba6d39e6920f335ce6452b7de33
+  TARGET_BRANCH: candidate/83-append-outcome-4ef
+
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out carrier head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Preserve materializer and reset to exact current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show HEAD:.github/fieldwork/materialize-append-outcome-4ef.py > /tmp/materialize.py
+          git reset --hard "$CURRENT_BASE"
+          test "$(git rev-parse HEAD)" = "$CURRENT_BASE"
+
+      - name: Materialize current API repair
+        run: python3 /tmp/materialize.py
+
+      - name: Verify exact three-file source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only | sort > /tmp/actual
+          printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --check
+
+      - name: Install repository Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format repair
+        working-directory: codex-rs
+        run: cargo fmt --all
+
+      - name: Verify formatted source fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --name-only | sort > /tmp/actual
+          printf '%s\n' \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs | sort > /tmp/expected
+          diff -u /tmp/expected /tmp/actual
+          git diff --check
+
+      - name: Run exact append-outcome controls
+        working-directory: codex-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p codex-core --lib --locked -- --list > /tmp/tests.list
+          suffixes=(
+            append_outcome_ephemeral_history_is_authoritative
+            append_outcome_reports_successful_live_append
+            append_outcome_reports_prewrite_failure
+            append_outcome_reports_commit_then_error_as_failure
+          )
+          for suffix in "${suffixes[@]}"; do
+            mapfile -t matches < <(sed -n 's/: test$//p' /tmp/tests.list | grep "${suffix}$")
+            test "${#matches[@]}" -eq 1
+            cargo test -p codex-core --lib --locked "${matches[0]}" -- --exact --nocapture
+          done
+
+      - name: Run whole thread-store package
+        working-directory: codex-rs
+        run: cargo test -p codex-thread-store --locked
+
+      - name: Run codex-core check
+        working-directory: codex-rs
+        run: cargo check -p codex-core --locked
+
+      - name: Publish exact current-main source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name fieldwork-ci
+          git config user.email fieldwork-ci@users.noreply.github.com
+          git add \
+            codex-rs/core/src/session/mod.rs \
+            codex-rs/core/src/session/turn_tests.rs \
+            codex-rs/thread-store/src/in_memory.rs
+          git commit -m 'core: surface rollout append outcome on current main'
+          git push \
+            --force-with-lease="refs/heads/$TARGET_BRANCH:$CURRENT_BASE" \
+            origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "FIELDWORK_SOURCE_HEAD=$(git rev-parse HEAD)"
